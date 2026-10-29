@@ -1,7 +1,12 @@
 """Apply checked v100 compatibility fixes to the ignored official SDK checkout."""
 from pathlib import Path
+import os
 
-path = Path(__file__).resolve().parent.parent/'references/KenshiLib_Examples_deps/KenshiLib/Include/kenshi/NavMesh.h'
+default_sdk = Path(__file__).resolve().parent.parent/'references/KenshiLib_Examples_deps/KenshiLib'
+sdk = Path(os.environ.get('KENSHILIB_DIR', str(default_sdk))).expanduser().resolve()
+path = sdk/'Include/kenshi/NavMesh.h'
+if not path.is_file():
+    raise SystemExit('Set KENSHILIB_DIR to the KenshiLib dependency directory containing Include/kenshi/NavMesh.h')
 source = path.read_text(encoding='utf-8')
 old = 'MessageQueue<T>::Node*'
 new = 'typename MessageQueue<T>::Node*'

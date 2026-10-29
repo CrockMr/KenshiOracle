@@ -12,8 +12,8 @@ def registration(tmp_path):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('own test source: ' + name, encoding='utf-8')
-    document = tmp_path / 'docs/randomized-observer-protocol.md'
-    document.parent.mkdir()
+    document = tmp_path / 'docs/research/randomized-observer-protocol.md'
+    document.parent.mkdir(parents=True)
     document.write_text('fixed protocol', encoding='utf-8')
     path = tmp_path / 'runtime/session/registration.json'
     path.parent.mkdir(parents=True)
@@ -23,7 +23,7 @@ def registration(tmp_path):
     value = dict(protocol=pilot.PROTOCOL, randomization_seed=123, plan=pilot.make_plan(123),
                  plugin_version='0.8.20', registered_at=100, source_sha256=pilot.source_hashes(tmp_path),
                  symbol_manifest=dict(path='runtime/symbols/0.8.20/manifest.json', sha256=hashlib.sha256(symbols.read_bytes()).hexdigest()),
-                 protocol_document=dict(path='docs/randomized-observer-protocol.md',
+                 protocol_document=dict(path='docs/research/randomized-observer-protocol.md',
                      sha256=hashlib.sha256(document.read_bytes()).hexdigest()))
     path.write_text(json.dumps(value), encoding='utf-8')
     return path, value
@@ -51,7 +51,7 @@ def test_changed_or_malformed_registration_rejected_before_game_access(tmp_path,
         pilot.registration_for_run(path, '0.8.20', 123, root=tmp_path, wall_clock=lambda: 101)
 
 
-@pytest.mark.parametrize('name', [pilot.OWN_SOURCES[0], 'docs/randomized-observer-protocol.md', 'runtime/symbols/0.8.20/manifest.json'])
+@pytest.mark.parametrize('name', [pilot.OWN_SOURCES[0], 'docs/research/randomized-observer-protocol.md', 'runtime/symbols/0.8.20/manifest.json'])
 def test_changed_registered_file_rejected(tmp_path, name):
     path, _ = registration(tmp_path)
     (tmp_path / name).write_text('changed after registration', encoding='utf-8')

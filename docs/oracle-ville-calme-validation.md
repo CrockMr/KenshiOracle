@@ -1,72 +1,84 @@
-# Ville calme : validation complémentaire du 29 octobre 2026
+<a id="ville-calme--validation-complémentaire-du-29-octobre-2026"></a>
 
-> Rapport historique. Le [bilan de livraison 0.9.5](oracle-phase1-delivery.md) et la [grille d’acceptation](phase1-acceptance.md) décrivent les sources, tests et validations finales ; les résultats ci-dessous gardent leur version et leur portée initiales.
+# Quiet town: additional validation on October 29, 2026
 
-La sauvegarde utilisateur `ville-calme` a été rejouée **trois fois**, avec neuf captures conformes au schéma 0.1 et une restitution vérifiée des contrôles, y compris le suivi du personnage Imai. La DLL reste **0.9.1** ; la correction concerne le serveur Python. La suite complète termine avec **1 310 tests réussis en 65,16 s**. Les agents de ce lot utilisent GPT-6.1 Sol, effort ultra.
+> Historical report. The [0.9.5 delivery summary](oracle-phase1-delivery.md) and [acceptance checklist](phase1-acceptance.md) describe final sources, tests and validations; the results below retain their original version and scope.
 
-Les trois exemples ont désormais chacun une série de trois répétitions réussies : trajet, bataille et ville, soit 27 captures pour ces séries. Les anciens essais ne sont pas rétroactivement validés avec le nouveau contrôle de stabilité. Aucune campagne de performance n'a été lancée.
+The user's `ville-calme` save was replayed **three times**, producing nine state-0.1-compliant captures and verified control restoration, including following character Imai. The DLL remains **0.9.1**; the fix concerns the Python server. The complete suite finishes with **1 310 tests passed in 65,16 s**. Agents in this batch use GPT-6.1 Sol, ultra effort.
 
-## Preuves locales
+All three examples now have a successful three-repetition series: travel, battle and town, totaling 27 captures for these series. Earlier attempts are not retroactively validated by the new stability check. No performance campaign was run.
 
-Les fichiers volumineux et les données du jeu restent hors Git. Les preuves de ce lot sont :
+<a id="preuves-locales"></a>
 
-- `runtime/oracle-phase1/city-preflight-091.json` : état initial et empreintes des quatre sauvegardes protégées, dont les 54 fichiers de `ville-calme`.
-- `runtime/oracle-phase1/live-ville-calme-stable-091.json` : validation via MCP stdio, neuf empreintes, identité de processus inchangée, réglages et sauvegardes contrôlés.
-- `runs/ville-calme/20261029T001325.437085Z-06ebaeea/report.json` et `report.md` : trois exécutions, neuf captures et comparaison des champs.
-- `runtime/oracle-phase1/city-final-audit-091.json` : contrôles revérifiés après l'essai, pause active, aucune restitution en attente, réglages exacts et quatre sauvegardes inchangées.
+## Local evidence
 
-Les neuf captures ont été validées contre le schéma et leurs octets comparés aux sources natives et à la canonicalisation Python. Le jeu est Kenshi 1.0.65 Steam, instance `34736:1222705718`, plugin 0.9.1. Chaque répétition recharge la sauvegarde ; aucune action n'est envoyée aux personnages. Les checkpoints sont à 0, 120 et 600 secondes **calendaires du jeu**, et non des secondes réelles.
+Large files and game data remain outside Git. Evidence for this batch:
 
-## Résultats et variabilité
+- `runtime/oracle-phase1/city-preflight-091.json`: initial state and fingerprints of four protected saves, including the 54 `ville-calme` files.
+- `runtime/oracle-phase1/live-ville-calme-stable-091.json`: MCP stdio validation, nine hashes, unchanged process identity, checked settings and saves.
+- `runs/ville-calme/20261029T001325.437085Z-06ebaeea/report.json` and `report.md`: three executions, nine captures and field comparison.
+- `runtime/oracle-phase1/city-final-audit-091.json`: controls rechecked after the experiment, active pause, no pending restoration, exact settings and four unchanged saves.
 
-| Checkpoint | Personnages, répétitions 1 / 2 / 3 | Escouades, répétitions 1 / 2 / 3 | Champs stables | Champs variables |
+All nine captures were schema-validated and their bytes compared with native sources and Python canonicalization. The game is Kenshi 1.0.65 Steam, instance `34736:1222705718`, plugin 0.9.1. Every repetition reloads the save; no character action is sent. Checkpoints are 0, 120 and 600 **game-calendar seconds**, not real seconds.
+
+<a id="résultats-et-variabilité"></a>
+
+## Results and variability
+
+| Checkpoint | Characters, repetitions 1 / 2 / 3 | Squads, repetitions 1 / 2 / 3 | Stable fields | Variable fields |
 | --- | --- | --- | ---: | ---: |
 | Initial | 101 / 103 / 110 | 22 / 22 / 22 | 42 029 | 2 945 |
 | 120 s | 101 / 103 / 110 | 22 / 22 / 22 | 41 802 | 3 436 |
 | 600 s | 123 / 125 / 131 | 26 / 25 / 26 | 42 241 | 4 707 |
 
-Chaque capture contient 114 factions et 12 882 paires directionnelles. Les nombres de champs variables incluent les présences et absences : ce ne sont pas des probabilités ni des nombres d'entités indépendantes.
+Every capture contains 114 factions and 12 882 directional pairs. Variable-field counts include presence and absence: they are neither probabilities nor counts of independent entities.
 
-Imai conserve son identité `hand:1:1:751953152:1:3279785216`, son escouade et le même état entre les répétitions à chaque checkpoint. Il reste vivant avec une tâche courante nulle. Ses coordonnées x/z restent `-50978.796875, 2932.476563` ; y passe de `1531.995850` au checkpoint initial à `1533.468262` aux deux suivants. Cela ne prouve pas une immobilité complète en trois dimensions ni un déterminisme du monde.
+Imai retains identity `hand:1:1:751953152:1:3279785216`, his squad and the same state across repetitions at each checkpoint. He remains alive with a null current task. His x/z coordinates remain `-50978.796875, 2932.476563`; y changes from `1531.995850` initially to `1533.468262` at the next two checkpoints. This proves neither complete three-dimensional immobility nor world determinism.
 
-| Répétition | Dépassement à 120 s | Dépassement à 600 s |
+| Repetition | Overshoot at 120 s | Overshoot at 600 s |
 | --- | ---: | ---: |
 | 1 | 0,145797 s | 0,227737 s |
 | 2 | 0,296859 s | 0,073242 s |
 | 3 | 0,166397 s | 0,368499 s |
 
-Le plugin met en pause au premier franchissement observé. Ces dépassements restent dans les rapports ; ils ne sont pas masqués en remplaçant l'instant réel par la consigne.
+The plugin pauses at the first observed crossing. Overshoots remain in reports; they are not hidden by replacing actual times with requested times.
 
-## Correction de la vérification caméra
+<a id="correction-de-la-vérification-caméra"></a>
 
-La première tentative, `20261029T000108.688978Z-ed2aa999`, a produit ses trois répétitions et neuf captures, mais le runner l'a correctement laissée **en échec** : le centre caméra différait de `0.17248535156295475`, au-delà du seuil de 0,05. Cette tentative et son rapport sont conservés.
+## Camera-verification fix
 
-Le code ne vérifiait auparavant qu'une seule lecture après restitution. Désormais `wait_stable_controls` observe des frames distinctes pendant au moins 0,5 seconde, avec au moins trois frames et une échéance de dix secondes. Il encadre les lectures par des contrôles d'identité et de disponibilité, exige une horloge immobile et conserve les observations. La référence est capturée en pause avant l'armement du journal, puis reste fixe. Une pose stable mais différente de cette référence échoue ; aucune mutation incertaine n'est réessayée.
+The first attempt, `20261029T000108.688978Z-ed2aa999`, produced three repetitions and nine captures, but the runner correctly retained it as **failed**: the camera center differed by `0.17248535156295475`, beyond the 0,05 threshold. This attempt and its report are preserved.
 
-Les seuils restent : 0,05 pour centre, position et zoom, 0,0001 pour quaternion, 0,000001 pour sélection de vitesse. Une sélection inconnue n'est pas assimilée à zéro. La vérification s'effectue après la libération native du verrou caméra ; elle ne neutralise pas les entrées de l'utilisateur et ne garantit pas l'immobilité future.
+Previously, code checked only one read after restoration. `wait_stable_controls` now observes distinct frames for at least 0,5 second, with at least three frames and a ten-second deadline. It brackets reads with identity/readiness checks, requires a stationary clock and retains observations. The reference is captured paused before arming the journal, then remains fixed. A stable pose differing from that reference fails; uncertain mutations are never retried.
 
-Le diagnostic avait relevé un pointeur SDK au bord et des changements d'orientation. Des interactions Windows sur la bannière de pause ont ensuite placé l'entrée à l'intérieur de la fenêtre ; les mouvements ont cessé lors des lectures suivantes. Ce constat ne prouve pas à lui seul la cause de l'écart initial. Aucun ordre de déplacement ou d'attaque n'a été envoyé par ces interactions.
+Thresholds remain: 0,05 for center, position and zoom, 0,0001 for quaternion, 0,000001 for selected speed. An unknown selection is not treated as zero. Verification happens after native camera-lock release; it does not neutralize user input or guarantee future immobility.
 
-La récupération explicite de la première tentative a réussi sans modifier sa référence, preuve `runtime/oracle-phase1/city-recovery-stable-091.json`. La série suivante utilise le nouveau contrôle dès le départ. Sa fenêtre initiale valide six frames sur 0,625 seconde ; sa restitution cinq frames sur environ 0,531 seconde. Les écarts de centre, position et quaternion sont **nuls dans la lecture finale du rapport**. Le suivi d'Imai, le zoom signé `-1181.855224609375`, le mode stratégique, le défilement activé, la pause et la sélection préparée 1 sont vérifiés. Cela valide ce cas de suivi, sans couvrir tous les modes et offsets possibles.
+Diagnosis had observed an SDK pointer at the edge and orientation changes. Windows interactions with the pause banner then placed input inside the window; movement stopped in subsequent reads. This observation alone does not prove the cause of the initial difference. These interactions sent no move or attack order.
 
-L'audit final confirme les mêmes contrôles sur une nouvelle fenêtre après validation des fichiers. Il laisse la sauvegarde `ville-calme` rechargée en pause ; il ne prétend pas reconstituer une vue transitoire ou une partie non sauvegardée antérieure à la préparation.
+Explicit recovery of the first attempt succeeded without changing its reference, evidence `runtime/oracle-phase1/city-recovery-stable-091.json`. The next series uses the new check from the start. Its initial window validates six frames over 0,625 second; restoration validates five over approximately 0,531 second. Center, position and quaternion differences are **zero in the report's final read**. Following Imai, signed zoom `-1181.855224609375`, strategic mode, enabled scrolling, pause and prepared speed selection 1 are verified. This validates this follow case, not every possible mode or offset.
 
-## PNJ générés ou identité déplacée
+The final audit confirms the same controls in a fresh window after file validation. It leaves `ville-calme` reloaded and paused; it does not claim to reconstruct a transient view or an unsaved game from before preparation.
 
-L'[audit des identités](npc-identities-phase1.md) distingue deux cohortes. Dans cette ville, les 80 identités communes initiales correspondent exactement à des personnages sauvegardés. Les membres variables initiaux appartiennent à trois escouades enregistrées comme jamais activées, sans états individuels sauvegardés : leur génération à l'activation est fortement étayée. À 600 secondes, les 92 personnages individuellement sauvegardés sont présents dans chaque répétition.
+<a id="pnj-générés-ou-identité-déplacée"></a>
 
-Pour les anciens Ando, Hisako et Ishida, des états individuels concordants existent déjà dans la sauvegarde. Leurs composantes de conteneur changent dans les captures. Ils ne constituent donc pas une preuve de création complète au chargement. La résolution moteur des alias et une identité d'origine canonique restent à implémenter et vérifier ; aucun rapprochement par nom ou par le seul couple index/serial n'est utilisé dans l'état exporté.
+## Generated NPCs or shifted identity
 
-## Vérifications et limites
+The [identity audit](npc-identities-phase1.md) distinguishes two cohorts. In this town, the 80 initially common identities exactly match saved characters. Initially variable members belong to three squads recorded as never activated, without saved individual states: generation on activation is strongly supported. At 600 seconds, the 92 individually saved characters occur in every repetition.
 
-La suite complète a été exécutée avec les sockets des faux serveurs, sous protection interdisant le port réel du jeu :
+For the earlier Ando, Hisako and Ishida, matching individual states already exist in the save. Their container components change in captures. They therefore do not prove complete creation on loading. Engine alias resolution and a canonical origin identity still need implementation and verification; exported state uses neither name matching nor index/serial-only matching.
+
+<a id="vérifications-et-limites"></a>
+
+## Checks and limitations
+
+The complete suite ran with fake-server sockets, under a guard blocking the real game port:
 
 ```powershell
 .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp=runtime/oracle-phase1/pytest-city-full-20261029
 ```
 
-Résultat : **1 310 réussites, 65,16 s**. Le sous-ensemble MCP, runner et exemples avait auparavant donné 64 réussites. Aucun nouveau build natif n'était nécessaire pour cette correction Python ; seul un commentaire TODO a été ajouté à l'adaptateur d'identités.
+Result: **1 310 passed, 65,16 s**. The MCP, runner and examples subset had previously passed 64 tests. This Python fix required no new native build; only a TODO comment was added to the identity adapter.
 
-Restent non validés ici : les autres modes/offsets de suivi, la persistance générale des identités après redémarrage, l'exhaustivité de toute la mémoire moteur, l'atomicité des workers et de nouveaux crashs/gels réels. Les tests du watchdog hors jeu et son historique sont conservés. L'adaptateur MeitouClient et le comparateur entre moteurs restent hors phase 1.
+Still unvalidated here: other follow modes/offsets, general identity persistence after restart, completeness of all engine memory, worker atomicity and new real crashes/freezes. Offline watchdog tests and historical evidence are retained. The MeitouClient adapter and cross-engine comparator remain outside phase 1.
 
-Les trois TODO du code natif sont `ORACLE-IDENTITY-REMAP` (origine stable et alias), `ORACLE-ORDER-ENUM` (futurs types de tâches inconnus du SDK) et `ORACLE-CAMERA-NONCHARACTER` (suivi d'un objet autre qu'un personnage chargé). Voir les [questions ouvertes](open-questions.md).
+The three native-code TODOs are `ORACLE-IDENTITY-REMAP` (stable origin and aliases), `ORACLE-ORDER-ENUM` (future task types unknown to the SDK) and `ORACLE-CAMERA-NONCHARACTER` (following an object other than a loaded character). See [open questions](research/open-questions.md).

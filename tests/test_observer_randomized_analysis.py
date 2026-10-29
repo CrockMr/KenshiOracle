@@ -34,7 +34,7 @@ def sample(seed=987654321):
     data['initial_ping'].update(function_binding_source='loaded_module_export', command_service_timing_enabled=True,
         **{'function_' + name: first_function[name] for name in ('binding_module_path', 'binding_address', 'binding_symbol')})
     controller = dict(pid=101, created_at=20, executable='E:/Synthetic/python.exe',
-                      cmdline=['E:/Synthetic/python.exe', 'tests/live_observer_randomized.py'], parent_pid=1)
+                      cmdline=['E:/Synthetic/python.exe', 'tools/research/live_observer_randomized.py'], parent_pid=1)
     server = dict(pid=102, created_at=30, executable='E:/Synthetic/python.exe', parent_pid=101, token='synthetic-token',
                   cmdline=['E:/Synthetic/python.exe', 'E:/Synthetic/wrapper.py', '--identity', 'identity.json', '--token', 'synthetic-token'])
     data['controller_identity'] = deepcopy(controller)
@@ -45,7 +45,7 @@ def sample(seed=987654321):
     data['pre_registration'] = dict(path='registration.json', sha256='2' * 64, document=dict(
         protocol=randomized.PROTOCOL, randomization_seed=seed, plan=deepcopy(plan), plugin_version='0.8.20',
         dll_sha256=legacy.EXPECTED_DLL_SHA256['0.8.20'], source_sha256=deepcopy(data['own_source_sha256']),
-        protocol_document=dict(path='docs/randomized-observer-protocol.md', sha256='3' * 64), registered_at=1000))
+        protocol_document=dict(path='docs/research/randomized-observer-protocol.md', sha256='3' * 64), registered_at=1000))
     for name in ('initial_scene', 'camera_reference', 'pre_release_scene', 'final_scene'):
         data[name].update(loaded_character_count=106, active_town_count=1)
     data['blocks'] = []
@@ -282,7 +282,7 @@ def test_v1_public_api_does_not_accept_randomized_protocol_or_seeded_order(basel
 def test_cli_hash_exclusive_output_and_hash_seed_determinism(tmp_path, baseline):
     source = tmp_path / 'capture.json'; source.write_text(json.dumps(baseline), encoding='utf-8')
     sha = hashlib.sha256(source.read_bytes()).hexdigest()
-    command = [sys.executable, str(ROOT / 'mcp-server/analyze_observer_randomized.py'), str(source), '--expected-sha256', sha]
+    command = [sys.executable, str(ROOT / 'tools/research/analyze_observer_randomized.py'), str(source), '--expected-sha256', sha]
     outputs = []
     for seed in ('0', '8675309'):
         output = tmp_path / ('analysis-' + seed + '.json')

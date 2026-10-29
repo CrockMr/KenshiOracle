@@ -16,7 +16,7 @@ class Runner:
         return value
 
 
-def session(tmp_path,runner):return Recording('KenshiProbeHeng_test','tests/cpu-sampling.wprp',tmp_path,runner)
+def session(tmp_path,runner):return Recording('KenshiProbeHeng_test','tools/research/cpu-sampling.wprp',tmp_path,runner)
 
 
 def test_success_stops_only_owned_instance(tmp_path):

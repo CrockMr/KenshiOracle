@@ -5,7 +5,7 @@ from analyze_json_benchmark import OPS,analyze,compare
 
 def capture():
     data=dict(completed=True,synthetic_only=True,compiler_flags='/O2 /EHsc /MD /W3; vcvarsall amd64; MSVC 2010',
-        binary_sha256='a'*64,source_sha256={'plugin/json.h':'b'*64,'tests/benchmark_json.cpp':'c'*64},runs=[])
+        binary_sha256='a'*64,source_sha256={'plugin/json.h':'b'*64,'tools/research/benchmark_json.cpp':'c'*64},runs=[])
     for index in range(3):
         rows=[]
         for fixture in range(3):
@@ -47,7 +47,7 @@ def test_corrupt_or_uncontrolled_timings_rejected(mutation):
 
 
 def test_fixture_and_benchmark_source_changes_are_not_a_comparison():
-    old=capture();new=deepcopy(old);new['source_sha256']['tests/benchmark_json.cpp']='e'*64
+    old=capture();new=deepcopy(old);new['source_sha256']['tools/research/benchmark_json.cpp']='e'*64
     with pytest.raises(ValueError):compare(old,new)
     new=deepcopy(old)
     for run in new['runs']:

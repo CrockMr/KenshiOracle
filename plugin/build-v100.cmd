@@ -1,15 +1,28 @@
 @echo off
 setlocal
-call "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\vcvarsall.bat" amd64
+call "%~dp0v100-environment.cmd"
 if errorlevel 1 exit /b %errorlevel%
-set "KENSHILIB_DIR=%~dp0..\references\KenshiLib_Examples_deps\KenshiLib"
-set "BOOST_INCLUDE_PATH=%~dp0..\references\KenshiLib_Examples_deps\boost_1_60_0"
-set "VCTargetsPath=C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\"
-set "PROBE_PYTHON=%~dp0..\.venv\Scripts\python.exe"
-if not exist "%PROBE_PYTHON%" set "PROBE_PYTHON=python"
-"%PROBE_PYTHON%" "%~dp0prepare_deps.py"
+if not defined KENSHI_MSBUILD (
+  echo Set KENSHI_MSBUILD to MSBuild.exe. See docs/first-run.md. 1>&2
+  exit /b 2
+)
+if not exist "%KENSHI_MSBUILD%" (
+  echo KENSHI_MSBUILD does not identify an existing file. 1>&2
+  exit /b 2
+)
+if not defined KENSHI_VC_TARGETS (
+  echo Set KENSHI_VC_TARGETS to the v100 Microsoft.Cpp targets directory. 1>&2
+  exit /b 2
+)
+if not defined KENSHILIB_DIR set "KENSHILIB_DIR=%~dp0..\references\KenshiLib_Examples_deps\KenshiLib"
+if not defined BOOST_INCLUDE_PATH set "BOOST_INCLUDE_PATH=%~dp0..\references\KenshiLib_Examples_deps\boost_1_60_0"
+if not defined KENSHI_PROBE_PYTHON (
+  set "KENSHI_PROBE_PYTHON=%~dp0..\.venv\Scripts\python.exe"
+  if not exist "%~dp0..\.venv\Scripts\python.exe" set "KENSHI_PROBE_PYTHON=python"
+)
+"%KENSHI_PROBE_PYTHON%" "%~dp0prepare_deps.py"
 if errorlevel 1 exit /b %errorlevel%
-"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" "%~dp0KenshiProbe.vcxproj" /p:Configuration=Release /p:Platform=x64 /verbosity:minimal /nologo
+"%KENSHI_MSBUILD%" "%~dp0KenshiProbe.vcxproj" /p:Configuration=Release /p:Platform=x64 /verbosity:minimal /nologo
 if errorlevel 1 exit /b %errorlevel%
-"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" "%~dp0KenshiProbeBootstrap.vcxproj" /p:Configuration=Release /p:Platform=x64 /verbosity:minimal /nologo
+"%KENSHI_MSBUILD%" "%~dp0KenshiProbeBootstrap.vcxproj" /p:Configuration=Release /p:Platform=x64 /verbosity:minimal /nologo
 exit /b %errorlevel%

@@ -1,4 +1,7 @@
 """Read-only OS process CPU interval, with executable and creation-time checks."""
+
+from research_support import enable_research
+enable_research()
 import time
 from pathlib import Path
 

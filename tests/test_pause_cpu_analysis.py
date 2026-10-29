@@ -104,7 +104,7 @@ def test_common_thread_equal_rates_have_deterministic_top_boundary():
 def test_common_thread_equal_rates_are_stable_across_hash_seeds():
     import json,os,subprocess,sys
     from pathlib import Path
-    module=str(Path(__file__).resolve().parents[1]/'mcp-server')
+    module=str(Path(__file__).resolve().parents[1]/'tools/research')
     code=('import json,sys;sys.path.insert(0,'+repr(module)+');from analyze_pause_cpu import common_threads;'
           'rows=[dict(label="running_x5",process_resources=dict(elapsed_seconds=20,thread_cpu=dict(threads=['
           'dict(tid=t,created_filetime=str(100+t),cpu_seconds=1) for t in range(20)])))];'

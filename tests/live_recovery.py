@@ -1,4 +1,10 @@
 """Read-only observer of an already-triggered watchdog recovery."""
+
+# Resolve shared oracle/research imports without a private PYTHONPATH.
+import sys
+from pathlib import Path
+for _folder in ('mcp-server', 'tools/research', 'tests'):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / _folder))
 import argparse
 import asyncio
 import json

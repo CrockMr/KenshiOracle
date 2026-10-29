@@ -16,6 +16,7 @@ __pycache__/
 /oracle-dumps/
 /plugin/build/
 /config.json
+/config.meitou.json
 
 # Local game content, saves and diagnostic captures.
 /save/

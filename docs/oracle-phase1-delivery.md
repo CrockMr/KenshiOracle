@@ -1,95 +1,113 @@
-# Livraison phase 1 — KenshiProbe 0.9.5
+<a id="livraison-phase-1--kenshiprobe-095"></a>
 
-La phase 1 est **livrée et validée le 29 octobre 2026** : oracle du **Kenshi original**, état commun 0.1, captures canoniques, identités sauvegardées prouvées, scénarios répétés par MCP et supervision. Elle conserve les fonctions 0.8.20 et l'arborescence existante. Le comparateur et l'adaptateur MeitouClient appartiennent à la phase 2. Aucune nouvelle campagne de performance n'a été réalisée.
+# Phase 1 delivery — KenshiProbe 0.9.5
 
-Les preuves ci-dessous sont locales, ignorées par Git ; elles ne distribuent aucune sauvegarde ni donnée du jeu. La [grille d'acceptation](phase1-acceptance.md) rapproche les huit critères du prompt des fichiers et validations.
+Phase 1 was **delivered and validated on 29 October 2026**: **original Kenshi** oracle, shared state0.1, canonical captures, proven saved identities, MCP-repeated scenarios, and supervision. It retains0.8.20 functionality and the existing directory structure. The comparator and MeitouClient adapter belong to phase 2. No new performance campaign was conducted.
 
-## Version et installation
+The evidence below is local and ignored by Git; it distributes no save or game data. The [acceptance checklist](phase1-acceptance.md) maps the prompt's eight criteria to files and validations.
 
-- DLL finale **0.9.5**, build **Visual C++ 2010 x64/v100** réussi : `plugin/build/Release/KenshiProbe.dll`, **523 264 octets**, SHA-256 `75739c8e64e17f3a78f482132c9be659aac7d55db7b3151b907b51944af5b580`.
-- PDB : **11 447 296 octets**, SHA-256 `51fa54bc8c0e96daa80b7dc3d6bb831d126a419d89f050899bbf0286af4aadfe`.
-- Environnement réel : Kenshi **1.0.65 Steam**, RE_Kenshi **0.3.5**, KenshiLib **0.5.0**. Déploiement vérifié : [deployment-095.json](../runtime/oracle-phase1/deployment-095.json).
-- Le schéma reste **0.1**, sans pointeurs, PID, tokens, empreintes de source ni types C++. La provenance des identités reste une métadonnée de protocole.
+<a id="version-et-installation"></a>
 
-La correction 0.9.5 porte sur la calibration/restitution caméra. Les algorithmes d'état, de canonicalisation et de résolution d'identités des captures finales 0.9.3 restent inchangés. Les preuves de ces deux DLL sont distinguées ci-dessous.
+## Version and installation
 
-## Vérifications hors jeu
+- Final DLL **0.9.5**, successful **Visual C++ 2010 x64/v100** build: `plugin/build/Release/KenshiProbe.dll`, **523 264 bytes**, SHA-256 `75739c8e64e17f3a78f482132c9be659aac7d55db7b3151b907b51944af5b580`.
+- PDB: **11 447 296 bytes**, SHA-256 `51fa54bc8c0e96daa80b7dc3d6bb831d126a419d89f050899bbf0286af4aadfe`.
+- Real environment: Kenshi **1.0.65 Steam**, RE_Kenshi **0.3.5**, KenshiLib **0.5.0**. Verified deployment: [deployment-095.json](../runtime/oracle-phase1/deployment-095.json).
+- Schema remains **0.1**, without pointers, PID, tokens, source fingerprints, or C++ types. Identity provenance remains protocol metadata.
 
-Commande finale depuis la racine, avec les dépendances de `requirements-dev.txt` :
+The0.9.5 fix concerns camera calibration/restoration. State, canonicalization, and identity-resolution algorithms from the final 0.9.3 captures remain unchanged. Evidence for these two DLLs is distinguished below.
+
+<a id="vérifications-hors-jeu"></a>
+
+## Offline verification
+
+Final command from the root, with dependencies from `requirements-dev.txt`:
 
 ```powershell
 & .\.venv\Scripts\python.exe -m pytest -q --basetemp=runtime/oracle-phase1/pytest-delivery-095-final-20261029 -p no:cacheprovider
 ```
 
-**1 602 tests réussis, 1 sauté, 96,51 secondes**. [Log intégral](../runtime/oracle-phase1/pytest-delivery-095-final.txt). Le seul saut concerne la création d'un vrai lien symbolique, refusée sans privilège Windows/Developer Mode ; le refus des attributs reparse simulés est testé. Les tests isolent les sockets et refusent le port réel 47800. Sous le bac à sable Windows, les sockets et le sous-processus stdio nécessitent l'exécution autorisée hors bac à sable ; le résultat n'est pas celui d'un test sans réseau local.
+**1 602 tests passed, 1 skipped, 96,51 seconds**. [Full log](../runtime/oracle-phase1/pytest-delivery-095-final.txt). The sole skip concerns creation of an actual symbolic link, denied without Windows privilege/Developer Mode; rejection of simulated reparse attributes is tested. Tests isolate sockets and reject live port47800. Under the Windows sandbox, sockets and the stdio subprocess require authorized execution outside the sandbox; this is not a result from testing without local networking.
 
-La suite couvre schémas, parseur/protocole défensif, MCP stdio, validation de chaque photo, faux jeu, scénarios, délais, erreurs et interruptions, verrou de récupération, watchdog, archives défaillantes et requêtes de redémarrage. Le faux jeu produit des octets identiques pour un même état. L'intégration d'origines renouvelle les HAND bruts à chaque chargement et conserve les mêmes photos canoniques sur trois répétitions.
+The suite covers schemas, defensive parser/protocol, MCP stdio, validation of every snapshot, fake game, scenarios, timeouts, errors and interruptions, recovery lock, watchdog, failed archives, and restart requests. The fake game produces identical bytes for the same state. Origin integration renews raw HANDs on every load and retains the same canonical snapshots across three repetitions.
 
-Tests natifs v100 : **74 vérifications caméra**, **107 origines** sur 0.9.5 ; les contrôles précédents inchangés comprennent **52 identifiants**, **38 format**, parseur JSON, propriété des commandes et statistiques. **59 états synthétiques C++/Python** ont des octets canoniques identiques. Les compilateurs modernes ne remplacent pas v100.
+Native v100 tests: **74 camera checks**, **107 origin checks** on0.9.5; previous unchanged checks include **52 identity**, **38 format**, JSON parser, command ownership, and statistics checks. **59 synthetic C++/Python states** have identical canonical bytes. Modern compilers do not replace v100.
 
-Les nouveaux tests de caméra couvrent des pivots de suivi de hauteurs 0, 9,8 et 17,125, un acteur déplacé sur trois axes après rechargement, une interpolation avant stabilisation, les tokens périmés, les dérives de réglages, le suivi et l'absence de suivi, le mode libre et la reprise après vérification en pause. Ces simulations ne remplacent pas les essais Kenshi ci-dessous.
+New camera tests cover follow pivots at heights 0, 9,8, and 17,125, an actor moved on three axes after reload, interpolation before stabilization, stale tokens, settings drift, follow/no follow, free mode, and resumption after paused verification. These simulations do not replace the Kenshi tests below.
 
-## Trois exemples réels, chacun répété trois fois
+<a id="trois-exemples-réels-chacun-répété-trois-fois"></a>
 
-La DLL finale **0.9.3**, SHA-256 `ebce02cd618675e88d1cadf7a239b964b3a4347825ecae5e63c7da87c2d52f91`, a exécuté les trois exemples via **MCP stdio**, avec rechargement avant chaque répétition : **9 répétitions, 27 photos**. [Lot complet](../runtime/oracle-phase1/delivery-live-batch-093.json). Les trois cas sont terminés, leur restitution est vérifiée ; les quatre sauvegardes protégées et les octets de `settings.cfg` sont inchangés.
+## Three real examples, each repeated three times
 
-| Exemple et rapport | Champs stables / variables au premier checkpoint | Champs stables / variables au dernier checkpoint | Personnages au dernier checkpoint, répétitions 1 / 2 / 3 |
+The final **0.9.3** DLL, SHA-256 `ebce02cd618675e88d1cadf7a239b964b3a4347825ecae5e63c7da87c2d52f91`, ran all three examples through **MCP stdio**, reloading before every repetition: **9 repetitions, 27 snapshots**. [Complete batch](../runtime/oracle-phase1/delivery-live-batch-093.json). All three cases completed, with restoration verified; the four protected saves and `settings.cfg` bytes remain unchanged.
+
+| Example and report | Stable / variable fields at first checkpoint | Stable / variable fields at last checkpoint | Characters at last checkpoint, repetitions1 /2 /3 |
 | --- | --- | --- | --- |
-| [Trajet](../runs/trajet-escouade/20261029T010924.945400Z-d9022f41/report.md) | 43 050 / 170 | 45 105 / 2 006 | 190 / 180 / 180 |
-| [Petite bataille](../runs/petite-bataille/20261029T011252.350028Z-e79d6134/report.md) | 39 771 / 16 373 | 39 776 / 32 435 | 253 / 323 / 284 |
-| [Ville calme](../runs/ville-calme/20261029T011719.115118Z-408fb1ae/report.md) | 42 042 / 3 165 | 42 253 / 5 636 | 130 / 132 / 140 |
+| [Route](../runs/trajet-escouade/20261029T010924.945400Z-d9022f41/report.md) | 43 050 / 170 | 45 105 / 2 006 | 190 / 180 / 180 |
+| [Small battle](../runs/petite-bataille/20261029T011252.350028Z-e79d6134/report.md) | 39 771 / 16 373 | 39 776 / 32 435 | 253 / 323 / 284 |
+| [Quiet city](../runs/ville-calme/20261029T011719.115118Z-408fb1ae/report.md) | 42 042 / 3 165 | 42 253 / 5 636 | 130 / 132 / 140 |
 
-Un champ variable peut changer de valeur ou être absent d'une répétition. Les rapports conservent ces observations et les dépassements temporels effectifs : maxima **0,320435**, **0,320893** et **0,310593 seconde calendaire** respectivement. Ce sont des comparaisons entre répétitions de Kenshi, pas entre moteurs. Populations, positions, santé et tâches peuvent diverger malgré un rechargement identique.
+A variable field may change value or be absent from a repetition. Reports retain these observations and actual temporal overshoots: maxima **0,320435**, **0,320893**, and **0,310593 calendar second**, respectively. These compare Kenshi repetitions, not engines. Population, positions, health, and tasks can diverge despite identical reloading.
 
-L'[audit indépendant des 27 fichiers](../runtime/oracle-phase1/delivery-evidence-audit-093.json) valide schéma, comptes, hashes, provenance et identité des octets **natifs = copie MCP = canonicalisation Python**. Un second audit de livraison les a revérifiés. Le premier checkpoint du trajet contient **106 personnages, 35 escouades, 114 factions, 12 882 relations**.
+The [independent audit of 27 files](../runtime/oracle-phase1/delivery-evidence-audit-093.json) validates schema, counts, hashes, provenance, and byte identity **native = MCP copy = Python canonicalization**. A second delivery audit rechecked them. The route's first checkpoint contains **106 characters,35 squads,114 factions,12 882 relations**.
 
-Ando, Hisako et Ishida ont un état individuel dans la sauvegarde ; leurs HAND courants changent de conteneur au chargement. La résolution SDK complète permet de publier leur HAND sauvegardé dans **les neuf photos du trajet**. Ni nom, ni adresse, ni simple paire I/S ne sert de clé. En ville, **80** identités de personnages sauvegardés sont communes initialement et **92** à 600 secondes. Les membres variables des trois escouades sauvegardées sans fichier de personnages étayent une génération à l'activation pour cette cohorte. Une origine non résolue ne prouve pas à elle seule une génération : son HAND courant est conservé. [Audit détaillé](npc-identities-phase1.md).
+Ando, Hisako, and Ishida have individual state in the save; their current HANDs change container on load. Full SDK resolution allows publishing their saved HANDs in **all nine route snapshots**. Neither name, address, nor a simple I/S pair is used as a key. In the city, **80** saved-character identities are shared initially and **92** at 600 seconds. Variable membership of the three saved squads without character files supports activation-time generation for that cohort. An unresolved origin alone does not prove generation: its current HAND is retained. [Detailed audit](npc-identities-phase1.md).
 
-## Validation réelle de la restitution 0.9.5
+<a id="validation-réelle-de-la-restitution-095"></a>
 
-Le [test de récupération 0.9.5](../runtime/oracle-phase1/recovery-camera-095.json) est **réussi**. Il vérifie d'abord un décalage volontaire `[2,1,-3]`, observé comme décalage supplémentaire `[2,1,-3]`, puis recharge et restitue exactement les contrôles du journal original. Les contrôles enregistrés restent inchangés et `restore_required` passe à faux uniquement après vérification.
+## Real validation of 0.9.5 restoration
 
-La référence retrouvée inclut centre `[-50978.796875,1541.7958984375,2932.4765625]`, position `[-51489.6640625,2067.15087890625,2005.222900390625]`, zoom signé `-1181.855224609375`, quaternion, suivi canonique d'Imai, mode stratégique, défilement actif, pause et sélection préparée 1.
+The [0.9.5 recovery test](../runtime/oracle-phase1/recovery-camera-095.json) **passes**. It first verifies a deliberate `[2,1,-3]` offset, observed as an additional `[2,1,-3]` offset, then reloads and restores exactly the original journal's controls. Recorded controls remain unchanged, and `restore_required` becomes false only after verification.
 
-Cette réparation répond à un échec réel après relance : la hauteur de l'acteur avait changé de **0,936035** et une pose stable restait incorrecte. Le candidat 0.9.4 avait ensuite traité à tort le décalage supplémentaire comme la distance complète centre−acteur ; sa restitution a échoué. [Preuve de cet échec](../runtime/oracle-phase1/recovery-camera-094.json). Ces échecs restent conservés ; la référence et les tolérances n'ont pas été relâchées.
+The recovered reference includes center `[-50978.796875,1541.7958984375,2932.4765625]`, position `[-51489.6640625,2067.15087890625,2005.222900390625]`, signed zoom `-1181.855224609375`, quaternion, canonical Imai follow target, strategic mode, enabled scrolling, pause, and prepared selection1.
 
-Le protocole 0.9.5 prépare et observe une caméra stable sous verrou, puis applique `offset actuel + centre demandé − centre observé`. Aucun biais de hauteur constant ni déplacement d'acteur. Après libération, une seconde fenêtre compare à la référence fixe : **trois frames distinctes sur au moins 0,5 seconde**, délai **10 secondes** ; tolérances centre/position/zoom **0,05**, quaternion **0,0001**, vitesse sélectionnée **0,000001**. [Contrat détaillé](protocol.md).
+This repair addresses a real failure after restart: actor height had changed by **0,936035**, and a stable pose remained incorrect. Candidate0.9.4 then incorrectly treated the additional offset as the entire center−actor distance; its restoration failed. [Evidence of that failure](../runtime/oracle-phase1/recovery-camera-094.json). These failures remain retained; reference and tolerances were not relaxed.
 
-## Rejeu ville sur la DLL livrée 0.9.5
+Protocol 0.9.5 prepares and observes a stable locked camera, then applies `current offset + requested center − observed center`. No constant height bias or actor movement. After release, a second window compares against the fixed reference: **three distinct frames over at least 0,5 second**, timeout **10 seconds**; center/position/zoom tolerances **0,05**, quaternion **0,0001**, selected speed **0,000001**. [Detailed contract](protocol.md).
 
-La [série finale MCP](../runtime/oracle-phase1/delivery-ville-calme-095.json) est **terminée** : **trois répétitions, neuf captures**, chacune valide contre le schéma et identique octet pour octet au fichier natif et à sa canonicalisation Python. Un audit indépendant a revérifié ces neuf fichiers, leurs hashes et la provenance constante `ville-calme`, fingerprint `sha256:1a7624e7e712526e03b37a3ee8d78bcd5499a0780b8eac5a1e7b0ddaf5c678c5`. Les **32 outils MCP** sont présents. [Rapport stable/variable](../runs/ville-calme/20261029T021907.110703Z-839230f0/report.md).
+<a id="rejeu-ville-sur-la-dll-livrée-095"></a>
 
-| Checkpoint | Champs stables | Champs variables | Personnages, répétitions 1 / 2 / 3 |
+## City replay on the delivered0.9.5 DLL
+
+The [final MCP series](../runtime/oracle-phase1/delivery-ville-calme-095.json) is **complete**: **three repetitions, nine captures**, each schema-valid and byte-identical to the native file and its Python canonicalization. An independent audit rechecked all nine files, their hashes, and constant `ville-calme` provenance, fingerprint `sha256:1a7624e7e712526e03b37a3ee8d78bcd5499a0780b8eac5a1e7b0ddaf5c678c5`. All **32 MCP tools** are present. [Stable/variable report](../runs/ville-calme/20261029T021907.110703Z-839230f0/report.md).
+
+| Checkpoint | Stable fields | Variable fields | Characters, repetitions1 /2 /3 |
 | --- | --- | --- | --- |
 | Initial | 42 029 | 3 748 | 111 / 106 / 118 |
-| Deux minutes | 41 792 | 4 294 | 111 / 106 / 118 |
-| Dix minutes | 42 243 | 6 124 | 138 / 137 / 139 |
+| Two minutes | 41 792 | 4 294 | 111 / 106 / 118 |
+| Ten minutes | 42 243 | 6 124 | 138 / 137 / 139 |
 
-Le dépassement temporel maximal est **0,121766 seconde calendaire**. La restitution en deux phases est vérifiée, avec **8 observations de base et 8 après commit**. Les quatre sauvegardes et les réglages sont inchangés. Les séries nommées dans ce bilan représentent **36 captures et 12 répétitions réussies**, dont neuf captures/trois répétitions directement sur la DLL livrée.
+Maximum temporal overshoot is **0,121766 calendar second**. Two-phase restoration is verified, with **8 baseline observations and 8 after commit**. All four saves and settings are unchanged. The series named in this report represent **36 captures and 12 successful repetitions**, including nine captures/three repetitions directly on the delivered DLL.
 
-## Watchdog et état final
+<a id="watchdog-et-état-final"></a>
 
-Le [test réel du watchdog 0.9.5](../runtime/oracle-phase1/watchdog-runtime-095.json) est **réussi**. Il vérifie chemin, PID, date de création et ligne de commande du processus possédé avant sa sortie contrôlée : **45812 → 16548**. La supervision archive le journal dans `crashes/20261029T022312.138729Z`, motif `process_exit`, aucune erreur d'archive ; SHA-256 du journal archivé `076366d35c5a3edbc28869a7e0120332da93b06cc63ec83e04248d598705f9fc`. Le nouveau jeu démarre avec une autre instance ; la récupération recharge `ville-calme`, prépare les origines et restitue la référence caméra/temps vérifiée.
+## Watchdog and final state
 
-L'[audit final en lecture seule](../runtime/oracle-phase1/final-audit-095.json) confirme : DLL construite et installée au hash annoncé, écoute **127.0.0.1:47800**, watchdog actif, cinq hooks historiques et trois systèmes conservés, monde prêt **en pause**, sélection préparée **1**, suivi d'Imai et pose conformes, verrou caméra libéré, aucun token en attente et `restore_required:false`. Les **quatre sauvegardes protégées** et le SHA-256 de `settings.cfg` correspondent au manifeste de départ. Aucun exécutable, donnée ou sauvegarde du jeu ne figure dans les fichiers publiables par Git.
+The [real0.9.5 watchdog test](../runtime/oracle-phase1/watchdog-runtime-095.json) **passes**. It verifies path, PID, creation time, and command line of the owned process before its controlled exit: **45812 → 16548**. Supervision archives the log under `crashes/20261029T022312.138729Z`, reason `process_exit`, without archive error; archived-log SHA-256 `076366d35c5a3edbc28869a7e0120332da93b06cc63ec83e04248d598705f9fc`. The new game starts with another instance; recovery reloads `ville-calme`, prepares origins, and restores the verified camera/time reference.
 
-Les échecs antérieurs, dont [le test watchdog 0.9.3](../runtime/oracle-phase1/watchdog-runtime-093.json) ayant réussi archive/relance puis échoué en restitution, restent archivés. Leur statut n'est pas réécrit. Le présent lot s'arrête après ce contrôle ; aucune phase 2 ni campagne supplémentaire n'est lancée.
+The [final read-only audit](../runtime/oracle-phase1/final-audit-095.json) confirms: built and installed DLL at the stated hash, listener **127.0.0.1:47800**, active watchdog, five historical hooks and three systems retained, world ready **in pause**, prepared selection **1**, compliant Imai follow target and pose, camera lock released, no pending token, and `restore_required:false`. The **four protected saves** and `settings.cfg` SHA-256 match the starting manifest. No game executable, data, or save appears among Git-publishable files.
 
-## Non testé ou non démontré universellement
+Earlier failures, including the [0.9.3 watchdog test](../runtime/oracle-phase1/watchdog-runtime-093.json) that archived/restarted successfully but then failed restoration, remain archived. Their status is not rewritten. This batch stops after this check; no phase 2 or additional campaign starts.
 
-- Adaptateur MeitouClient et comparateur entre moteurs : hors phase 1.
-- Exhaustivité de tous les objets en mémoire, état des régions déchargées et atomicité face à tous les workers internes.
-- Déterminisme du moteur, stabilité de toute identité à travers toutes sauvegardes, mods et redémarrages. Les références sans liaison prouvée restent courantes ; le remappage réel d'une escouade avec alias différent n'est pas démontré dans ces scènes.
-- Tous les offsets/modes de caméra dans toutes régions ; suivi d'objets autres que personnages, entrées manuelles concurrentes et immobilité après la fenêtre de vérification.
-- Chargements déclenchés manuellement dans l'interface pendant un scénario ; restauration d'une partie non sauvegardée ou d'une sauvegarde différente de celle explicitement choisie.
-- Fabrication d'un vrai minidump de crash moteur : la sortie contrôlée prouve l'archive du journal et la relance ; les dumps facultatifs et pannes de copie sont couverts par les tests synthétiques. Le seuil de heartbeat figé est testé hors jeu et possède des preuves historiques séparées ; aucun nouveau gel réel n'est provoqué pour ce lot.
-- Installation sur une autre machine, une autre version du jeu/SDK et configuration Debug. Un test de lien symbolique réel reste sauté pour privilège Windows.
+<a id="non-testé-ou-non-démontré-universellement"></a>
 
-## TODO du code de production
+## Not tested or not universally demonstrated
 
-Deux marqueurs subsistent, recensés indépendamment dans `plugin/`, `mcp-server/` et `launcher/` :
+- MeitouClient adapter and cross-engine comparator: outside phase 1.
+- Exhaustiveness of all in-memory objects, unloaded-region state, and atomicity against all internal workers.
+- Engine determinism, stability of every identity across all saves, mods, and restarts. References without proven bindings remain current; real remapping of a squad with a different alias is not demonstrated in these scenes.
+- All camera offsets/modes in all regions; following non-character objects, concurrent manual input, and immobility after the verification window.
+- Loads triggered manually through the UI during a scenario; restoration of an unsaved game or a save other than the explicitly chosen one.
+- Producing an actual engine-crash minidump: controlled exit proves log archiving and restart; optional dumps and copy failures are covered by synthetic tests. The frozen-heartbeat threshold is tested offline and has separate historical evidence; no new real freeze is induced for this batch.
+- Installation on another machine, another game/SDK version, and Debug configuration. One actual symlink test remains skipped for Windows privilege.
 
-1. **`ORACLE-ORDER-ENUM`**, `plugin/OracleState.h` : ajouter un nom symbolique vérifié si un SDK futur expose une tâche absente de la table auditée. En attendant, `order:null` ; aucun type inventé.
-2. **`ORACLE-CAMERA-NONCHARACTER`**, même fichier : le suivi restaurable concerne les personnages chargés. Un autre type de cible exige un recensement public vérifié et reste refusé explicitement.
+<a id="todo-du-code-de-production"></a>
 
-L'ancien TODO de canonicalisation des identités est implémenté. Le [tableau champ par champ](state-coverage.md) distingue **Vérifié**, **Observé** et **Inconnu** ; les [questions ouvertes](open-questions.md) conservent les limites et les découvertes. L'[installation](first-run.md) permet de reproduire le premier dump et les scénarios avec ses propres sauvegardes locales.
+## Production-code TODOs
+
+Two markers remain, independently inventoried in `plugin/`, `mcp-server/`, and `launcher/`:
+
+1. **`ORACLE-ORDER-ENUM`**, `plugin/OracleState.h`: add a verified symbolic name if a future SDK exposes a task missing from the audited table. Until then, `order:null`; no invented type.
+2. **`ORACLE-CAMERA-NONCHARACTER`**, same file: restorable follow targets are loaded characters. Any other target type requires a verified public inventory and remains explicitly rejected.
+
+The former identity-canonicalization TODO is implemented. The [field-by-field table](state-coverage.md) distinguishes **Verified**, **Observed**, and **Unknown**; [open questions](research/open-questions.md) retain limitations and discoveries. The [installation guide](first-run.md) allows reproducing the first dump and scenarios with one's own local saves.

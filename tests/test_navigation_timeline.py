@@ -122,7 +122,7 @@ def test_cli_is_hash_bound_refuses_overwrite_and_replays_across_hash_seeds(tmp_p
     import hashlib,os,subprocess,sys
     from pathlib import Path
     source=tmp_path/'capture.json';source.write_text(json.dumps(sample()),encoding='utf-8')
-    sha=hashlib.sha256(source.read_bytes()).hexdigest();script=Path(__file__).resolve().parents[1]/'mcp-server/analyze_navigation_timeline.py'
+    sha=hashlib.sha256(source.read_bytes()).hexdigest();script=Path(__file__).resolve().parents[1]/'tools/research/analyze_navigation_timeline.py'
     reports=[]
     for seed in ('0','8675309'):
         out=tmp_path/('report-'+seed+'.json')

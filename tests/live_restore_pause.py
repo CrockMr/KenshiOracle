@@ -3,6 +3,12 @@
 No save writes, admin privileges or UI. Start before a deployment launch with
 --previous-pid to retain the first-ready clock as an independent reference.
 """
+
+# Resolve shared oracle/research imports without a private PYTHONPATH.
+import sys
+from pathlib import Path
+for _folder in ('mcp-server', 'tools/research', 'tests'):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / _folder))
 import argparse
 import asyncio
 from datetime import datetime, timezone

@@ -1,4 +1,4 @@
-KenshiProbe 0.9.5 - Windows x64 / Visual C++ 2010 (v100)
+KenshiProbe 0.10.0 - Windows x64 / Visual C++ 2010 (v100)
 
 Validated with Kenshi 1.0.65 Steam, RE_Kenshi 0.3.5 and KenshiLib 0.5.0.
 Install RE_Kenshi and its matching KenshiLib from their official distribution
@@ -12,10 +12,17 @@ first. This archive does not contain the game, SDK libraries or saved games.
    mods/KenshiProbe/KenshiProbeBootstrap.dll
 3. Enable KenshiProbe in the launcher's Mods tab. The included .mod is newly
    generated metadata with zero records; it contains no original game data.
-4. Start through RE_Kenshi. Confirm plugin_version 0.9.5 with ping and the
+4. Start through RE_Kenshi. Confirm plugin_version 0.10.0 with ping and the
    [KenshiOracle] startup line in RE_Kenshi's log.
 5. Follow docs/first-run.md in the corresponding source for Python 3.11+,
    configuration, the watchdog, snapshots and scenario commands.
+
+Phase 2 supports shared-state 0.2 as well as 0.1. The original reference
+controller requires a cold game process and temporarily enforces the six
+documented RE_Kenshi settings, including FixRNG=false and
+UseCustomGameSpeeds=false. Follow docs/original-reference.md; it verifies the
+effective profile and restores player settings. Do not start this reference
+workflow from an already-running player game.
 
 The TCP listener binds to 127.0.0.1:47800 by default. KENSHI_PROBE_PORT changes
 the port; use the same value in the Python configuration. No authentication
@@ -32,4 +39,6 @@ Restore your backup if you had an earlier installation. Do not copy test
 configurations, saves or auto_launch.enabled from another installation.
 
 GPLv3: see LICENSE. Source and exact build information accompany the release.
-The separate symbols archive is optional and is not installed as a mod.
+Raw PDB symbols are not published: a neutral PDB reference inside a DLL does
+not sanitize source-machine paths stored inside a PDB. Keep local symbols
+private. SHA256SUMS covers the public archive, its DLLs and companion records.

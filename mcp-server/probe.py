@@ -30,7 +30,8 @@ def config(path='config.json'):
     p = Path(path).resolve()
     data = json.loads(p.read_text(encoding='utf-8'))
     for key in ('runtime', 'crashes', 'log', 'dump_directory', 'executable', 'working_directory',
-                'oracle_output', 'runs', 'save_root'):
+                'oracle_output', 'runs', 'save_root', 'rekenshi_config', 'rekenshi_module',
+                'reference_controls', 'meitou_config', 'game_install'):
         if key in data and data[key] is not None:
             data[key] = str((p.parent / data[key]).resolve())
     data.setdefault('runs', str(p.parent / 'runs'))

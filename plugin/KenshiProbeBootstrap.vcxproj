@@ -8,7 +8,7 @@
   <PropertyGroup Label="Configuration"><ConfigurationType>DynamicLibrary</ConfigurationType><PlatformToolset>v100</PlatformToolset><UseDebugLibraries>false</UseDebugLibraries><CharacterSet>Unicode</CharacterSet><UseOfMfc>Dynamic</UseOfMfc><WholeProgramOptimization>true</WholeProgramOptimization></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup><OutDir>$(ProjectDir)build\Release\</OutDir><IntDir>$(ProjectDir)build\bootstrap-obj\</IntDir><IncludePath>$(KENSHILIB_DIR)/Include;$(BOOST_INCLUDE_PATH);$(IncludePath)</IncludePath><LibraryPath>$(KENSHILIB_DIR)/Libraries;$(BOOST_INCLUDE_PATH)/stage/lib;$(LibraryPath)</LibraryPath></PropertyGroup>
-  <ItemDefinitionGroup><ClCompile><WarningLevel>Level3</WarningLevel><PreprocessorDefinitions>NDEBUG;_AFXDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary><ExceptionHandling>Sync</ExceptionHandling></ClCompile><Link><AdditionalDependencies>KenshiLib.lib;%(AdditionalDependencies)</AdditionalDependencies></Link></ItemDefinitionGroup>
+  <ItemDefinitionGroup><ClCompile><WarningLevel>Level3</WarningLevel><PreprocessorDefinitions>NDEBUG;_AFXDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary><ExceptionHandling>Sync</ExceptionHandling></ClCompile><Link><AdditionalDependencies>KenshiLib.lib;%(AdditionalDependencies)</AdditionalDependencies><AdditionalOptions>/PDBALTPATH:KenshiProbeBootstrap.pdb %(AdditionalOptions)</AdditionalOptions></Link></ItemDefinitionGroup>
   <ItemGroup><ClCompile Include="Bootstrap.cpp" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

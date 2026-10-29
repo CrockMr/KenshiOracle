@@ -1,4 +1,10 @@
 """Read-only validation of the new SDK clock in a paused disposable world."""
+
+# Resolve shared oracle/research imports without a private PYTHONPATH.
+import sys
+from pathlib import Path
+for _folder in ('mcp-server', 'tools/research', 'tests'):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / _folder))
 import asyncio
 import json
 from pathlib import Path

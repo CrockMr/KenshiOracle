@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1",
   "name": "ville-calme",
-  "description": "Observation sans ordre dans la sauvegarde locale ville-calme fournie par l'utilisateur ; aucun fichier du jeu n'est inclus.",
+  "description": "Observe the user-provided local ville-calme save without issuing orders; no game files are included.",
   "save": "ville-calme",
   "speed": 1,
   "repeat": 3,

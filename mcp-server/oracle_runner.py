@@ -37,6 +37,14 @@ def positive_timeout(value, name):
     return float(value)
 
 
+def seed_value(value):
+    if type(value) is str and len(value) <= 20 and value.isascii() and value.isdecimal():
+        value = int(value)
+    if type(value) is not int or not 0 <= value < 2**64:
+        raise ScenarioError('Meitou seed must be a known unsigned 64-bit integer')
+    return value
+
+
 def save_name(name):
     if (not isinstance(name, str) or not name or len(name.encode('utf-8')) > 128
             or name in ('.', '..') or any(c in name for c in '/\\:\r\n\0')):
@@ -89,6 +97,14 @@ class OracleSession:
         self.client = client or Client(cfg.get('port', 47800), cfg.get('timeout', 10))
         self.operation_id = None
         self.instance = None
+        self.state_schema = None
+        self.schema_parameter = False
+        self.requested_schema = cfg.get('state_schema')
+        self.requested_target = cfg.get('target')
+        if self.requested_target is not None and self.requested_target not in ('original', 'meitou'):
+            raise ValueError('target must be original or meitou')
+        if self.requested_schema is not None and self.requested_schema not in ('0.1', '0.2'):
+            raise ValueError('state_schema must be 0.1 or 0.2')
         self.deadline = None
         self.identity_source = None
 
@@ -108,6 +124,8 @@ class OracleSession:
 
     async def ping(self):
         result = await self.call('ping')
+        if self.requested_target is not None and result.get('target', 'original') != self.requested_target:
+            raise ScenarioError('Probe target differs from the configured target')
         identity = result.get('instance_id')
         if identity is None:
             raise ScenarioError('Probe instance identity is unavailable; update the probe')
@@ -117,9 +135,20 @@ class OracleSession:
             # Never send an operation ID from the old process to the new one.
             self.operation_id = None
             raise ScenarioError('Game restarted during the scenario; this execution is invalid')
+        supported = result.get('supported_schema_versions', [result.get('schema_version')])
+        if (type(supported) is not list or not supported
+                or any(type(value) is not str for value in supported)):
+            raise ScenarioError('Probe did not advertise valid supported state schemas')
+        selected = self.requested_schema or next((v for v in ('0.2', '0.1') if v in supported), None)
+        if selected is None or selected not in supported:
+            raise ScenarioError('Probe does not support the requested state schema')
+        if self.state_schema is not None and self.state_schema != selected:
+            raise ScenarioError('Probe changed state schema during the scenario')
+        self.state_schema = selected
+        self.schema_parameter = '0.2' in supported
         return result
 
-    async def load(self, name, lock_edge=True):
+    async def load(self, name, lock_edge=True, seed=None):
         save_name(name)
         deadline = time.monotonic() + positive_timeout(self.cfg.get('load_timeout', 120), 'load_timeout')
 
@@ -135,9 +164,14 @@ class OracleSession:
                 raise ScenarioError('load_timeout or scenario_timeout expired during ' + label) from exc
 
         before = await self.ping()
+        meitou = before.get('target') == 'meitou'
+        if seed is not None:
+            seed = seed_value(seed)
+            if not meitou:
+                raise ScenarioError('A repetition seed can only be set on MeitouClient')
         manifest = None
         source_root = None
-        if before.get('saved_origins_required') is True:
+        if before.get('saved_origins_required') is True or meitou:
             native_root = before.get('save_root')
             if type(native_root) is not str or not native_root:
                 raise ScenarioError('Probe has no authoritative save_root for saved identities')
@@ -159,7 +193,10 @@ class OracleSession:
                 raise ScenarioError('Saved identity source '+exc.code+': '+str(exc)) from exc
             await self.ping()  # Never submit a mutation to a replacement process.
         self.identity_source = None
-        accepted = await bounded(lambda: self.call('load_save', name=name, lock_edge=lock_edge, pause_on_ready=True),
+        load_params = dict(name=name, lock_edge=lock_edge, pause_on_ready=True)
+        if seed is not None:
+            load_params['seed'] = str(seed)
+        accepted = await bounded(lambda: self.call('load_save', **load_params),
                                  'requesting save load')
         if accepted.get('accepted') is not True or accepted.get('pause_on_ready') is not True:
             raise ScenarioError('Probe did not accept a protected, paused save load')
@@ -168,6 +205,9 @@ class OracleSession:
             if (state.get('world_ready') is True and state.get('paused') is True
                     and not state.get('load_pause_pending', False)
                     and state.get('frame', 0) > before.get('frame', 0)):
+                if meitou and seed is not None and (seed_value(state.get('seed')) != seed
+                        or state.get('seed_applied_before_load') is not True):
+                    raise ScenarioError('Meitou did not verify the requested seed before save loading')
                 if manifest is None:
                     return dict(accepted=accepted, ready=state)
                 if state.get('save_root') != before.get('save_root'):
@@ -179,6 +219,9 @@ class OracleSession:
                     raise ScenarioError('Saved identity source '+exc.code+': '+str(exc)) from exc
                 ids = [row['saved_id'] for kind in ('characters', 'squads') for row in manifest[kind]]
                 fingerprint = validate_origin_fingerprint(manifest['fingerprint'])
+                if meitou:
+                    return dict(accepted=accepted, ready=state, source_manifest=dict(
+                        prepared=True, save_name=name, source_fingerprint=fingerprint, count=len(ids)))
                 if len(ids) > 100000:
                     raise ScenarioError('Saved identity manifest exceeds the native safety limit')
                 await self.ping()
@@ -320,8 +363,16 @@ class OracleSession:
         return result
 
     async def dump(self, destination=None):
+        if self.state_schema is None and (self.requested_schema is not None or self.requested_target is not None):
+            await self.ping()
         filename = 'state-' + uuid.uuid4().hex + '.json'
-        result = await self.call('dump_state', filename=filename)
+        params = dict(filename=filename)
+        selected = self.state_schema or self.requested_schema
+        # Old phase 1 probes reject unknown parameters. Negotiate explicitly
+        # with capable producers; their old default remains usable by clients.
+        if selected is not None and self.schema_parameter:
+            params['schema_version'] = selected
+        result = await self.call('dump_state', **params)
         if not isinstance(result, dict) or not isinstance(result.get('path'), str):
             raise ScenarioError('dump_state did not return a file path')
         source = Path(result['path']).resolve()
@@ -333,6 +384,8 @@ class OracleSession:
         if source.name != filename or source.stat().st_size > 64 * 1024 * 1024:
             raise ScenarioError('Probe snapshot has an unexpected name or exceeds 64 MiB')
         state = load_state(source)
+        if selected is not None and state['schema_version'] != selected:
+            raise ScenarioError('Snapshot state schema differs from the negotiated version')
         payload = canonical_bytes(state)
         identity_source = result.get('identity_source')
         if self.identity_source is not None:
@@ -639,7 +692,20 @@ def markdown_report(report):
     return '\n'.join(rows) + '\n'
 
 
-async def execute_scenario(scenario, cfg, repeat=None, client=None):
+async def verify_reference_profile(session, reference_profile):
+    """Certify live settings through the profile's independent GUI/CRT validator."""
+    await session.ping()
+    evidence = await session.call('get_rekenshi_settings')
+    if (type(evidence) is not dict or evidence.get('instance_id') != session.instance):
+        raise ScenarioError('Reference settings evidence belongs to a different probe instance')
+    provenance = reference_profile.verify_effective(evidence)
+    if (type(provenance) is not dict or provenance.get('state') != 'verified'
+            or type(provenance.get('effective')) is not dict):
+        raise ScenarioError('Original reference profile did not verify independent runtime evidence')
+    return provenance
+
+
+async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_profile=None):
     """Execute after preloading this scenario's save and establishing paused controls.
 
     The captured controls must belong to that same save; the probe cannot infer
@@ -660,25 +726,41 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None):
                       status='running', executions=[], output=str(root.resolve()))
         write_json(root / 'scenario.json', scenario)
         original = None
+        original_seed = None
         armed = False
         caught = None
         try:
             ping = await session.ping()
+            if reference_profile is None and ping.get('rekenshi_settings_available') is True:
+                raise ScenarioError('Use the original reference launcher: this probe requires a verified RE_Kenshi profile')
             if ping.get('world_ready') is not True:
                 raise ScenarioError('Load a game first so its camera/time controls can be restored')
-            if ping.get('schema_version') != '0.1':
-                raise ScenarioError('Probe does not support state schema 0.1')
+            if session.state_schema not in ('0.1', '0.2'):
+                raise ScenarioError('Probe does not support a common state schema')
+            report['state_schema'] = session.state_schema
+            report['target'] = ping.get('target', 'original')
+            if report['target'] == 'meitou':
+                original_seed = seed_value(ping.get('seed'))
+                if ping.get('seed_applied_before_load') is not True:
+                    raise ScenarioError('Meitou initial seed was not applied before loading the prepared save')
+                base_seed = seed_value(cfg.get('base_seed', 0))
+                if base_seed + repetitions > 2**64:
+                    raise ScenarioError('Meitou repetition seeds exceed the unsigned 64-bit range')
             if ping.get('saved_origins_required') is True:
                 prepared = ping.get('saved_origins')
                 if (ping.get('saved_origins_prepared') is not True or not isinstance(prepared, dict)
                         or prepared.get('prepared') is not True or prepared.get('save_name') != scenario['save']):
                     raise ScenarioError('Load this scenario save through load_save(wait=True) before run_scenario')
                 report['source_fingerprint'] = validate_origin_fingerprint(prepared.get('source_fingerprint'))
+            if reference_profile is not None:
+                report['reference_profile'] = await verify_reference_profile(session, reference_profile)
             report['control_capture_observations'] = []
             original = await wait_stable_controls(
                 session, observations=report['control_capture_observations'])
             guard = dict(restore_required=True, save=scenario['save'], controls=original,
                          instance_id=session.instance, run=str(root.resolve()))
+            if original_seed is not None:
+                guard.update(target='meitou', original_seed=str(original_seed))
             write_json(guard_path, guard)
             armed = True
             deadline = time.monotonic() + positive_timeout(cfg.get('scenario_timeout', 1800), 'scenario_timeout')
@@ -690,10 +772,19 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None):
                 folder.mkdir()
                 if time.monotonic() >= deadline:
                     raise ScenarioError('Scenario exceeded scenario_timeout')
+                if reference_profile is not None:
+                    execution['reference_profile'] = await verify_reference_profile(session, reference_profile)
                 await session.call('pause', paused=True)
                 await session.call('set_camera_free', enabled=original['free_camera'])
-                execution['load'] = await session.load(scenario['save'], lock_edge=True)
-                saved_origins = execution['load'].get('saved_origins')
+                execution_seed = base_seed + index - 1 if original_seed is not None else None
+                if execution_seed is None:
+                    execution['load'] = await session.load(scenario['save'], lock_edge=True)
+                else:
+                    execution['load'] = await session.load(scenario['save'], lock_edge=True, seed=execution_seed)
+                    execution['provenance'] = dict(target='meitou', seed=str(execution_seed),
+                        seed_source=execution['load']['ready'].get('seed_source'), seed_applied_before_load=True)
+                saved_origins = (execution['load'].get('saved_origins')
+                                 or execution['load'].get('source_manifest'))
                 if saved_origins is not None:
                     fingerprint = saved_origins['source_fingerprint']
                     if report.get('source_fingerprint') is not None and fingerprint != report['source_fingerprint']:
@@ -736,12 +827,18 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None):
                         execution['actions'].append(dict(request=action, result=result,
                                                          clock=await session.call('get_clock')))
                     for point in group['checkpoints']:
+                        reference = (await verify_reference_profile(session, reference_profile)
+                                     if reference_profile is not None else None)
                         state, capture = await session.dump(folder / (point['name'] + '.json'))
                         capture.update(name=point['name'], requested_at=at,
                                        actual_at=state['clock']['elapsed_seconds']-origin,
                                        overshoot_seconds=state['clock']['elapsed_seconds']-origin-at)
                         if state['clock']['paused'] is not True:
                             raise ScenarioError('Checkpoint was not captured in pause')
+                        if reference is not None:
+                            capture['reference_profile'] = reference
+                        if execution.get('provenance') is not None:
+                            capture['provenance'] = dict(execution['provenance'])
                         execution['checkpoints'].append(capture)
                     previous_at = at
                     session.check_deadline()
@@ -765,7 +862,10 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None):
                     await session.ping()
                     await session.client.call('pause', paused=True)
                     await session.client.call('set_camera_free', enabled=original['free_camera'])
-                    await session.load(scenario['save'], lock_edge=True)
+                    if original_seed is None:
+                        await session.load(scenario['save'], lock_edge=True)
+                    else:
+                        await session.load(scenario['save'], lock_edge=True, seed=original_seed)
                     report['restoration'] = dict(verified=False, save=scenario['save'],
                                                baseline_observations=[], observations=[])
                     restored = await session.restore_controls(original,
@@ -776,6 +876,14 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None):
                     write_json(guard_path, guard)
                 except BaseException as exc:
                     report['restoration_error'] = type(exc).__name__ + ': ' + str(exc)
+                    report['status'] = 'failed'
+                    if caught is None:
+                        caught = exc
+            if reference_profile is not None:
+                try:
+                    report['reference_profile'] = reference_profile.provenance()
+                except BaseException as exc:
+                    report['reference_profile_error'] = type(exc).__name__ + ': ' + str(exc)
                     report['status'] = 'failed'
                     if caught is None:
                         caught = exc
@@ -792,8 +900,9 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None):
                                  for name, result in report['variability'].items()})
 
 
-async def run_scenario_file(path, cfg, repeat=None, client=None):
-    return await execute_scenario(load_scenario(path), cfg, repeat=repeat, client=client)
+async def run_scenario_file(path, cfg, repeat=None, client=None, reference_profile=None):
+    return await execute_scenario(load_scenario(path), cfg, repeat=repeat, client=client,
+                                  reference_profile=reference_profile)
 
 
 async def restore_interrupted_scenario(cfg, client=None, save=None):
@@ -820,9 +929,17 @@ to another save. The original record is kept until those controls are verified.
         status = await session.ping()
         if not status.get('world_ready'):
             raise ScenarioError('Wait for the watchdog to load the game before restoration')
+        recovery_seed = None
+        if guard.get('target') == 'meitou' or status.get('target') == 'meitou':
+            if guard.get('target') != 'meitou' or status.get('target') != 'meitou':
+                raise ScenarioError('Meitou recovery requires its own original-seed record')
+            recovery_seed = seed_value(guard.get('original_seed'))
         await session.client.call('pause', paused=True)
         await session.client.call('set_camera_free', enabled=original['free_camera'])
-        await session.load(name, lock_edge=True)
+        if recovery_seed is None:
+            await session.load(name, lock_edge=True)
+        else:
+            await session.load(name, lock_edge=True, seed=recovery_seed)
         attempt = dict(started_at=timestamp(), instance_id=session.instance,
                        save=name, baseline_observations=[], observations=[])
         try:

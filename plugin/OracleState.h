@@ -16,7 +16,12 @@
 // All functions that accept engine objects run exclusively in drainCommands or
 // loopHook. publishFile below receives only an owned JSON tree, never pointers.
 namespace oracle {
-static const char* schemaVersion="0.1";
+static const char* schemaVersion="0.2";
+inline Value supportedSchemaVersions(){Value out=Value::arr();out.array.push_back(Value(std::string("0.1")));out.array.push_back(Value(std::string("0.2")));return out;}
+inline std::string requestedSchemaVersion(const Value& params){
+    std::string version=params.object.count("schema_version")?text(params,"schema_version",8):std::string(schemaVersion);
+    if(version!="0.1"&&version!="0.2")throw Error("invalid_request","schema_version must be 0.1 or 0.2");return version;
+}
 static std::string instanceId;
 static unsigned long operationSequence=0;
 static SpeedSelection selection;
@@ -212,12 +217,29 @@ inline Value order(Character* c){
     // named movement actions expose it; unrelated dormant values stay null.
     if(key==MOVE_CUS_ORDERED||key==MOVE_ON_FREE_WILL||key==MOVE_ON_FREE_WILL_FAST){Ogre::Vector3 location=task->getLocation();if(_finite(location.x)&&_finite(location.y)&&_finite(location.z)&&fabs(location.x)<=1e9&&fabs(location.y)<=1e9&&fabs(location.z)<=1e9)out.object["position"]=vectorJSON(location);}return out;
 }
-inline Value snapshot(GameWorld* world){
+inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
+    if(version!="0.1"&&version!="0.2")throw Error("invalid_request","schema_version must be 0.1 or 0.2");
     requireWorld(world);if(active())throw Error("busy","wait for run_until to complete before taking a checkpoint");
-    if(!world->isPaused())throw Error("invalid_request","pause the game before dump_state");savedOrigins.requirePrepared();Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);Value out=Value::obj();out.object["schema_version"]=Value(std::string(schemaVersion));out.object["clock"]=clock(world);
+    if(!world->isPaused())throw Error("invalid_request","pause the game before dump_state");savedOrigins.requirePrepared();Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);Value out=Value::obj();out.object["schema_version"]=Value(version);out.object["clock"]=clock(world);
     Value characters=Value::arr(),squads=Value::arr(),factions=Value::arr(),relations=Value::arr();std::map<std::string,std::vector<std::string> > memberIds;
-    for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c);row.object["order"]=order(c);characters.array.push_back(row);}
-    for(Squads::const_iterator i=loaded.squads.begin();i!=loaded.squads.end();++i){Value row=Value::obj(),members=Value::arr();row.object["id"]=Value(i->first);row.object["faction_id"]=optionalId(factionId(i->second->getFaction()));const std::vector<std::string>& ids=memberIds[i->first];for(size_t j=0;j<ids.size();++j)members.array.push_back(Value(ids[j]));row.object["members"]=members;row.object["leader_id"]=optionalId(handleId(i->second->getSquadLeader_theRealOne()));squads.array.push_back(row);}
+    for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c);row.object["order"]=order(c);
+        if(version=="0.2"){
+            row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
+            // An unresolved saved origin never proves generation. The town's
+            // data ID/active HAND does not prove its level placement identity.
+            // TODO(ORACLE-TOWN-PLACEMENT): verify Town::instanceID.uid against
+            // the saved placement collection before assigning cross-engine IDs.
+            row.object["current_town_id"]=Value();row.object["town_assignment"]=Value();
+            row.object["in_combat"]=Value::flag(c->isInCombatMode(true,true));
+        }characters.array.push_back(row);
+    }
+    for(Squads::const_iterator i=loaded.squads.begin();i!=loaded.squads.end();++i){Value row=Value::obj(),members=Value::arr();row.object["id"]=Value(i->first);row.object["faction_id"]=optionalId(factionId(i->second->getFaction()));const std::vector<std::string>& ids=memberIds[i->first];for(size_t j=0;j<ids.size();++j)members.array.push_back(Value(ids[j]));row.object["members"]=members;row.object["leader_id"]=optionalId(handleId(i->second->getSquadLeader_theRealOne()));
+        if(version=="0.2"){
+            row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
+            row.object["template_id"]=optionalId(dataId(i->second->squadTemplate));
+            row.object["origin_town_id"]=Value();
+        }squads.array.push_back(row);
+    }
     for(Factions::const_iterator i=loaded.factions.begin();i!=loaded.factions.end();++i){Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(i->second->getName());factions.array.push_back(row);
         for(Factions::const_iterator j=loaded.factions.begin();j!=loaded.factions.end();++j){if(i==j)continue;Value relation=Value::obj();relation.object["source_id"]=Value(i->first);relation.object["target_id"]=Value(j->first);relation.object["value"]=i->second->relations?finiteOrNull(i->second->relations->getFactionRelation(j->second)):Value();relations.array.push_back(relation);}
     }
@@ -336,6 +358,6 @@ inline Value publishFile(const Value& state,const std::string& filename){
     if(!MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,bytes.data(),(int)bytes.size(),0,0))throw Error("state_unavailable","snapshot contains invalid UTF-8");
     HANDLE file=CreateFileW(path.c_str(),GENERIC_WRITE,0,0,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,0);if(file==INVALID_HANDLE_VALUE)throw Error(GetLastError()==ERROR_FILE_EXISTS?"already_exists":"io_error","cannot create snapshot; existing files are never overwritten");
     DWORD written=0;bool okay=WriteFile(file,bytes.data(),(DWORD)bytes.size(),&written,0)&&written==bytes.size();if(okay)okay=FlushFileBuffers(file)!=FALSE;CloseHandle(file);if(!okay){DeleteFileW(path.c_str());throw Error("io_error","snapshot write failed");}
-    Value out=Value::obj();out.object["path"]=Value(narrow(path));out.object["schema_version"]=Value(std::string(schemaVersion));out.object["bytes"]=Value((double)bytes.size());return out;
+    Value out=Value::obj();out.object["path"]=Value(narrow(path));out.object["schema_version"]=state.at("schema_version");out.object["bytes"]=Value((double)bytes.size());return out;
 }
 }

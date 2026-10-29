@@ -1,40 +1,77 @@
-# Preparing v0.9.5
+# Preparing KenshiProbe v0.10.0
 
-This public source repository has one initial commit on `main`. The exact
-committed file list is `PUBLICATION_FILES.txt`. Internal session journals,
-prompts, old Git objects, game files and local captures were not exported.
+This is the phase 2 probe release. Do not publish the old v0.9.5 package for
+the current `main`. The native version comes from
+[`plugin/Version.h`](../plugin/Version.h); both shared-state 0.1 and 0.2 remain
+supported. The [release notes](v0.10.0-notes.md) describe the validation scope.
 
-## Prepare the local release assets
+## Build and package locally
 
-Python 3.11+ is required. `release/prepare_release.py` packages the reviewed
-Release v100 DLLs after they are placed in `plugin/build/Release/`; it refuses
-unrecognized binary hashes. It does not build or install into the game.
-It generates an original empty mod descriptor and verifies installation and
-restoration in a synthetic mods directory.
+Follow the environment-variable setup in the [first-run guide](../docs/first-run.md),
+then build both DLLs from the repository root:
 
 ```powershell
+cmd /d /c plugin\build-v100.cmd
 & .\.venv\Scripts\python.exe release/prepare_release.py
+```
+
+The packager uses only Python's standard library and does not install into a
+game or contact GitHub. It accepts only the exact reviewed DLL hashes recorded
+in its source, verifies x64 PE files and neutral CodeView PDB basenames, checks
+ordinary and UTF-16 strings for machine paths/account names, and packages an
+explicit member allowlist. A differently built DLL needs a fresh review; do
+not bypass the hash check by copying an earlier release.
+
+The generated zero-record `.mod` descriptor is original metadata, not a game
+file. A synthetic installation verifies extraction, manifest targets and exact
+restoration of a previous synthetic mod folder. This is a layout check, not a
+real-game loading test.
+
+Generated files stay under ignored `dist/v0.10.0/`:
+
+| File | Purpose |
+| --- | --- |
+| `KenshiProbe-v0.10.0-win-x64.zip` | Two DLLs, manifest, zero-record descriptor, installation notice and GPLv3 |
+| `SHA256SUMS` | Archive, extracted DLL and companion-record SHA-256 hashes |
+| `source-manifest.json` | Exact native/packaging inputs, with CRLF normalized to LF |
+| `build-info.json` | Version, toolset, binary hashes and corresponding source commit |
+| `binary-audit.json` | PE/PDB-path and package privacy checks |
+| `installation-verification.json` | Synthetic installation/restoration result |
+| `release-notes.md` | Notes bound to the exact reviewed source commit |
+
+The DLLs use `/PDBALTPATH` with a neutral basename. Raw PDBs can still contain
+absolute source-machine paths; **no symbols archive is prepared or published**.
+Keep local PDBs private for crash diagnosis.
+
+## Bind the final source commit
+
+After creating the reviewed commit in the clean public repository, run there:
+
+```powershell
 $SourceCommit = (git rev-parse HEAD).Trim()
 & .\.venv\Scripts\python.exe release/prepare_release.py --bind-source --repository CrockMr/KenshiOracle --source-commit $SourceCommit
 ```
 
-Generated assets stay in ignored `dist/v0.9.5/`: the main ZIP, separate symbols
-ZIP, SHA256SUMS, source manifest, build information, release notes and layout
-verification. Source binding checks the native inputs in the exact commit.
-The release DLLs and archived copies were scanned for the Windows user name in
-ASCII/UTF-8 and UTF-16 and their CodeView PDB paths were inspected; no user name
-was found, so the reviewed binaries and their hashes remain unchanged.
+If Python is outside this checkout, invoke the interpreter chosen through
+`KENSHI_PROBE_PYTHON` instead. The packager refuses to bind through an ancestor
+repository, verifies every manifest input against that commit, writes its
+immutable source URL and refreshes `SHA256SUMS`. Do not edit generated records
+after binding without regenerating their checksums.
 
-## Commands for the owner
+## Owner publication commands
 
-No remote is configured in the freshly initialized repository. Run the following
-from its root only when ready to publish; they have not been run by the agent.
+Review the commit and assets first. The following commands are for the owner;
+the agent does not push, create a tag or publish a release. Run them only from
+the clean public repository, whose `origin` is already configured:
 
 ```powershell
-git remote add origin https://github.com/CrockMr/KenshiOracle.git
-git push -u origin main
+$SourceCommit = (git rev-parse HEAD).Trim()
+git push origin main
+git tag -a v0.10.0 $SourceCommit -m "KenshiProbe v0.10.0"
+git push origin refs/tags/v0.10.0
+gh release create v0.10.0 --verify-tag --title "KenshiProbe v0.10.0" --notes-file dist/v0.10.0/release-notes.md dist/v0.10.0/KenshiProbe-v0.10.0-win-x64.zip dist/v0.10.0/SHA256SUMS dist/v0.10.0/source-manifest.json dist/v0.10.0/build-info.json dist/v0.10.0/binary-audit.json dist/v0.10.0/installation-verification.json dist/v0.10.0/release-notes.md
 ```
 
-These commands publish the selected sources only. The release assets remain
-local. Review any future source changes and never force-add game content,
-captures, local configuration or internal work journals.
+GitHub CLI must be installed and authenticated for the final command. The tag
+must point to the same reviewed commit as `build-info.json`. Do not force-push
+or publish from the old working repository.

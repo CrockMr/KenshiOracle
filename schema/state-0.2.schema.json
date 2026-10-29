@@ -1,0 +1,412 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:kenshi-oracle:state:0.2",
+  "title": "Kenshi shared state 0.2",
+  "description": "Engine-neutral snapshot of loaded characters and their squads/factions. No wall clock, process identity, address, or adapter metadata belongs in this state. Collections sort lexically by stable ID; numbers use the six-decimal canonical encoding documented in protocol.md. Version 0.2 adds producer-asserted identity provenance, nullable combat mode and proven town-placement/squad-template context; null is unknown coverage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "clock",
+    "characters",
+    "squads",
+    "factions",
+    "relations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.2"
+    },
+    "clock": {
+      "$ref": "#/$defs/clock"
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/character"
+      }
+    },
+    "squads": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/squad"
+      }
+    },
+    "factions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/faction"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+      "description": "Opaque persistent save/data identity, never a memory address or an enumeration index."
+    },
+    "nullable_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "number": {
+      "type": "number",
+      "minimum": -1000000000,
+      "maximum": 1000000000
+    },
+    "nullable_number": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "position": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/number"
+      },
+      "description": "Absolute world coordinates x, y, z; y is height. Never camera-relative coordinates."
+    },
+    "nullable_position": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/position"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "day",
+        "hour",
+        "elapsed_seconds",
+        "speed",
+        "paused"
+      ],
+      "properties": {
+        "day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Zero-based world day, not the one-based UI day."
+        },
+        "hour": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 24,
+          "description": "Hour within the world day. The value 24 is permitted only for rounding of an observation immediately before midnight."
+        },
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Absolute calendar seconds since world time origin: total world hours multiplied by 3600. Not wall time, QPC, or engine simulation seconds."
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Effective game speed, observed as zero while paused. The remembered nonzero selection is not exposed by the public game API and does not belong in this common state."
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      }
+    },
+    "health_part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "current",
+        "stun",
+        "maximum"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id",
+          "description": "Body-part data identity followed by :neither, :left, :right, or :both where the adapter uses side to distinguish parts."
+        },
+        "current": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Current flesh/structural health, including negative health."
+        },
+        "stun": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "order": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "target_id",
+        "position"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z_][a-z0-9_]*$",
+          "description": "Stable symbolic task name, lower-case public task enumeration name; no numeric C++ enum value."
+        },
+        "target_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "position": {
+          "$ref": "#/$defs/nullable_position"
+        }
+      }
+    },
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "race_id",
+        "faction_id",
+        "squad_id",
+        "position",
+        "state",
+        "health",
+        "order",
+        "identity_origin",
+        "current_town_id",
+        "town_assignment",
+        "in_combat"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "race_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "faction_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "squad_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "position": {
+          "$ref": "#/$defs/nullable_position"
+        },
+        "state": {
+          "enum": [
+            "alive",
+            "unconscious",
+            "dead",
+            null
+          ]
+        },
+        "health": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/health_part"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "All readable body parts, or null when coverage is unavailable/incomplete; [] means a known empty set."
+        },
+        "order": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/order"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Current task, or null if absent/unavailable. Coverage documentation records which interpretation is possible."
+        },
+        "identity_origin": {
+          "$ref": "#/$defs/identity_origin"
+        },
+        "current_town_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "Stable town-placement identity shared by both producers only when equivalence is proven. Never a TOWN definition id, transient HAND, display name, nearest-town guess or array index. Null unless town_assignment is inside."
+        },
+        "town_assignment": {
+          "enum": [
+            "inside",
+            "outside",
+            null
+          ],
+          "description": "inside means the engine establishes membership in the identified town placement; outside means a known absence of town membership; null means unavailable or unproven coverage. Null must not be interpreted as outside."
+        },
+        "in_combat": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "The broad combat-mode predicate including both melee and ranged participation (the original isInCombatMode(true,true), or a proven equivalent). False means the predicate is known false; null means unavailable or not semantically verified. It is not inferred from the current task, health or target alone."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "town_assignment": {
+                "const": "inside"
+              }
+            },
+            "required": [
+              "town_assignment"
+            ]
+          },
+          "then": {
+            "properties": {
+              "current_town_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "current_town_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "squad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "faction_id",
+        "members",
+        "leader_id",
+        "identity_origin",
+        "template_id",
+        "origin_town_id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "faction_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "members": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "description": "Loaded member identities in this snapshot, sorted lexically."
+        },
+        "leader_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "identity_origin": {
+          "$ref": "#/$defs/identity_origin"
+        },
+        "template_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "The stable SQUAD_TEMPLATE or UNIQUE_SQUAD_TEMPLATE data identity used to create the squad, when established. Not a squad instance id or display name; null when unknown."
+        },
+        "origin_town_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "Proven original/home town-placement identity, using exactly the same identity namespace as current_town_id. Never a town definition id or name. Null means unknown or no established origin; it does not establish current presence in that town."
+        }
+      }
+    },
+    "faction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "target_id",
+        "value"
+      ],
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_id": {
+          "$ref": "#/$defs/id"
+        },
+        "value": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Directional source-to-target relation, or null when unavailable. Do not mirror it to the reverse direction."
+        }
+      }
+    },
+    "identity_origin": {
+      "enum": [
+        "saved",
+        "generated",
+        null
+      ],
+      "description": "Producer-proven identity origin: saved means a complete saved identity was linked to this loaded entity; generated means creation outside the source save is independently established; null means unknown. Absence of a resolved saved identity never proves generation."
+    }
+  }
+}

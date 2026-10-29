@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -22,14 +23,14 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUT = ROOT / 'dist' / 'v0.9.5'
-TAG = 'v0.9.5'
+VERSION = '0.10.0'
+TAG = 'v' + VERSION
+OUTPUT = ROOT / 'dist' / TAG
 DLL_HASHES = {
-    'KenshiProbe.dll': '75739c8e64e17f3a78f482132c9be659aac7d55db7b3151b907b51944af5b580',
-    'KenshiProbeBootstrap.dll': '75fa8f5e6cea013cb1e011eb8b3adee662827408056b5dca8c4a0b5a7c4a3a6a',
+    'KenshiProbe.dll': 'ecdd5b2c40bf4f4aed710bced08f2e1f3656bb7189804e7dd0a77bad6af382ae',
+    'KenshiProbeBootstrap.dll': '4ebad2758da1b8db29bae0adf67fefd22b075d3dc9c467292fc15953a230c1e7',
 }
-MAIN_ZIP = 'KenshiProbe-v0.9.5-win-x64.zip'
-SYMBOLS_ZIP = 'KenshiProbe-v0.9.5-symbols.zip'
+MAIN_ZIP = 'KenshiProbe-' + TAG + '-win-x64.zip'
 
 
 def digest(data: bytes) -> str:
@@ -42,9 +43,10 @@ def write_json(path: Path, value: object) -> None:
 
 
 def source_inputs() -> dict[str, str]:
-    paths = [ROOT / 'LICENSE']
+    paths = [ROOT / 'LICENSE', ROOT / 'release' / 'prepare_release.py',
+             ROOT / 'release' / 'INSTALL.txt', ROOT / 'release' / (TAG + '-notes.md')]
     for path in (ROOT / 'plugin').iterdir():
-        if path.is_file() and (path.suffix in ('.cpp', '.h', '.vcxproj')
+        if path.is_file() and (path.suffix in ('.cpp', '.h', '.vcxproj', '.cmd')
                                or path.name in ('build-v100.cmd', 'prepare_deps.py', 'RE_Kenshi.json')):
             paths.append(path)
     return {path.relative_to(ROOT).as_posix(): digest(path.read_bytes().replace(b'\r\n', b'\n'))
@@ -57,7 +59,7 @@ def empty_mod() -> bytes:
         return struct.pack('<i', len(encoded)) + encoded
 
     body = (struct.pack('<i', 1) + text('KenshiProbe contributors')
-            + text('KenshiProbe 0.9.5 plugin loader; no game data records.')
+            + text('KenshiProbe ' + VERSION + ' plugin loader; no game data records.')
             + text('') + text('') + struct.pack('<IIBB', 1, 0, 0, 0))
     return struct.pack('<ii', 17, len(body)) + body + struct.pack('<ii', 1, 0)
 
@@ -97,12 +99,58 @@ def inspect_mod(data: bytes) -> dict:
                 bytes=len(data), sha256=digest(data))
 
 
-def check_pe(data: bytes, name: str) -> None:
+def privacy_check(data: bytes, name: str) -> None:
+    """Reject machine paths in ordinary UTF-8/ASCII and UTF-16LE strings."""
+    strings = [value.decode('utf-8', errors='replace')
+               for value in re.findall(rb'[\x20-\x7e]{6,}', data)]
+    strings += [value.decode('utf-16-le')
+                for value in re.findall(rb'(?:[\x20-\x7e]\x00){6,}', data)]
+    absolute = re.compile(r'(?<![A-Za-z0-9_])[A-Za-z]:[\\/]|[\\/]Users[\\/]|/home/')
+    username = os.environ.get('USERNAME', '')
+    for value in strings:
+        if absolute.search(value):
+            raise ValueError(name + ' contains an absolute machine-path string')
+        if len(username) >= 4 and re.search(r'\b' + re.escape(username) + r'\b', value, re.I):
+            raise ValueError(name + ' contains the current Windows account name')
+
+
+def check_pe(data: bytes, name: str) -> dict:
     if data[:2] != b'MZ' or len(data) < 64:
         raise ValueError(name + ' is not a PE executable')
     offset = struct.unpack_from('<I', data, 60)[0]
     if data[offset:offset + 4] != b'PE\0\0' or struct.unpack_from('<H', data, offset + 4)[0] != 0x8664:
         raise ValueError(name + ' is not a Windows x64 PE executable')
+    count = struct.unpack_from('<H', data, offset + 6)[0]
+    optional_size = struct.unpack_from('<H', data, offset + 20)[0]
+    optional = offset + 24
+    if struct.unpack_from('<H', data, optional)[0] != 0x20b:
+        raise ValueError(name + ' does not have a PE32+ optional header')
+    debug_rva, debug_size = struct.unpack_from('<II', data, optional + 112 + 6 * 8)
+    sections = optional + optional_size
+
+    def file_offset(rva):
+        for index in range(count):
+            virtual_size, va, raw_size, pointer = struct.unpack_from('<IIII', data, sections + index * 40 + 8)
+            if va <= rva < va + max(virtual_size, raw_size):
+                return pointer + rva - va
+        raise ValueError(name + ' has an unmapped debug RVA')
+
+    pdb_paths = []
+    for index in range(debug_size // 28):
+        entry = file_offset(debug_rva) + index * 28
+        kind, size, _, pointer = struct.unpack_from('<IIII', data, entry + 12)
+        if kind == 2:
+            if data[pointer:pointer + 4] != b'RSDS':
+                raise ValueError(name + ' has an unsupported CodeView format')
+            path = data[pointer + 24:pointer + size].split(b'\0', 1)[0].decode('utf-8')
+            if path != Path(name).stem + '.pdb':
+                raise ValueError(name + ' must use a neutral PDB basename')
+            pdb_paths.append(path)
+    privacy_check(data, name)
+    if name == 'KenshiProbe.dll' and VERSION.encode('ascii') not in data:
+        raise ValueError('Probe version is missing from the reviewed native binary')
+    return dict(sha256=digest(data), bytes=len(data), architecture='x64',
+                pdb_paths=pdb_paths, machine_paths_found=False, current_account_name_found=False)
 
 
 def write_zip(path: Path, files: dict[str, bytes]) -> None:
@@ -181,6 +229,12 @@ def verify_install(archive_path: Path, expected: dict[str, bytes]) -> dict:
 def bind_source(repository: str, revision: str) -> None:
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
         raise ValueError('--repository must be OWNER/REPOSITORY')
+    if not (ROOT / '.git').exists():
+        raise ValueError('Source binding requires a repository root; refusing Git discovery in an ancestor')
+    top = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=ROOT, check=True,
+                         capture_output=True, text=True).stdout.strip()
+    if Path(top).resolve() != ROOT.resolve():
+        raise ValueError('Source binding requires this export to be a repository root; refusing an ancestor repository')
     commit = subprocess.run(['git', 'rev-parse', '--verify', revision + '^{commit}'],
                             cwd=ROOT, check=True, capture_output=True, text=True).stdout.strip()
     manifest = json.loads((OUTPUT / 'source-manifest.json').read_text(encoding='utf-8'))
@@ -190,27 +244,41 @@ def bind_source(repository: str, revision: str) -> None:
         if digest(committed.replace(b'\r\n', b'\n')) != expected:
             raise ValueError('Release input differs from corresponding source commit: ' + name)
     source_url = 'https://github.com/' + repository + '/tree/' + commit
-    template = (ROOT / 'release' / 'v0.9.5-notes.md').read_text(encoding='utf-8')
-    (OUTPUT / 'release-notes.md').write_text(template.replace('{{SOURCE_URL}}', source_url),
+    template = (ROOT / 'release' / (TAG + '-notes.md')).read_text(encoding='utf-8')
+    notes = template.replace('{{SOURCE_URL}}', source_url).replace('](../docs/', '](' + source_url + '/docs/')
+    (OUTPUT / 'release-notes.md').write_text(notes,
                                            encoding='utf-8', newline='\n')
     info = json.loads((OUTPUT / 'build-info.json').read_text(encoding='utf-8'))
-    info.update(source_commit=commit, source_url=source_url, source_binding='verified_native_inputs')
+    info.update(source_commit=commit, source_url=source_url, source_binding='verified_release_inputs')
     write_json(OUTPUT / 'build-info.json', info)
+    write_checksums()
     print('Verified corresponding native sources: ' + source_url)
 
 
+def write_checksums() -> None:
+    names = [MAIN_ZIP, 'mods/KenshiProbe/KenshiProbe.dll', 'mods/KenshiProbe/KenshiProbeBootstrap.dll',
+             'build-info.json', 'source-manifest.json', 'binary-audit.json',
+             'installation-verification.json', 'release-notes.md']
+    (OUTPUT / 'SHA256SUMS').write_text(''.join(digest((OUTPUT / name).read_bytes()) + '  ' + name + '\n'
+                                             for name in sorted(names)), encoding='ascii')
+
+
 def prepare() -> None:
+    version_header = (ROOT / 'plugin' / 'Version.h').read_text(encoding='utf-8')
+    if '#define KENSHI_PROBE_VERSION "' + VERSION + '"' not in version_header:
+        raise ValueError('Packaging version and native Version.h differ')
     files = {
         'INSTALL.txt': (ROOT / 'release' / 'INSTALL.txt').read_bytes(),
         'LICENSE': (ROOT / 'LICENSE').read_bytes(),
         'mods/KenshiProbe/RE_Kenshi.json': (ROOT / 'plugin' / 'RE_Kenshi.json').read_bytes(),
         'mods/KenshiProbe/KenshiProbe.mod': empty_mod(),
     }
+    binary_audit = {}
     for name, expected_hash in DLL_HASHES.items():
         data = (ROOT / 'plugin' / 'build' / 'Release' / name).read_bytes()
         if digest(data) != expected_hash:
-            raise ValueError(name + ' does not match the reviewed phase 1 binary')
-        check_pe(data, name)
+            raise ValueError(name + ' does not match the reviewed ' + TAG + ' binary')
+        binary_audit[name] = check_pe(data, name)
         files['mods/KenshiProbe/' + name] = data
     OUTPUT.mkdir(parents=True, exist_ok=True)
     # Stage only explicitly named output files, never the build/game directories.
@@ -219,25 +287,27 @@ def prepare() -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     write_zip(OUTPUT / MAIN_ZIP, files)
-    symbols = (ROOT / 'plugin' / 'build' / 'Release' / 'KenshiProbe.pdb').read_bytes()
-    if digest(symbols) != '51fa54bc8c0e96daa80b7dc3d6bb831d126a419d89f050899bbf0286af4aadfe':
-        raise ValueError('PDB does not match the reviewed phase 1 symbols')
-    write_zip(OUTPUT / SYMBOLS_ZIP, {'KenshiProbe.pdb': symbols})
+    # /PDBALTPATH protects the DLL's reference, not paths inside a raw PDB.
+    # Keep debugging symbols private rather than publishing source-machine paths.
     checksums = {**{name: digest(data) for name, data in files.items() if name.endswith('.dll')},
-                 MAIN_ZIP: digest((OUTPUT / MAIN_ZIP).read_bytes()),
-                 SYMBOLS_ZIP: digest((OUTPUT / SYMBOLS_ZIP).read_bytes())}
-    (OUTPUT / 'SHA256SUMS').write_text(''.join(value + '  ' + name + '\n'
-                                     for name, value in sorted(checksums.items())), encoding='ascii')
+                 MAIN_ZIP: digest((OUTPUT / MAIN_ZIP).read_bytes())}
     manifest = dict(hash_algorithm='sha256', text_normalization='CRLF to LF', files=source_inputs())
     write_json(OUTPUT / 'source-manifest.json', manifest)
     write_json(OUTPUT / 'build-info.json', dict(version=TAG, configuration='Release', platform='x64',
-               toolset='v100', binary_origin='reviewed phase 1 delivery; not rebuilt by packaging',
+               toolset='v100', binary_origin='reviewed phase 2 release build; not rebuilt by packaging',
                source_commit=None, source_url=None, source_binding='pending_publication_commit',
+               symbols_published=False, symbols_reason='raw PDBs may contain source-machine paths',
                sha256=checksums, mod_descriptor=inspect_mod(empty_mod())))
-    template = (ROOT / 'release' / 'v0.9.5-notes.md').read_text(encoding='utf-8')
+    template = (ROOT / 'release' / (TAG + '-notes.md')).read_text(encoding='utf-8')
     (OUTPUT / 'release-notes.md').write_text(template, encoding='utf-8', newline='\n')
     verification = verify_install(OUTPUT / MAIN_ZIP, files)
     write_json(OUTPUT / 'installation-verification.json', verification)
+    for name, data in files.items():
+        privacy_check(data, name)
+    write_json(OUTPUT / 'binary-audit.json', dict(version=TAG, binaries=binary_audit,
+               archive_members_checked=sorted(files), forbidden_machine_paths_found=False,
+               raw_symbols_included=False))
+    write_checksums()
     print('Prepared ' + str(OUTPUT))
     print('Main archive SHA-256: ' + checksums[MAIN_ZIP])
     print('Synthetic installation and exact restoration verified; source URL needs binding.')

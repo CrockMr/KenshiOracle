@@ -1,42 +1,50 @@
-# Reprise de la copie en pause — 0.8.4
+<a id="reprise-de-la-copie-en-pause--084"></a>
 
-La copie KenshiProbe_test est maintenant mise en pause par le plugin avant que world_ready devienne vrai. Un démarrage après déploiement et un redémarrage MCP réel ont confirmé le premier état prêt observé en pause, sans commande de pause envoyée par le contrôleur.
+# Resuming the copy paused — 0.8.4
 
-## Correction
+The plugin now pauses the KenshiProbe_test copy before world_ready becomes true. A post-deployment startup and a real MCP restart confirmed that the first observed ready state was paused, without the controller sending a pause command.
 
-L’ancienne pause avant disponibilité concernait uniquement les snapshots possédés en mémoire. Le précontrôle0.8.3 avait donc trouvé la copie chargée automatiquement sans pause ; cette observation est conservée dans runtime/identity-083-startup.json.
+<a id="correction"></a>
 
-load_save programme désormais la pause pour le nom exact KenshiProbe_test ou un snapshot possédé. Les callbacks existants GameWorld/Renderer attendent monde initialisé, absence de reset/chargement et signal du gestionnaire de sauvegarde nul, puis appellent GameWorld::userPause(true). world_ready reste faux tant que cette pause est attendue. Les noms des autres sauvegardes n’activent pas cette nouvelle règle ; aucun essai ne charge la sauvegarde protégée de validation.
+## Fix
 
-Les déclarations userPause(bool), isPaused(), isLoadingFromASaveGame(), initialized/gameResetting et SaveManager::load/signal ont été relues dans les en-têtes du SDK. Aucun nouvel offset, hook ou algorithme du moteur. Toujours v100 x64, trois sondes de systèmes et17 outils MCP. Le cache TLS0.8.3 et le mode AI_THREAD_CPU=0 sont conservés.
+The old pause-before-readiness behavior applied only to snapshots owned in memory. The 0.8.3 precheck therefore found the automatically loaded copy unpaused; this observation remains in runtime/identity-083-startup.json.
 
-ping.test_save_pause_on_ready_available annonce la capacité ; ping.load_pause_pending décrit l’attente. load_save(...).pause_on_ready vaut désormais aussi true pour KenshiProbe_test. Le watchdog peut publier loading=true encore brièvement après le premier ping prêt, car son fichier est mis à jour séparément ; le contrôle final vérifie son retour à false.
+load_save now schedules pause for the exact name KenshiProbe_test or an owned snapshot. Existing GameWorld/Renderer callbacks wait for an initialized world, no reset/loading and a null save-manager signal, then call GameWorld::userPause(true). world_ready remains false while this pause is pending. Other save names do not activate this new rule; no trial loads the protected validation save.
 
-## Observations réelles
+Declarations userPause(bool), isPaused(), isLoadingFromASaveGame(), initialized/gameResetting and SaveManager::load/signal were reread in SDK headers. No new offset, hook or engine algorithm. Still v100 x64, three system probes and 17 MCP tools. The 0.8.3 TLS cache and AI_THREAD_CPU=0 mode are retained.
 
-Le script tests/live_autoload_pause.py utilise MCP stdio. Son chemin normal n’envoie aucune commande de pause, ne change pas la vitesse, ne prépare pas de scène et n’écrit aucune sauvegarde. Le premier observateur a été lancé avant le watchdog. Le second vérifie fraîchement chemin, commande et création du jeu avant une seule demande restart_game.
+ping.test_save_pause_on_ready_available advertises the capability; ping.load_pause_pending describes waiting. load_save(...).pause_on_ready is now also true for KenshiProbe_test. The watchdog can briefly publish loading=true after the first ready ping because its file updates separately; the final check verifies its return to false.
 
-| Essai | PID | Premier ping prêt observé | Scènes suivantes |
+<a id="observations-réelles"></a>
+
+## Real observations
+
+Script tests/live_autoload_pause.py uses stdio MCP. Its normal path sends no pause command, changes no speed, prepares no scene and writes no save. The first observer started before the watchdog. The second freshly verifies game path, command and creation before one restart_game request.
+
+| Trial | PID | First observed ready ping | Following scenes |
 |---|---:|---|---|
-| Démarrage après déploiement |33948|frame544, pause=true, vitesse0, attente=false|frames545..970, 3,041826 s|
-| Redémarrage demandé |35336|frame418, pause=true, vitesse0, attente=false|frames419..825, 3,050325 s|
+| Post-deployment startup |33948|frame544, pause=true, speed0, pending=false|frames545..970, 3,041826 s|
+| Requested restart |35336|frame418, pause=true, speed0, pending=false|frames419..825, 3,050325 s|
 
-Les quatre scènes de chaque essai ont exactement404,3333339691162 heures de jeu. Pendant l’attente,65 puis50 observations portent load_pause_pending=true et world_ready=false. Le relevé compte74 puis59 pings au total. Aucun fallback_pause ni erreur n’est présent. Les observations ne couvrent pas chaque frame du moteur et ne prouvent pas une déterminisation de tout l’état des personnages.
+All four scenes in each trial have exactly 404,3333339691162 game hours. While waiting, 65 then 50 observations carry load_pause_pending=true and world_ready=false. The record counts 74 then 59 pings in total. There is no fallback_pause or error. Observations do not cover every engine frame and do not prove determinism of the entire character state.
 
-Preuves :
+Evidence:
 
 - runtime/scenarios/autoload-pause-20261028T090504090106Z.json, completed=true, SHA-256 **54c958e1f7ef8a4527b1dc42395f8063ab2f0157b3ce6747b4645aa3ee175687**.
 - runtime/scenarios/autoload-pause-20261028T090725294145Z.json, completed=true, SHA-256 **90954d4f15b508f6461abafba2a62911b414cc5d9d773b83a0f5da115952e208**.
-- runtime/autoload-084-validation.json recalcule les invariants des deux bruts. Le second possède un acquittement et l’archive **crashes/20261028T090726.287883Z**, motif requested avec journal conservé. PID/création réellement changés de33948/1793178313.279526 à35336/1793178451.3026247.
+- runtime/autoload-084-validation.json recalculates invariants from both raw captures. The second has acknowledgment and archive **crashes/20261028T090726.287883Z**, reason requested, with log retained. PID/creation actually changed from 33948/1793178313.279526 to 35336/1793178451.3026247.
 
-## État laissé et limites
+<a id="état-laissé-et-limites"></a>
 
-**291 pytest passent en4,53 s**, compilation et liaison v100 x64 réussies. La nouvelle politique native est vérifiée par les deux essais réels ; les tests factices ne constituent pas cette preuve.
+## State left behind and limits
 
-Archive du déploiement : crashes/20261028T090445969777Z-deployment-084, ancienne DLL0.8.3/journal/config/settings. WPR inactif et identités jeu33512/watchdogs28140/33880 vérifiés avant arrêt des seuls processus du projet. Les symboles propres0.8.4 sont préservés dans runtime/symbols/0.8.4, sans binaire de jeu ajouté à Git.
+**291 pytest tests pass in 4,53 s**, v100 x64 compilation/linking succeeded. Both real trials verify the new native policy; fake tests do not constitute this evidence.
 
-runtime/autoload-084-final.json vérifie jeu35336 en pause/mode normal, contrôle de caméra relâché et Edge=true, watchdog frais sans erreur/autoload réussi, sept rôles SDK et17 outils. Les **702/702/738 fichiers** source/copie/ancien snapshot et les octets settings.cfg correspondent au préalable de ce déploiement. Les deux gardes de préférences sont false, WPR est inactif et aucun contrôleur d’essai ne reste actif. Helpers27108/38500 au dernier relevé, identités à relire avant toute action. Borne config/activation1793225700 inchangée.
+Deployment archive: crashes/20261028T090445969777Z-deployment-084, old DLL0.8.3/log/config/settings. WPR inactive and game33512/watchdogs28140/33880 identities checked before stopping only project processes. Own 0.8.4 symbols are retained in runtime/symbols/0.8.4, without adding a game binary to Git.
 
-La caméra peut encore répondre au défilement de bord lorsque sa préférence est restituée ; cette validation porte sur la pause et l’horloge, pas sur une immobilité permanente de la caméra. current_save conserve un nom interne collant et ne prouve toujours pas le dossier chargé. La propriété des anciens snapshots n’est pas reconstruite après redémarrage.
+runtime/autoload-084-final.json verifies game35336 paused/normal mode, camera control released and Edge=true, watchdog fresh without error/autoload successful, seven SDK roles and 17 tools. All **702/702/738 files** of source/copy/old snapshot and settings.cfg bytes match this deployment's prior state. Both preference guards are false, WPR inactive and no test controller remains active. Helpers27108/38500 at the last reading; identities must be reread before any action. Config/activation boundary1793225700 unchanged.
 
-La capture administrateur Heng reste différée sans intervention demandée maintenant. Le diagnostic de performances suivant doit viser le worker restant, par exemple GameWorld::charsUpdateUT avec son vrai prototype en remplacement de la sonde IA ; aucun gain d’optimisation du moteur n’est établi ici.
+The camera can still respond to edge scrolling when its preference is restored; this validation concerns pause and clock, not permanent camera stillness. current_save retains a sticky internal name and still does not prove the loaded folder. Old snapshot ownership is not reconstructed after restarting.
+
+The administrator Heng capture remains deferred without intervention requested now. The next performance diagnosis should target the remaining worker, for example GameWorld::charsUpdateUT with its real prototype replacing the AI probe; no engine optimization gain is established here.

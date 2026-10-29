@@ -107,6 +107,32 @@ static void snapshotChecks(){
     require(registry.canonicalId("hand:1:10:101:4:3090576128")=="hand:1:10:101:4:3090576128");registry.bind("hand:1:10:101:4:3090576128",savedA);require(registry.currentId(savedA)=="hand:1:10:101:4:3090576128");
     badBind(registry,rawA,"hand:34:372:2911010816:0:0");badBind(registry,rawB,"hand:1:1000:1000:1:1");
 }
+static void identityOriginChecks(){
+    const char* saved="hand:1:7:100:1:200";
+    const char* replacement="hand:1:7:100:2:201";
+    const char* current="hand:1:18:300:2:201";
+    oracle::SavedOrigins origins;
+    require(!origins.hasSavedOrigin(saved));
+    origins.begin("identity-origin",fingerprint,1,"first");origins.add("first",ids(saved));
+    require(!origins.hasSavedOrigin(saved)); // A pending manifest is not proof.
+    origins.commit("first");
+    require(!origins.hasSavedOrigin(saved)); // Registered but unresolved remains unknown.
+    origins.bind(saved,saved);
+    require(origins.hasSavedOrigin(saved)); // Equal raw/saved HAND still has proof.
+    require(!origins.hasSavedOrigin(replacement));
+    origins.begin("replacement-origin",fingerprint,1,"second");origins.add("second",ids(replacement));
+    require(origins.hasSavedOrigin(saved)); // Atomic replacement keeps the old active proof.
+    require(!origins.hasSavedOrigin(replacement));
+    origins.commit("second");
+    require(!origins.hasSavedOrigin(saved)&&!origins.hasSavedOrigin(replacement));
+    origins.bind(current,replacement);
+    require(origins.hasSavedOrigin(current));
+    require(!origins.hasSavedOrigin(replacement)); // Do not confuse the saved key with its current alias.
+    std::set<std::string> loaded;loaded.insert(saved);origins.retainLoaded(loaded);
+    require(!origins.hasSavedOrigin(current)); // A departed exact HAND loses its proof.
+    origins.bind(current,replacement);origins.clear();
+    require(!origins.hasSavedOrigin(current)&&!origins.hasSavedOrigin(replacement));
+}
 int main(){try{
     require(_MSC_VER==1600&&sizeof(void*)==8);
     const char* savedA="hand:1:372:2911010816:4:3090576128";
@@ -189,5 +215,6 @@ int main(){try{
     epoch.expectLoad("KenshiProbe_test",registry);epoch.invalidate(registry);epoch.synchronize(&firstWorld,true,registry);require(!epoch.acceptsSaveName("KenshiProbe_test"));
     snapshotChecks();
     commitFollowChecks();
+    identityOriginChecks();
     std::cout<<"{\"passed\":true,\"checks\":"<<checks<<",\"toolset\":\"v100 x64\"}\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}}

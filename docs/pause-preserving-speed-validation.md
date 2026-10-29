@@ -1,44 +1,52 @@
-# Restauration sans reprise intermédiaire — 0.8.7
+<a id="restauration-sans-reprise-intermédiaire--087"></a>
 
-La restauration de KenshiProbe_test règle maintenant x1 en conservant la pause dans la même commande native. Le contrôle réel retrouve exactement **404,3333339691162 heures de jeu**, comme après le chargement initial, après deux rechargements de validation puis un troisième de nettoyage. La copie reste en pause, les sauvegardes et les préférences sont intactes. Aucun gain de performances ni déterminisme de tout l’état PNJ n’est établi.
+# Restoration without an intermediate resume — 0.8.7
 
-## Changement
+KenshiProbe_test restoration now sets x1 while preserving pause in the same native command. The real check returns exactly **404,3333339691162 game hours**, as after initial loading, following two validation reloads and a third cleanup reload. The copy remains paused, saves and preferences intact. No performance gain or determinism of the entire NPC state is established.
 
-L’ancien helper enchaînait trois requêtes distinctes : retirer la pause, régler x1, puis remettre la pause. La boucle du jeu pouvait avancer entre ces requêtes ; l’horloge finale de la campagne de piles 0.8.5 était ainsi légèrement différente de celle de l’autoload.
+<a id="changement"></a>
 
-`set_game_speed(speed, preserve_pause=True)` utilise les méthodes déclarées dans GameWorld.h : `isPaused()`, `setGameSpeed(float,bool)` et `userPause(bool)`. Les deux mutations se terminent sur le thread principal dans un même traitement de commande, avant le retour à originalLoop. Le paramètre booléen est vérifié avant mutation ; aucun accès direct à un champ privé du moteur ni nouvelle API n’est introduit.
+## Change
 
-Le défaut reste `False` et conserve le protocole existant. La réponse ajoute `paused_before` et `preserve_pause` ; `ping.set_game_speed_preserve_pause_available` annonce la capacité. `restore_test` exige cette capacité et la pause après chargement, règle x1 en la conservant, puis compare **game_total_hours** avant/après. Il ne possède plus de requête de reprise entre ces étapes.
+The old helper issued three separate requests: remove pause, set x1, then pause again. The game loop could advance between requests; the 0.8.5 stack campaign's final clock was thus slightly different from autoload time.
 
-Le mode de conservation exige **0 < speed <= 5**. La combinaison vitesse nulle/conservation de pause est rejetée avant mutation par MCP et par le plugin. Utiliser la commande pause pour arrêter la simulation. Le nombre d’outils reste 17 ; les trois sondes système et leur sélection charsUpdateUT restent inchangées.
+`set_game_speed(speed, preserve_pause=True)` uses methods declared in GameWorld.h: `isPaused()`, `setGameSpeed(float,bool)` and `userPause(bool)`. Both mutations finish on the main thread within the same command processing, before returning to originalLoop. The boolean parameter is checked before mutation; no direct access to a private engine field or new API is introduced.
 
-## Validation réelle
+The default remains `False`, preserving the existing protocol. The response adds `paused_before` and `preserve_pause`; `ping.set_game_speed_preserve_pause_available` advertises the capability. `restore_test` requires that capability and pause after loading, sets x1 while preserving it, then compares **game_total_hours** before/after. It no longer issues a resume request between these steps.
 
-Source : `runtime/scenarios/restore-pause-20261028T105200176995Z.json`, completed=true, SHA-256 **da3d1dc9eae9bfa55e7e68a7ade9c57f5c62be715721effdc6790c975f89253d**. Transport MCP stdio ; les requêtes mal formées sont aussi essayées directement sur le protocole natif, afin de vérifier le garde du plugin.
+Preservation mode requires **0 < speed <= 5**. The zero-speed/pause-preservation combination is rejected before mutation by both MCP and plugin. Use the pause command to stop simulation. Tool count remains 17; the three system probes and their charsUpdateUT selection are unchanged.
 
-Jeu PID **28920**, création Unix **1793184744.2008762**, exécutable vérifié `Re_Kenshi/RE_Kenshi/Kenshi_x64.exe --norestart`. Ces identités ne valent que pour cette session.
+<a id="validation-réelle"></a>
 
-| Cas | Résultat observé |
+## Real validation
+
+Source: `runtime/scenarios/restore-pause-20261028T105200176995Z.json`, completed=true, SHA-256 **da3d1dc9eae9bfa55e7e68a7ade9c57f5c62be715721effdc6790c975f89253d**. Stdio MCP transport; malformed requests are also tried directly over the native protocol to verify the plugin guard.
+
+Game PID **28920**, Unix creation **1793184744.2008762**, verified executable `Re_Kenshi/RE_Kenshi/Kenshi_x64.exe --norestart`. These identities apply only to this session.
+
+| Case | Observed result |
 |---|---|
-| Chargement initial | Première disponibilité observée en pause ; heure 404,3333339691162, inchangée aux trois lectures suivantes. |
-| Réglages x2, x5 et x1 en pause | Réponse paused_before=true, paused=true, multiplicateur effectif 0 ; les neuf lectures suivantes gardent exactement la même heure de jeu. |
-| Reprise explicite après sélection x2 en pause | Multiplicateur effectif 2, paused=false ; le choix de vitesse est conservé pour la reprise. |
-| Réglages x2, x5 et x1 en cours de simulation | paused_before=false et paused=false, multiplicateur effectif égal à la demande. |
-| Vitesse positive sans le nouveau paramètre | Reprend la simulation, comme auparavant. |
-| Booléen natif mal formé | Rejet avant mutation ; pause et heure de jeu conservées. |
-| Vitesse nulle avec conservation | Rejet MCP et natif ; rejet natif également vérifié pendant la simulation, qui reste à x1. |
-| Deux rechargements puis nettoyage | Pause et heure initiale exactement retrouvées ; caméra normale puis contrôle temporaire libéré. |
+| Initial loading | First observed readiness paused; time 404,3333339691162, unchanged across the next three reads. |
+| x2, x5 and x1 settings while paused | Response paused_before=true, paused=true, effective multiplier 0; the next nine reads retain exactly the same game time. |
+| Explicit resume after selecting x2 while paused | Effective multiplier 2, paused=false; speed selection retained for resumption. |
+| x2, x5 and x1 settings during simulation | paused_before=false and paused=false, effective multiplier equals the request. |
+| Positive speed without the new parameter | Resumes simulation as before. |
+| Malformed native boolean | Rejected before mutation; pause and game time preserved. |
+| Zero speed with preservation | MCP and native rejection; native rejection also verified during simulation, which remains at x1. |
+| Two reloads, then cleanup | Pause and initial time exactly restored; normal camera, then temporary control released. |
 
-Le contrôle indépendant `runtime/restore-087-final.json` confirme : pause, multiplicateur 0, heure initiale, Edge=true, propriété de caméra false, 17 outils, sept rôles SDK, trois sondes, watchdog frais sans erreur et WPR inactif. Les **702/702/738 fichiers** source/copie/snapshot correspondent aux manifests protégés ; settings.cfg est identique octet pour octet à l’état précédant le déploiement. Aucun contrôleur de test ne reste actif. Les deux helpers du watchdog restent bornés à l’échéance existante.
+Independent check `runtime/restore-087-final.json` confirms pause, multiplier 0, initial time, Edge=true, camera ownership false, 17 tools, seven SDK roles, three probes, fresh watchdog without error and inactive WPR. All **702/702/738 files** of source/copy/snapshot match protected manifests; settings.cfg is byte-identical to the pre-deployment state. No test controller remains active. Both watchdog helpers remain bounded by the existing deadline.
 
-Compilation **v100 x64** réussie ; **367 tests passent en 5,24 s**. Les tests de contrat vérifient notamment que le défaut garde l’ancienne requête et que les paramètres invalides ne sont pas transmis. La validation dans le moteur ci-dessus vérifie le comportement des appels SDK ; le fixture Python ne prétend pas les émuler.
+**v100 x64** compilation succeeded; **367 tests pass in 5,24 s**. Contract tests notably verify that the default retains the old request and invalid parameters are not sent. The engine validation above checks SDK-call behavior; the Python fixture does not claim to emulate it.
 
-## Tentatives conservées et limites
+<a id="tentatives-conservées-et-limites"></a>
 
-Le premier contrôleur 0.8.6 avait ajouté à tort une stabilité de game_time_stamp. La tentative `restore-pause-20261028T104258395419Z.json` reste completed=false, avec ses sources conservées sous runtime. Ce compteur brut continue en pause, comme déjà documenté dans [les mesures d’horloge](simulation-clock-measurements.md). Le contrôle indépendant `runtime/pause-stamp-086.json` confirme une progression de 2,4452879 s pour 2,4452880 s QPC, sur 339 frames, avec **zéro progression d’heure de jeu**. Le garde a été corrigé pour utiliser l’horloge de simulation ; aucun écart de celle-ci n’a été toléré. La caméra a été libérée après l’échec du nettoyage initial.
+## Retained attempts and limits
 
-La validation intermédiaire 0.8.6 `restore-pause-20261028T104713355682Z.json` a ensuite réussi. Un contrôle des bornes encore non observées a révélé dans `runtime/speed-boundaries-086.json` que zéro avec conservation d’un état non pausé gardait la vitesse précédente x5. Cette observation est conservée ; 0.8.7 remplace ce comportement ambigu par un refus explicite dans les deux interfaces.
+The first 0.8.6 controller incorrectly added game_time_stamp stability. Attempt `restore-pause-20261028T104258395419Z.json` remains completed=false, with its sources retained under runtime. This raw counter continues while paused, as already documented in [clock measurements](research/simulation-clock-measurements.md). Independent check `runtime/pause-stamp-086.json` confirms progression of 2,4452879 s over 2,4452880 QPC s, across 339 frames, with **zero game-hour progression**. The guard was corrected to use the simulation clock; no discrepancy in that clock was tolerated. The camera was released after initial cleanup failed.
 
-Une commande composée ne constitue pas une transaction atomique de tous les workers. Les observations prouvent la pause aux bornes et l’absence de progression de l’heure simulée dans ces scénarios ; elles ne prouvent pas l’absence de toute activité asynchrone entre les deux appels SDK, ni une identité mémoire complète des PNJ. La caméra peut de nouveau défiler après restitution de sa préférence de bord. Aucun paramètre système de sécurité, privilège administrateur ou nouvelle capture ETW n’a été nécessaire.
+Intermediate 0.8.6 validation `restore-pause-20261028T104713355682Z.json` then succeeded. A check of previously unobserved boundaries revealed in `runtime/speed-boundaries-086.json` that zero with preservation of an unpaused state retained previous speed x5. This observation is preserved; 0.8.7 replaces this ambiguous behavior with explicit rejection in both interfaces.
 
-Déploiement final : `crashes/20261028T105221075324Z-deployment-087`, preuve `runtime/deploy-087.json`. Les identités du jeu et des helpers 0.8.6 ont été revérifiées avant arrêt. Symboles propres conservés sous `runtime/symbols/0.8.7` : DLL SHA-256 **eb6760d01e382efaddb0b3274349f6a30d506ee80a2fbc79e10a7f8c778abdba**, PDB **ff179bd209359ddc04d4d271e3b245e305328897e4c3e1a8fb2e883e6238e2ea**. Aucun binaire du jeu ou code décompilé ajouté au dépôt.
+A compound command is not an atomic transaction across all workers. Observations prove pause at boundaries and no simulated-hour progression in these scenarios; they do not prove absence of all asynchronous activity between the two SDK calls or complete NPC memory identity. The camera can scroll again after restoring its edge preference. No system security setting, administrator privilege or new ETW capture was needed.
+
+Final deployment: `crashes/20261028T105221075324Z-deployment-087`, evidence `runtime/deploy-087.json`. Game and 0.8.6 helper identities were rechecked before stopping. Own symbols retained under `runtime/symbols/0.8.7`: DLL SHA-256 **eb6760d01e382efaddb0b3274349f6a30d506ee80a2fbc79e10a7f8c778abdba**, PDB **ff179bd209359ddc04d4d271e3b245e305328897e4c3e1a8fb2e883e6238e2ea**. No game binary or decompiled code added to the repository.

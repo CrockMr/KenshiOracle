@@ -65,6 +65,9 @@ public:
         currentToSaved[current]=saved;savedToCurrent[saved]=current;
     }
     std::string canonicalId(const std::string& raw) const {std::map<std::string,std::string>::const_iterator found=currentToSaved.find(raw);return found==currentToSaved.end()?raw:found->second;}
+    // A registered saved ID alone is insufficient: the complete current HAND
+    // must have a proved binding, including an identity binding raw == saved.
+    bool hasSavedOrigin(const std::string& raw) const {return prepared&&currentToSaved.count(raw)!=0;}
     std::string currentId(const std::string& saved) const {std::map<std::string,std::string>::const_iterator found=savedToCurrent.find(saved);return found==savedToCurrent.end()?std::string():found->second;}
     void retainLoaded(const std::set<std::string>& loaded){
         // An old alias is reusable only while that exact complete raw ID is in

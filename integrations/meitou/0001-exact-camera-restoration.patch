@@ -1,0 +1,135 @@
+From 68d703314aa8a468510b9dac3f761b8b8831268f Mon Sep 17 00:00:00 2001
+From: KenshiOracle contributors <contributors@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 21:41:14 +0100
+Subject: [PATCH] Add exact camera pose restoration for controlled sessions
+
+---
+ src/Meitou.Engine/Cameras/CameraRig.cs        | 14 +++++
+ src/Meitou.Engine/Cameras/StrategyCamera.cs   | 20 +++++++
+ .../Engine/OracleCameraRestoreTests.cs        | 54 +++++++++++++++++++
+ 3 files changed, 88 insertions(+)
+ create mode 100644 tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs
+
+diff --git a/src/Meitou.Engine/Cameras/CameraRig.cs b/src/Meitou.Engine/Cameras/CameraRig.cs
+index 71d52118..17a0672b 100644
+--- a/src/Meitou.Engine/Cameras/CameraRig.cs
++++ b/src/Meitou.Engine/Cameras/CameraRig.cs
+@@ -64,6 +64,20 @@ public sealed class CameraRig
+         states.Snap(Strategy.State);
+     }
+ 
++    /// <summary>Restores a captured camera pose as a cut, including strategy pivot height. Free flight starts at rest and retains its existing ground clearance rule.</summary>
++    public void RestorePose(Vector3 target, float yaw, float pitch, float distance, bool free)
++    {
++        // The strategy method validates before either camera is changed and removes old turn/tilt input history.
++        Strategy.RestorePose(target, yaw, pitch, distance);
++        if (free)
++        {
++            var eye = CameraState.EyeFor(target, yaw, pitch, distance);
++            Free.Enter(new CameraState(eye, Vector3.Normalize(target - eye), Vector3.UnitY, target, yaw, pitch, distance, true));
++        }
++        IsFree = free;
++        states.Snap(free ? Free.State : Strategy.State);
++    }
++
+     /// <summary>
+     /// Cuts to the free camera at <paramref name="from"/>'s eye looking the same way (a host's camera handed back, e.g. after the
+     /// cinematic camera flew it: only the free camera can stand at any eye); with <paramref name="strategy"/> it then leaves free flight
+diff --git a/src/Meitou.Engine/Cameras/StrategyCamera.cs b/src/Meitou.Engine/Cameras/StrategyCamera.cs
+index eafb87a2..e44bb319 100644
+--- a/src/Meitou.Engine/Cameras/StrategyCamera.cs
++++ b/src/Meitou.Engine/Cameras/StrategyCamera.cs
+@@ -80,6 +80,24 @@ public sealed class StrategyCamera
+         State = Compute();
+     }
+ 
++    /// <summary>Restores a captured pivot including its current height and clears pending turn/tilt smoothing. The next normal update still applies ground clearance.</summary>
++    public void RestorePose(Vector3 pivot, float yaw, float pitch, float distance)
++    {
++        if (!float.IsFinite(pivot.X) || !float.IsFinite(pivot.Y) || !float.IsFinite(pivot.Z) || !float.IsFinite(yaw)
++            || !float.IsFinite(pitch) || MathF.Abs(pitch) >= MathF.PI / 2 || !float.IsFinite(distance)
++            || distance < KenshiCamera.MinDistance || distance > KenshiCamera.MaxDistance)
++            throw new ArgumentOutOfRangeException(nameof(pivot), "a finite camera pose within the boom and pitch limits is required");
++        PivotXZ = new Vector2(pivot.X, pivot.Z);
++        pivotY = heightGoal = pivot.Y;
++        heightSpeed = 0;
++        Yaw = Interp.WrapAngle(yaw);
++        Pitch = pitch;
++        Distance = distance;
++        yawInput.Clear();
++        pitchInput.Clear();
++        State = Compute();
++    }
++
+     /// <summary>One zoom step of <paramref name="notches"/> wheel notches (positive zooms in).</summary>
+     public void Zoom(float notches)
+     {
+@@ -270,6 +288,8 @@ public sealed class StrategyCamera
+         readonly float[] samples = new float[frames];
+         int newest;
+ 
++        public void Clear() { Array.Clear(samples); newest = 0; }
++
+         public float Push(float value)
+         {
+             newest = (newest + 1) % samples.Length;
+diff --git a/tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs b/tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs
+new file mode 100644
+index 00000000..95c2019d
+--- /dev/null
++++ b/tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs
+@@ -0,0 +1,54 @@
++using System.Numerics;
++using Meitou.Engine.Cameras;
++using Meitou.Engine.Input;
++
++namespace Meitou.Tests.Engine;
++
++public class OracleCameraRestoreTests
++{
++    [Fact]
++    public void Restore_cuts_to_the_exact_captured_pivot_height_and_discards_pending_turn_input()
++    {
++        var rig = new CameraRig((_, _) => 0);
++        var input = new InputState();
++        var bindings = new InputBindings();
++        rig.Place(new Vector2(20, 30), .7f, .4f, 150);
++        var original = rig.Current;
++        input.SetKey(Key.Q, true);
++        rig.Update(1 / 30f, bindings.Resolve(input.Consume()));
++        input.SetKey(Key.Q, false);
++        // The nonzero Y is deliberately above the settled terrain goal. Place would discard it.
++        var pivot = original.Target + new Vector3(0, 37, 0);
++        rig.RestorePose(pivot, original.Yaw, original.Pitch, original.Distance, false);
++        Assert.Equal(pivot, rig.Current.Target);
++        Assert.Equal(rig.Current, rig.Previous);
++        Assert.Equal(rig.Current, rig.At(.5f));
++        rig.Update(1 / 30f, bindings.Resolve(input.Consume()));
++        Assert.Equal(original.Yaw, rig.Current.Yaw, 6);
++        Assert.Equal(original.Pitch, rig.Current.Pitch, 6);
++        Assert.True(rig.Current.Target.Y < pivot.Y); // normal clearance/height following resumes
++    }
++
++    [Fact]
++    public void Free_restore_keeps_the_captured_eye_and_boom_and_starts_at_rest()
++    {
++        var rig = new CameraRig((_, _) => 0);
++        var target = new Vector3(50, 100, 80);
++        rig.RestorePose(target, .3f, .6f, 300, true);
++        Assert.True(rig.IsFree);
++        Assert.Equal(Vector3.Zero, rig.Free.Velocity);
++        Assert.InRange(Vector3.Distance(CameraState.EyeFor(target, .3f, .6f, 300), rig.Current.Eye), 0, .0001f);
++        Assert.InRange(Vector3.Distance(target, rig.Current.Target), 0, .0001f);
++        Assert.Equal(300, rig.Current.Distance);
++    }
++
++    [Fact]
++    public void Invalid_restore_does_not_change_either_camera_or_the_presented_pair()
++    {
++        var rig = new CameraRig((_, _) => 0);
++        var before = rig.Current;
++        Assert.Throws<ArgumentOutOfRangeException>(() => rig.RestorePose(new Vector3(float.NaN), 0, 0, 150, true));
++        Assert.Equal(before, rig.Current);
++        Assert.False(rig.IsFree);
++    }
++}

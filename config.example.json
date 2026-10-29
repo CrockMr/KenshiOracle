@@ -1,5 +1,10 @@
 {
-  "executable": "E:/ChatGPT_Project/Kenshi_Catlon/Kenshi/kenshi_x64.exe",
+  "executable": "../Kenshi/kenshi_x64.exe",
+  "working_directory": "../Kenshi",
+  "rekenshi_config": "../Kenshi/RE_Kenshi.ini",
+  "rekenshi_module": "../Kenshi/RE_Kenshi.dll",
+  "reference_controls": null,
+  "meitou_config": "config.meitou.json",
   "arguments": [],
   "port": 47800,
   "timeout": 10,
@@ -15,8 +20,8 @@
   "session_until": null,
   "startup_grace": 120,
   "restart_delay": 5,
-  "log": "E:/ChatGPT_Project/Kenshi_Catlon/Kenshi/RE_Kenshi_log.txt",
-  "dump_directory": "E:/ChatGPT_Project/Kenshi_Catlon/Kenshi",
+  "log": "../Kenshi/RE_Kenshi_log.txt",
+  "dump_directory": "../Kenshi",
   "runtime": "runtime",
   "crashes": "crashes"
 }

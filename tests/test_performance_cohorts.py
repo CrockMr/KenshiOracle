@@ -184,7 +184,7 @@ def test_markdown_keeps_ms_units_windows_and_limitations(tmp_path):
 
 def test_cli_is_deterministic_and_refuses_overwriting_sources(tmp_path):
     entry=write_cohort(tmp_path);path=tmp_path/'manifest.json';raw=manifest(entry);path.write_bytes(raw)
-    cli=Path(__file__).resolve().parents[1]/'mcp-server/analyze_performance_cohorts.py'
+    cli=Path(__file__).resolve().parents[1]/'tools/research/analyze_performance_cohorts.py'
     common=[sys.executable,str(cli),str(path),'--expected-manifest-sha256',digest(raw),'--root',str(tmp_path)]
     for name in ['first','second']:
         result=subprocess.run(common+['--output',str(tmp_path/(name+'.json'))],capture_output=True,text=True,timeout=30)

@@ -1,4 +1,10 @@
 """Restore the disposable save with the camera mode set before loading."""
+
+# Resolve shared oracle/research imports without a private PYTHONPATH.
+import sys
+from pathlib import Path
+for _folder in ('mcp-server', 'tools/research', 'tests'):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / _folder))
 import argparse
 import asyncio
 import json

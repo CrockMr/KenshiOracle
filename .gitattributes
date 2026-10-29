@@ -1,0 +1,2 @@
+# Unified patches represent empty context lines with one required space.
+integrations/meitou/*.patch text eol=lf -whitespace

@@ -4,6 +4,12 @@ Loads only the save named in the validated scenario. The runner reloads it befor
 each repetition and restores its starting save and captured controls afterwards.
 Optional local historical manifests add protection checks for this installation.
 """
+
+# Resolve shared oracle/research imports without a private PYTHONPATH.
+import sys
+from pathlib import Path
+for _folder in ('mcp-server', 'tools/research', 'tests'):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / _folder))
 import argparse
 import asyncio
 from datetime import datetime, timezone

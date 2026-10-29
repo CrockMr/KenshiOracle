@@ -1,4 +1,4 @@
-"""Shared oracle 0.1 contracts and canonical, engine-independent state bytes.
+"""Shared oracle 0.1/0.2 contracts and canonical, engine-independent state bytes.
 
 Numbers are finite binary64 values with magnitude at most 1e9. Quantization is
 floor(abs(x) * 1e6 + .5), signed afterwards: ties away from zero, negative zero
@@ -19,6 +19,8 @@ from jsonschema import Draft202012Validator
 
 
 SCHEMA_VERSION = '0.1'
+STATE_SCHEMA_VERSIONS = ('0.1', '0.2')
+LATEST_STATE_SCHEMA_VERSION = '0.2'
 MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / 'schema'
 _RESERVED_NAME = re.compile(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', re.I)
@@ -54,7 +56,7 @@ def _load_json(path: str | Path) -> dict:
         raise OracleSchemaError(f'Cannot read oracle JSON {path}: {exc}') from exc
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=3)
 def _validator(kind: str) -> Draft202012Validator:
     schema = _load_json(_SCHEMA_DIR / f'{kind}.schema.json')
     Draft202012Validator.check_schema(schema)
@@ -111,7 +113,10 @@ def _unique(rows: list, key, path: str) -> None:
 
 def validate_state(state: dict) -> dict:
     """Validate shape and unique stable identities; return the original unchanged."""
-    _validate_shape(state, 'state')
+    # Keep the historical schema file and scenario version independent. New
+    # states must carry every additive 0.2 field; a version change alone fails.
+    kind = 'state-0.2' if type(state) is dict and state.get('schema_version') == '0.2' else 'state'
+    _validate_shape(state, kind)
     for collection in ('characters', 'squads', 'factions'):
         _unique(state[collection], lambda row: row['id'], f'$.{collection}')
     _unique(state['relations'], lambda row: (row['source_id'], row['target_id']), '$.relations')
