@@ -1,0 +1,35 @@
+KenshiProbe 0.9.5 - Windows x64 / Visual C++ 2010 (v100)
+
+Validated with Kenshi 1.0.65 Steam, RE_Kenshi 0.3.5 and KenshiLib 0.5.0.
+Install RE_Kenshi and its matching KenshiLib from their official distribution
+first. This archive does not contain the game, SDK libraries or saved games.
+
+1. Close Kenshi. Back up any existing mods/KenshiProbe folder.
+2. Extract this archive into the Kenshi installation directory. The result is:
+   mods/KenshiProbe/KenshiProbe.mod
+   mods/KenshiProbe/RE_Kenshi.json
+   mods/KenshiProbe/KenshiProbe.dll
+   mods/KenshiProbe/KenshiProbeBootstrap.dll
+3. Enable KenshiProbe in the launcher's Mods tab. The included .mod is newly
+   generated metadata with zero records; it contains no original game data.
+4. Start through RE_Kenshi. Confirm plugin_version 0.9.5 with ping and the
+   [KenshiOracle] startup line in RE_Kenshi's log.
+5. Follow docs/first-run.md in the corresponding source for Python 3.11+,
+   configuration, the watchdog, snapshots and scenario commands.
+
+The TCP listener binds to 127.0.0.1:47800 by default. KENSHI_PROBE_PORT changes
+the port; use the same value in the Python configuration. No authentication
+is provided: only processes on this computer should access this local oracle.
+
+The bootstrap is inert unless you explicitly create auto_launch.enabled in
+mods/KenshiProbe. No activation file is included. Its preload entry is read
+before the launcher; to remove the preload helper, remove that entry or the
+entire mod folder while the game is closed.
+
+Upgrade: back up the existing mod folder, then replace the four listed files.
+Uninstall: disable KenshiProbe and remove its folder while Kenshi is closed.
+Restore your backup if you had an earlier installation. Do not copy test
+configurations, saves or auto_launch.enabled from another installation.
+
+GPLv3: see LICENSE. Source and exact build information accompany the release.
+The separate symbols archive is optional and is not installed as a mod.

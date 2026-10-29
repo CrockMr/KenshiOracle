@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WindowsPerformanceRecorder Version="1.0">
+  <Profiles>
+    <SystemCollector Id="KenshiCpuCollector" Name="KenshiProbe CPU Collector">
+      <BufferSize Value="256"/>
+      <Buffers Value="64"/>
+    </SystemCollector>
+    <SystemProvider Id="KenshiCpuProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="Loader"/>
+        <Keyword Value="SampledProfile"/>
+      </Keywords>
+      <Stacks><Stack Value="SampledProfile"/></Stacks>
+    </SystemProvider>
+    <Profile Id="KenshiCpu.Verbose.File" Name="KenshiCpu" Description="CPU samples and stacks for Kenshi diagnostics" LoggingMode="File" DetailLevel="Verbose">
+      <Collectors>
+        <SystemCollectorId Value="KenshiCpuCollector">
+          <SystemProviderId Value="KenshiCpuProvider"/>
+        </SystemCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

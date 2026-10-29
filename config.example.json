@@ -1,0 +1,22 @@
+{
+  "executable": "E:/ChatGPT_Project/Kenshi_Catlon/Kenshi/kenshi_x64.exe",
+  "arguments": [],
+  "port": 47800,
+  "timeout": 10,
+  "load_timeout": 120,
+  "save_root": null,
+  "run_until_timeout": 120,
+  "scenario_timeout": 1800,
+  "oracle_output": "runtime/oracle-dumps",
+  "runs": "runs",
+  "heartbeat_timeout": 30,
+  "loading_timeout": 120,
+  "startup_save": null,
+  "session_until": null,
+  "startup_grace": 120,
+  "restart_delay": 5,
+  "log": "E:/ChatGPT_Project/Kenshi_Catlon/Kenshi/RE_Kenshi_log.txt",
+  "dump_directory": "E:/ChatGPT_Project/Kenshi_Catlon/Kenshi",
+  "runtime": "runtime",
+  "crashes": "crashes"
+}

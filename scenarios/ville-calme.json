@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "name": "ville-calme",
+  "description": "Observation sans ordre dans la sauvegarde locale ville-calme fournie par l'utilisateur ; aucun fichier du jeu n'est inclus.",
+  "save": "ville-calme",
+  "speed": 1,
+  "repeat": 3,
+  "actions": [],
+  "checkpoints": [
+    {"at": 0, "name": "initial"},
+    {"at": 120, "name": "deux-minutes"},
+    {"at": 600, "name": "dix-minutes"}
+  ]
+}

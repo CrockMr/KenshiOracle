@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "cohorts": [
+    {
+      "id": "heng_havok_0810",
+      "analyzer": "profiled_function",
+      "source": "runtime/scenarios/pause-cpu-x5-adaptive-20261028T140511Z.json",
+      "sha256": "60d74111457fa6d932efd5bf41d19fbf8fee96c3c497f0e57ba535ec8355f34a",
+      "plugin_version": "0.8.10",
+      "selected_function": "HavokCharacter::update",
+      "scenario": "Heng: sequential pause/x5/pause, selected Havok entry"
+    },
+    {
+      "id": "mongrel_battle40_0810",
+      "analyzer": "heavy_battle",
+      "source": "runtime/scenarios/heavy-battle-20261028T144427381931Z.json",
+      "sha256": "8dcc9c57886b6789d7240740f44944a9e156db5ba90bfe237580e1a5a478a82c",
+      "plugin_version": "0.8.10",
+      "selected_function": "HavokCharacter::update",
+      "scenario": "Mongrel: one generated 40-NPC battle at x5, four sequential windows"
+    },
+    {
+      "id": "heng_chars_0815",
+      "analyzer": "chars_split",
+      "source": "runtime/scenarios/chars-split-20261028T170111506769Z.json",
+      "sha256": "f553cfba8aab37bbf54824ab3b7a688be34a9c41b3f4de128970f7992ddb3b2a",
+      "plugin_version": "0.8.15",
+      "selected_function": "HavokCharacter::update",
+      "scenario": "Heng: sequential pause/x5/pause, chars original and post-call intervals"
+    },
+    {
+      "id": "heng_main_0816",
+      "analyzer": "main_loop",
+      "source": "runtime/scenarios/main-loop-20261028T174602988613Z.json",
+      "sha256": "c66a4e7d0f8f638f0509d2dbc56610be0bc9411de9525a029f982c31e986427a",
+      "plugin_version": "0.8.16",
+      "selected_function": "GameWorld::mainLoop_GPUSensitiveStuff",
+      "scenario": "Heng: sequential pause/x5/pause, original main-loop entry"
+    },
+    {
+      "id": "heng_renderer_0817",
+      "analyzer": "renderer",
+      "source": "runtime/scenarios/renderer-20261028T180433342866Z.json",
+      "sha256": "ada3a6bd984db83f78d28ea8359f9199be794228b0517b11d9b392d5d71ff33b",
+      "plugin_version": "0.8.17",
+      "selected_function": "Renderer::update",
+      "scenario": "Heng: sequential pause/x5/pause, original renderer-update entry"
+    },
+    {
+      "id": "heng_root_0818",
+      "analyzer": "root_frame",
+      "source": "runtime/scenarios/root-frame-20261028T192845606379Z.json",
+      "sha256": "28779a39bfabb747fdd5d800b4793b63fd08a8e6932484ddfdb2a19b95c20d0d",
+      "plugin_version": "0.8.18",
+      "selected_function": "Ogre::Root::renderOneFrame",
+      "scenario": "Heng: sequential pause/x5/pause, zero-argument Ogre root frame, nested probes/services included"
+    },
+    {
+      "id": "heng_root_cpu_0818",
+      "analyzer": "root_cpu",
+      "source": "runtime/scenarios/root-cpu-20261028T200957553841Z.json",
+      "sha256": "41dbf03088c48eb2a36d2adfa1c355030a9361dfb590410c2448d1fcb033924d",
+      "plugin_version": "0.8.18",
+      "selected_function": "Ogre::Root::renderOneFrame",
+      "scenario": "Heng: sequential pause/x5/pause; same DLL0.8.18, optional coarse thread CPU counters enabled after archived restart"
+    },
+    {
+      "id": "mongrel_root_cpu_battle40_0818",
+      "analyzer": "root_battle",
+      "source": "runtime/scenarios/root-battle-20261028T202347708754Z.json",
+      "sha256": "59e8a609a75a4cd32606d83fc3bdd6ab40ef6f1e323f851afe597d27b5258ecc",
+      "plugin_version": "0.8.18",
+      "selected_function": "Ogre::Root::renderOneFrame",
+      "scenario": "Mongrel: one 40-NPC x5 battle; Root coarse CPU enabled; four sequential windows, adaptive statistics tails explicitly retained"
+    }
+  ]
+}

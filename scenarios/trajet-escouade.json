@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.1",
+  "name": "trajet-escouade",
+  "save": "KenshiProbe_test",
+  "speed": 1,
+  "repeat": 3,
+  "actions": [
+    {
+      "at": 0,
+      "command": "issue_order",
+      "params": {
+        "type": "move",
+        "squad_id": "hand:34:1:3701293824:0:0",
+        "position": [50573.59375, 1005.236938, -13895.199219]
+      }
+    },
+    {"at": 600, "command": "pause", "params": {"paused": true}}
+  ],
+  "checkpoints": [
+    {"at": 0, "name": "initial"},
+    {"at": 120, "name": "en-route"},
+    {"at": 600, "name": "arrivee"}
+  ]
+}

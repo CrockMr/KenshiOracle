@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.1",
+  "name": "petite-bataille",
+  "save": "KenshiProbe_test_scene_20261028T022539600581Z",
+  "speed": 1,
+  "repeat": 3,
+  "actions": [
+    {
+      "at": 0,
+      "command": "issue_order",
+      "params": {
+        "type": "attack",
+        "character_id": "hand:1:254:2620117248:1:390136704",
+        "target_id": "hand:1:255:2565673728:1:1780517632"
+      }
+    },
+    { "at": 600, "command": "pause", "params": { "paused": true } }
+  ],
+  "checkpoints": [
+    { "at": 0, "name": "initial" },
+    { "at": 120, "name": "engagement" },
+    { "at": 600, "name": "fin" }
+  ]
+}
