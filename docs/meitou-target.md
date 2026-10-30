@@ -2,7 +2,8 @@
 
 # MeitouClient target
 
-The local fork uses branch `oracle-adapter`, activated only by `--oracle`.
+The local fork uses branch `oracle-adapter-08340c7` (base `08340c72`; the earlier
+`oracle-adapter` branch on `1df44934` is kept as a backup), activated only by `--oracle`.
 It does not provide a plugin/modding API. Its `docs/oracle.md` describes the
 seam and limits; the [durable-fork design](meitou-oracle-design.md) specifies
 maintenance. The supervised workflow below uses the project's Windows watchdog.
@@ -139,7 +140,7 @@ dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQua
 Remove-Item Env:KENSHI_ORACLE_VECTORS
 ```
 
-The fixture identity is the SHA-256 of its content with CRLF normalised to LF,
+The fixture identity is the SHA-256 of its content with CRLF normalized to LF,
 `d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`, checked by both
 KenshiOracle and the C# tests, so CRLF and LF checkouts agree without a Git setting.
 The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The 62 cases include

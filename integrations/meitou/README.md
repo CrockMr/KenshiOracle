@@ -21,28 +21,33 @@ byte for byte. This checks source reproduction, not an additional live campaign.
 
 ## Apply and build
 
-Use a separate checkout beside this KenshiOracle checkout. An existing checkout
-of the previous series can switch to the new base on a fresh branch, keeping the old
-branch as a backup:
+Use a separate checkout beside this KenshiOracle checkout. MeitouClient's
+`global.json` requires .NET SDK 10.0.401 with `latestFeature` roll-forward; the
+local validation used the already installed SDK 10.0.403. Install the SDK
+separately if necessary.
 
-```powershell
-git fetch origin
-git switch -c oracle-adapter-08340c7 08340c728c6b85a2b2d12df4211a60e170acb5ba
-```
-
-Then apply the patches with `git am` as below. Its `global.json`
-requires .NET SDK 10.0.401 with `latestFeature` roll-forward; the local validation
-used the already installed SDK 10.0.403. Install the SDK separately if necessary.
+For a new checkout:
 
 ```powershell
 git clone https://github.com/VlcekM/MeitouClient.git MeitouClient
 Set-Location MeitouClient
-git switch -c oracle-adapter 08340c728c6b85a2b2d12df4211a60e170acb5ba
+git switch -c oracle-adapter-08340c7 08340c728c6b85a2b2d12df4211a60e170acb5ba
+```
+
+An existing checkout of the previous series runs `git fetch origin` and the same
+`git switch` line instead, which keeps its old `oracle-adapter` branch as a
+backup. Then, in either case:
+
+```powershell
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
-git -c core.autocrlf=false am -- "$OracleRoot/integrations/meitou/0001-exact-camera-restoration.patch" "$OracleRoot/integrations/meitou/0002-opt-in-oracle-adapter.patch"
+git am -- "$OracleRoot/integrations/meitou/0001-exact-camera-restoration.patch" "$OracleRoot/integrations/meitou/0002-opt-in-oracle-adapter.patch"
 dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
 dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
+
+**Verified:** `git am` applied both patches cleanly with `core.autocrlf=false`
+and with `core.autocrlf=true`, and both times the 26 changed files matched the
+tested fork byte for byte.
 
 Adapt the relative `../KenshiOracle` checkout name. No contributor's installation
 path is embedded in the patches. Configure your own original content through
@@ -50,14 +55,20 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** on the tested fork at the new base: the focused Oracle/camera tests
-passed 115 of 115 cases without `KENSHI_ORACLE_VECTORS`, using the fork's own copy
-of the shared vectors. The complete non-`Bench` run had 716 passes, 11 failures and
-24 skips; the same 11 tests failed on the unmodified pinned upstream in that
-environment. **Observed:** the timing test
+**Verified** at fork tip `118b1648` on the new base:
+- The focused Oracle/camera tests passed 115 of 115 cases without
+  `KENSHI_ORACLE_VECTORS`, using the fork's own LF copy of the shared vectors.
+- They also passed 115 of 115 with `KENSHI_ORACLE_VECTORS` pointing at this
+  repository's CRLF `schema/canonical-vectors.json`.
+- The same focused tests passed 115 of 115 in a separate checkout produced from
+  the patches with `git am`.
+- The complete test run had 716 passes, 11 failures and 24 skips. The same 11 tests
+  failed on the unmodified pinned upstream in that environment.
+
+**Observed:** the timing test
 `OracleServerTests.A_host_timeout_cancels_queued_work_and_late_completion_cannot_replace_the_error`
-failed once under full-suite load and passed in isolated reruns and in a repeated
-complete run; treat it as timing-sensitive.
+failed once under full-suite load. Its class then passed in five isolated runs and in
+two later complete runs. Treat it as timing-sensitive.
 This is not a claim that the full suite is green or that another machine will
 reproduce every environmental result. See the
 [phase 2 validation](../../docs/phase2-validation.md).
