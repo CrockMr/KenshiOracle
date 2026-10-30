@@ -2,8 +2,9 @@
 
 # MeitouClient target
 
-The local fork uses branch `oracle-adapter-08340c7` (base `08340c72`; the earlier
-`oracle-adapter` branch on `1df44934` is kept as a backup), activated only by `--oracle`.
+The local fork uses branch `oracle-adapter-100c6ca` (base `100c6cae`), activated
+only by `--oracle`; earlier branches (`oracle-adapter-08340c7`, `oracle-adapter`
+on `1df4493`) may be kept as backups.
 It does not provide a plugin/modding API. Its `docs/oracle.md` describes the
 seam and limits; the [durable-fork design](meitou-oracle-design.md) specifies
 maintenance. The supervised workflow below uses the project's Windows watchdog.

@@ -3,21 +3,19 @@
 This directory makes the phase 2 adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the two patches, in order,
 to upstream MeitouClient commit
-`08340c728c6b85a2b2d12df4211a60e170acb5ba`. They correspond to the validated local
-fork tip `118b16488d1b9e71389ad168ecca70692cd37a28`; they are not an upstream
-release or an endorsement from the MeitouClient team. The previous series targeted
-`1df44934efd32c49998e7f3aa75d877fb499459a`; the recorded phase 2 campaigns ran on
-that earlier base.
+`100c6caec876cb1cdb4e3a404eed7e6d7b33eb54` (master of 2026-10-31). They correspond
+to the validated local fork tip `5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6`; they are
+not an upstream release or an endorsement from the MeitouClient team. Earlier
+series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the recorded phase 2
+campaigns) and `08340c728c6b85a2b2d12df4211a60e170acb5ba`; the
+[mod-free campaigns](../../docs/mod-free-campaigns.md) name the base of each run.
 
 | Order | Patch | Source commit |
 | --- | --- | --- |
-| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `bf0753b9853dd15935c154f236fb43297e7bb34f` |
-| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `118b16488d1b9e71389ad168ecca70692cd37a28` |
+| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `99add603ab4077e924020ea5a1ffb4d37d55ee20` |
+| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
-Patch application was checked against a fresh upstream `git archive`, with no
-old Git directory copied: all 26 resulting changed files match the tested fork
-byte for byte. This checks source reproduction, not an additional live campaign.
 
 ## Apply and build
 
@@ -31,12 +29,11 @@ For a new checkout:
 ```powershell
 git clone https://github.com/VlcekM/MeitouClient.git MeitouClient
 Set-Location MeitouClient
-git switch -c oracle-adapter-08340c7 08340c728c6b85a2b2d12df4211a60e170acb5ba
+git switch -c oracle-adapter-100c6ca 100c6caec876cb1cdb4e3a404eed7e6d7b33eb54
 ```
 
-An existing checkout of the previous series runs `git fetch origin` and the same
-`git switch` line instead, which keeps its old `oracle-adapter` branch as a
-backup. Then, in either case:
+In an existing checkout of an earlier series, run `git fetch origin` and then the
+same `git switch` line; your old branch stays as a backup. Then, in either case:
 
 ```powershell
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
@@ -45,9 +42,10 @@ dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
 dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
 
-**Verified:** `git am` applied both patches cleanly with `core.autocrlf=false`
-and with `core.autocrlf=true`, and both times the 26 changed files matched the
-tested fork byte for byte.
+**Verified:** against a fresh upstream `git archive`, with no old Git directory
+copied, `git am` applied both patches cleanly with `core.autocrlf=false` and with
+`core.autocrlf=true`; both times all 26 changed files matched the tested fork
+byte for byte. This checks source reproduction, not an additional live campaign.
 
 Adapt the relative `../KenshiOracle` checkout name. No contributor's installation
 path is embedded in the patches. Configure your own original content through
@@ -55,20 +53,23 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `118b1648` on the new base:
-- The focused Oracle/camera tests passed 115 of 115 cases without
-  `KENSHI_ORACLE_VECTORS`, using the fork's own LF copy of the shared vectors.
-- They also passed 115 of 115 with `KENSHI_ORACLE_VECTORS` pointing at this
-  repository's CRLF `schema/canonical-vectors.json`.
-- The same focused tests passed 115 of 115 in a separate checkout produced from
-  the patches with `git am`.
-- The complete test run had 716 passes, 11 failures and 24 skips. The same 11 tests
-  failed on the unmodified pinned upstream in that environment.
+**Verified** at fork tip `5ed31178` on `100c6cae`, in a checkout produced from a
+fresh upstream `git archive` with `git am`:
+- The focused Oracle/camera tests (the filter above) passed 115 of 115, both with
+  the fork's own copy of the shared vectors and with `KENSHI_ORACLE_VECTORS`
+  pointing at this repository's `schema/canonical-vectors.json`.
+- The quick suite (`Category!=Slow&Category!=Bench`) had 886 passes and 0 failures
+  (3 skipped).
+- The complete test run had 1033 passes, 13 failures and 25 skips. The same 13
+  tests failed on the unmodified pinned upstream in that environment (923 passes,
+  13 failures, 25 skips); none of them is an Oracle or camera test.
 
 **Observed:** the timing test
 `OracleServerTests.A_host_timeout_cancels_queued_work_and_late_completion_cannot_replace_the_error`
-failed once under full-suite load. Its class then passed in five isolated runs and in
-two later complete runs. Treat it as timing-sensitive.
+(1 s host timeout) fails occasionally when the machine is loaded: once in a
+complete run on each of the `08340c7` and `100c6cae` bases. It passed in every
+isolated rerun (five on each base) and in the complete run above, on a quiet
+machine. Treat it as timing-sensitive.
 This is not a claim that the full suite is green or that another machine will
 reproduce every environmental result. See the
 [phase 2 validation](../../docs/phase2-validation.md).
