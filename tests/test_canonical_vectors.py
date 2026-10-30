@@ -28,3 +28,11 @@ def test_historical_59_vectors_remain_the_native_phase1_bytes():
                         for case in DOCUMENT['cases'][:59])
     pinned = '413a593b4b2378ecffdba277942ed6ef0797302667a1f02e39260ff5c7b8fab7'
     assert hashlib.sha256(expected).hexdigest() == DOCUMENT['historical_expected_sha256'] == pinned
+
+
+def test_fixture_identity_is_defined_on_lf_normalized_content():
+    # The fixture identity is the SHA-256 of its LF-normalized bytes, so CRLF and
+    # LF checkouts (and the MeitouClient C# adapter tests) agree on one value.
+    normalized = SOURCE.read_bytes().replace(b'\r\n', b'\n')
+    pinned = 'd41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad'
+    assert hashlib.sha256(normalized).hexdigest() == pinned

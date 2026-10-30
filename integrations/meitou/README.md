@@ -3,14 +3,16 @@
 This directory makes the phase 2 adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the two patches, in order,
 to upstream MeitouClient commit
-`1df44934efd32c49998e7f3aa75d877fb499459a`. They correspond to the validated local
-fork tip `076d8abde354b6ac3eb1e4ad6976900534ed0698`; they are not an upstream
-release or an endorsement from the MeitouClient team.
+`08340c728c6b85a2b2d12df4211a60e170acb5ba`. They correspond to the validated local
+fork tip `118b16488d1b9e71389ad168ecca70692cd37a28`; they are not an upstream
+release or an endorsement from the MeitouClient team. The previous series targeted
+`1df44934efd32c49998e7f3aa75d877fb499459a`; the recorded phase 2 campaigns ran on
+that earlier base.
 
 | Order | Patch | Source commit |
 | --- | --- | --- |
-| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `68d703314aa8a468510b9dac3f761b8b8831268f` |
-| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `076d8abde354b6ac3eb1e4ad6976900534ed0698` |
+| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `bf0753b9853dd15935c154f236fb43297e7bb34f` |
+| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `118b16488d1b9e71389ad168ecca70692cd37a28` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 Patch application was checked against a fresh upstream `git archive`, with no
@@ -19,18 +21,27 @@ byte for byte. This checks source reproduction, not an additional live campaign.
 
 ## Apply and build
 
-Use a separate checkout beside this KenshiOracle checkout. Its `global.json`
+Use a separate checkout beside this KenshiOracle checkout. An existing checkout
+of the previous series can switch to the new base on a fresh branch, keeping the old
+branch as a backup:
+
+```powershell
+git fetch origin
+git switch -c oracle-adapter-08340c7 08340c728c6b85a2b2d12df4211a60e170acb5ba
+```
+
+Then apply the patches with `git am` as below. Its `global.json`
 requires .NET SDK 10.0.401 with `latestFeature` roll-forward; the local validation
 used the already installed SDK 10.0.403. Install the SDK separately if necessary.
 
 ```powershell
 git clone https://github.com/VlcekM/MeitouClient.git MeitouClient
 Set-Location MeitouClient
-git switch -c oracle-adapter 1df44934efd32c49998e7f3aa75d877fb499459a
+git switch -c oracle-adapter 08340c728c6b85a2b2d12df4211a60e170acb5ba
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
 git -c core.autocrlf=false am -- "$OracleRoot/integrations/meitou/0001-exact-camera-restoration.patch" "$OracleRoot/integrations/meitou/0002-opt-in-oracle-adapter.patch"
 dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
-dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~OracleCameraRestoreTests"
+dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
 
 Adapt the relative `../KenshiOracle` checkout name. No contributor's installation
@@ -39,9 +50,14 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-The focused Oracle/camera tests passed 115 cases on the tested fork. The complete
-non-`Bench` run had 716 passes, 11 failures and 24 skips; those same 11 failures
-and messages reproduced on the unmodified pinned upstream in that environment.
+**Verified** on the tested fork at the new base: the focused Oracle/camera tests
+passed 115 of 115 cases without `KENSHI_ORACLE_VECTORS`, using the fork's own copy
+of the shared vectors. The complete non-`Bench` run had 716 passes, 11 failures and
+24 skips; the same 11 tests failed on the unmodified pinned upstream in that
+environment. **Observed:** the timing test
+`OracleServerTests.A_host_timeout_cancels_queued_work_and_late_completion_cannot_replace_the_error`
+failed once under full-suite load and passed in isolated reruns and in a repeated
+complete run; treat it as timing-sensitive.
 This is not a claim that the full suite is green or that another machine will
 reproduce every environmental result. See the
 [phase 2 validation](../../docs/phase2-validation.md).

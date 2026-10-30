@@ -78,7 +78,9 @@ def main():
                     historical_expected_sha256=pinned, cases=rows)
     path = ROOT / 'schema' / 'canonical-vectors.json'
     path.write_text(json.dumps(document, ensure_ascii=False, allow_nan=False, indent=2) + '\n', encoding='utf-8')
-    print(json.dumps(dict(cases=len(rows), sha256=hashlib.sha256(path.read_bytes()).hexdigest())))
+    # Report the LF-normalized identity so CRLF and LF checkouts print the same hash.
+    normalized = path.read_bytes().replace(b'\r\n', b'\n')
+    print(json.dumps(dict(cases=len(rows), sha256=hashlib.sha256(normalized).hexdigest())))
 
 
 if __name__ == '__main__':

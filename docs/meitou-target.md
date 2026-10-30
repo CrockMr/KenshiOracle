@@ -139,6 +139,9 @@ dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQua
 Remove-Item Env:KENSHI_ORACLE_VECTORS
 ```
 
+The fixture identity is the SHA-256 of its content with CRLF normalised to LF,
+`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`, checked by both
+KenshiOracle and the C# tests, so CRLF and LF checkouts agree without a Git setting.
 The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The 62 cases include
 the 59 historical ones; selecting another file does not authorize changing
 expected bytes to make a capture pass.

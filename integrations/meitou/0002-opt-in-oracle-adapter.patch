@@ -1,4 +1,4 @@
-From 076d8abde354b6ac3eb1e4ad6976900534ed0698 Mon Sep 17 00:00:00 2001
+From 118b16488d1b9e71389ad168ecca70692cd37a28 Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:42:53 +0100
 Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
@@ -22,12 +22,12 @@ Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
  src/Meitou.Game/Program.cs                    |    5 +
  tests/Meitou.Tests/Oracle/Fixtures/README.md  |    6 +
  .../Oracle/Fixtures/canonical-vectors.json    | 4905 +++++++++++++++++
- .../Oracle/OracleCanonicalJsonTests.cs        |   69 +
+ .../Oracle/OracleCanonicalJsonTests.cs        |   73 +
  .../Oracle/OracleHostPolicyTests.cs           |  101 +
  .../Oracle/OracleProtocolTests.cs             |   75 +
  .../Meitou.Tests/Oracle/OracleServerTests.cs  |  226 +
  tests/Meitou.Tests/Oracle/OracleStateTests.cs |  133 +
- 23 files changed, 6997 insertions(+), 8 deletions(-)
+ 23 files changed, 7001 insertions(+), 8 deletions(-)
  create mode 100644 docs/oracle.md
  create mode 100644 src/Meitou.Game/GameHost.Oracle.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleCanonicalJson.cs
@@ -55,7 +55,7 @@ index 861f7cdf..43ef96f5 100644
  - [render-clouds](render-clouds.md)
  - [render-distance-benchmark](render-distance-benchmark.md)
 diff --git a/docs/launch-options.md b/docs/launch-options.md
-index e16eb4c5..c14be1a1 100644
+index c6c253fa..3f426500 100644
 --- a/docs/launch-options.md
 +++ b/docs/launch-options.md
 @@ -17,6 +17,9 @@ Authority: `src/Meitou.Game/GameOptions.cs` (`Split`, `Usage`), `src/Meitou.Game
@@ -199,10 +199,10 @@ index 00000000..137bd11e
 +by functional verification. A future mod needs host loading, seed, lifecycle
 +and paused-service APIs before it can replace this seam.
 diff --git a/src/Meitou.Game/GameHost.Interactive.cs b/src/Meitou.Game/GameHost.Interactive.cs
-index 0c93b9d4..b5bae760 100644
+index 63e804e6..baf1fb81 100644
 --- a/src/Meitou.Game/GameHost.Interactive.cs
 +++ b/src/Meitou.Game/GameHost.Interactive.cs
-@@ -532,7 +532,7 @@ sealed partial class GameHost
+@@ -534,7 +534,7 @@ sealed partial class GameHost
                  session.Input.Consume();
              }
              // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
@@ -211,7 +211,7 @@ index 0c93b9d4..b5bae760 100644
              session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
              session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off } || g.PlayBench is not null;
              if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
-@@ -547,6 +547,7 @@ sealed partial class GameHost
+@@ -549,6 +549,7 @@ sealed partial class GameHost
              HandleNewGame();
              HandleMainMenu();
              StepSceneLoad();
@@ -220,7 +220,7 @@ index 0c93b9d4..b5bae760 100644
              animClock = true;
              UpdateNav();
 diff --git a/src/Meitou.Game/GameHost.Metal.cs b/src/Meitou.Game/GameHost.Metal.cs
-index 304c9c71..ac8c63f7 100644
+index 203eca80..9cd6ac97 100644
 --- a/src/Meitou.Game/GameHost.Metal.cs
 +++ b/src/Meitou.Game/GameHost.Metal.cs
 @@ -596,6 +596,7 @@ sealed partial class GameHost
@@ -231,7 +231,7 @@ index 304c9c71..ac8c63f7 100644
                  ApplyCamera(session.Camera.Current);
              }
              catch (SceneLoadFailed e)
-@@ -1133,7 +1134,7 @@ sealed partial class GameHost
+@@ -1132,7 +1133,7 @@ sealed partial class GameHost
              if (!still)
              {
                  // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
@@ -240,7 +240,7 @@ index 304c9c71..ac8c63f7 100644
                  session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
                      hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
                  // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.
-@@ -1152,6 +1153,7 @@ sealed partial class GameHost
+@@ -1151,6 +1152,7 @@ sealed partial class GameHost
                      HandleMainMenu();
                  }
                  StepSceneLoad();
@@ -818,7 +818,7 @@ index 71cf2745..e12c46fb 100644
  
      void SandboxFollowCamera()
 diff --git a/src/Meitou.Game/GameHost.Saving.cs b/src/Meitou.Game/GameHost.Saving.cs
-index 8d31d82d..47fc5009 100644
+index bb7f2853..fbfecf20 100644
 --- a/src/Meitou.Game/GameHost.Saving.cs
 +++ b/src/Meitou.Game/GameHost.Saving.cs
 @@ -147,6 +147,7 @@ sealed partial class GameHost
@@ -874,7 +874,7 @@ index cf8fa158..f5d492ce 100644
          previousById.Clear();
          player.Reset();
 diff --git a/src/Meitou.Game/GameHost.cs b/src/Meitou.Game/GameHost.cs
-index bac6d71d..a2b080c8 100644
+index aacaeeb9..59abd7f7 100644
 --- a/src/Meitou.Game/GameHost.cs
 +++ b/src/Meitou.Game/GameHost.cs
 @@ -97,6 +97,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
@@ -894,7 +894,7 @@ index bac6d71d..a2b080c8 100644
      }
  
      /// <summary>The start opens on the title (no start, save, sandbox or duel was asked for).</summary>
-@@ -398,6 +399,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
+@@ -401,6 +402,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
              AwaitLoading(navmesh);
              SettleNewWorld();
              FinishLoadNotice(summary);
@@ -1762,12 +1762,12 @@ index cd4b42ca..af581973 100644
              Console.Error.WriteLine("--ui-showcase needs --screenshot <path>.");
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 new file mode 100644
-index 00000000..c209030f
+index 00000000..77cd11ed
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 @@ -0,0 +1,6 @@
 +The JSON is an identical synthetic copy of KenshiOracle `schema/canonical-vectors.json`.
-+SHA256: `4995bda8cf726e545c3fb6e090a59b04d83dfc42ac7c91537b7fdfe3c09a6cf5`.
++SHA256 of the content with CRLF normalised to LF: `d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`.
 +Set `KENSHI_ORACLE_VECTORS` to test the shared original directly. The first 59 cases
 +are the phase 1 Python/native numeric, string and nullable-state vectors; three
 +additional cases check scalar key order and additive state 0.2 canonicalisation.
@@ -6685,10 +6685,10 @@ index 00000000..7115229e
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 new file mode 100644
-index 00000000..f5533e43
+index 00000000..1060b5ff
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,73 @@
 +using System.Runtime.CompilerServices;
 +using System.Security.Cryptography;
 +using System.Text;
@@ -6699,10 +6699,14 @@ index 00000000..f5533e43
 +
 +public class OracleCanonicalJsonTests
 +{
-+    const string VectorHash = "4995bda8cf726e545c3fb6e090a59b04d83dfc42ac7c91537b7fdfe3c09a6cf5";
++    // SHA-256 of the fixture with CRLF normalised to LF, so checkouts with either line ending agree.
++    const string VectorHash = "d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad";
 +
 +    static string VectorPath([CallerFilePath] string source = "") => Environment.GetEnvironmentVariable("KENSHI_ORACLE_VECTORS")
 +        ?? Path.Combine(Path.GetDirectoryName(source)!, "Fixtures", "canonical-vectors.json");
++
++    static byte[] LfNormalised(byte[] bytes) =>
++        Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n"));
 +
 +    public static IEnumerable<object[]> Cases()
 +    {
@@ -6724,7 +6728,7 @@ index 00000000..f5533e43
 +    public void Shared_fixture_is_the_documented_identical_copy()
 +    {
 +        byte[] bytes = File.ReadAllBytes(VectorPath());
-+        Assert.Equal(VectorHash, Convert.ToHexStringLower(SHA256.HashData(bytes)));
++        Assert.Equal(VectorHash, Convert.ToHexStringLower(SHA256.HashData(LfNormalised(bytes))));
 +        var document = JsonNode.Parse(bytes)!;
 +        Assert.Equal(59, document["historical_case_count"]!.GetValue<int>());
 +        using var historical = new MemoryStream();

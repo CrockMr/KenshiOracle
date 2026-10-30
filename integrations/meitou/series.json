@@ -1,21 +1,21 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
-  "upstream_base": "1df44934efd32c49998e7f3aa75d877fb499459a",
-  "fork_tip": "076d8abde354b6ac3eb1e4ad6976900534ed0698",
+  "upstream_base": "08340c728c6b85a2b2d12df4211a60e170acb5ba",
+  "fork_tip": "118b16488d1b9e71389ad168ecca70692cd37a28",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
     {
       "file": "0001-exact-camera-restoration.patch",
-      "source_commit": "68d703314aa8a468510b9dac3f761b8b8831268f",
-      "sha256": "b3d191fcb9fbaf7ab205c33b4cca93f2ebdc8ab5f4848c6b077aa010967d6732",
+      "source_commit": "bf0753b9853dd15935c154f236fb43297e7bb34f",
+      "sha256": "dbad7a3f686f70920f7df29f0cdad22fb6de48978eeedb2592a95697a833ff8d",
       "bytes": 6338
     },
     {
       "file": "0002-opt-in-oracle-adapter.patch",
-      "source_commit": "076d8abde354b6ac3eb1e4ad6976900534ed0698",
-      "sha256": "9b099a115bd15eb1de6eda4662b3ca06de02f9c6569e13672d0470d81174c997",
-      "bytes": 333407
+      "source_commit": "118b16488d1b9e71389ad168ecca70692cd37a28",
+      "sha256": "f8adc2c1cd131673cf184dd06859569e41e4ef58644b5ccf931fd3d56960340f",
+      "bytes": 333704
     }
   ]
 }

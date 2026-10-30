@@ -1,4 +1,4 @@
-From 68d703314aa8a468510b9dac3f761b8b8831268f Mon Sep 17 00:00:00 2001
+From bf0753b9853dd15935c154f236fb43297e7bb34f Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:41:14 +0100
 Subject: [PATCH] Add exact camera pose restoration for controlled sessions
