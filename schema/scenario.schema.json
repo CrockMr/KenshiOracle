@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:kenshi-oracle:scenario:0.1",
   "title": "Kenshi scenario 0.1",
-  "description": "Each repetition reloads save. Times are game calendar seconds (in-game hours x 3600) relative to the first paused state captured after that load, not real or simulated seconds; per MeitouClient's constant of 1200/11 simulated seconds per in-game hour, one simulated second is 33 calendar seconds (not yet measured). At a shared time, actions execute in declared order before checkpoints. Repeatability is measured, never presumed.",
+  "description": "Each repetition reloads save. Times are game calendar seconds (in-game hours x 3600) relative to the first paused state captured after that load, not real or simulated seconds; per MeitouClient's constant of 1200/11 simulated seconds per in-game hour, one simulated second is 33 calendar seconds (measured on MeitouClient (checkpoint tick steps); on the original the engine reports the same hour length, simulated-time equivalence argued). At a shared time, actions execute in declared order before checkpoints. Repeatability is measured, never presumed.",
   "type": "object", "additionalProperties": false,
   "required": ["schema_version", "name", "save", "speed", "repeat", "actions", "checkpoints"],
   "properties": {

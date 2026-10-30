@@ -27,7 +27,7 @@
       "properties": {
         "day": {"type": "integer", "minimum": 0, "maximum": 1000000000, "description": "Zero-based world day, not the one-based UI day."},
         "hour": {"type": "number", "minimum": 0, "maximum": 24, "description": "Hour within the world day. The value 24 is permitted only for rounding of an observation immediately before midnight."},
-        "elapsed_seconds": {"type": "number", "minimum": 0, "maximum": 1000000000, "description": "Absolute calendar seconds since world time origin: total world hours multiplied by 3600. Not wall time, QPC, or engine simulation seconds. Per MeitouClient's constant of 1200/11 simulated seconds per in-game hour, one simulated second is 33 calendar seconds; this conversion is not yet measured."},
+        "elapsed_seconds": {"type": "number", "minimum": 0, "maximum": 1000000000, "description": "Absolute calendar seconds since world time origin: total world hours multiplied by 3600. Not wall time, QPC, or engine simulation seconds. Per MeitouClient's constant of 1200/11 simulated seconds per in-game hour, one simulated second is 33 calendar seconds; this conversion is measured on MeitouClient (checkpoint tick steps); on the original the engine reports the same hour length, simulated-time equivalence argued."},
         "speed": {"type": "number", "minimum": 0, "maximum": 5, "description": "Effective game speed, observed as zero while paused. The remembered nonzero selection is not exposed by the public game API and does not belong in this common state."},
         "paused": {"type": "boolean"}
       }

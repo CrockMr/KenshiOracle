@@ -20,8 +20,8 @@ build, unit and packaging checks add no new real-game loading claim.
 (scenario `at` 120 and 600) are game **calendar** time, not simulated or real
 time. Per MeitouClient's constant of `1200/11` simulated seconds per in-game
 hour (**Verified** in its code), they correspond to about **3.6** and
-**18.2 simulated seconds**. That equivalence is not yet measured on either
-target (**Unknown**); see [time units](protocol.md#time-units).
+**18.2 simulated seconds**. That equivalence is measured on MeitouClient;
+on the original it is argued, not measured directly (**Unknown**); see [time units](protocol.md#time-units).
 
 The evidence links below refer to **local artifacts ignored by Git and not
 distributed**. No dump, save, private configuration, game image or decompiled
