@@ -51,7 +51,7 @@ flowchart TD
 
 The original [state schema 0.1](schema/state.schema.json) covers:
 
-- the game clock, speed and pause state; `elapsed_seconds` is absolute world-calendar seconds, not real elapsed time;
+- the game clock, speed and pause state; `elapsed_seconds` is absolute world-calendar seconds (in-game hours × 3600), neither real elapsed time nor simulated time;
 - loaded characters: opaque id, name, race, faction, squad, position, state (alive, unconscious, dead or unknown), health per body part, immediate task or order;
 - squads: id, faction, members, leader;
 - factions (id and name) and directional faction relations.
@@ -65,6 +65,8 @@ When the public SDK proves a link to a character or squad in the source save, th
 ## Scenarios
 
 A scenario describes an experiment: a starting save, a game speed, timed orders and checkpoints where a snapshot is taken. Each repetition reloads that save. Times are calendar seconds relative to the first paused state after loading; the report records the actual checkpoint times and any overshoot.
+
+**Time units.** Scenario `at`, checkpoint times and `elapsed_seconds` are game **calendar** seconds (in-game hours × 3600) on both targets. MeitouClient defines one in-game hour as `1200/11` ≈ 109.1 simulated seconds (**Verified** in its code), so **1 simulated second ≈ 33 calendar seconds**: a checkpoint at 120 s is about 3.6 simulated seconds and one at 600 s about 18.2 simulated seconds. On the original, the same hour length is **Observed** only indirectly; a direct measurement of simulated time on both targets is pending (**Unknown**). Details: [time units](docs/protocol.md#time-units).
 
 Three examples were validated in-game with probe **0.9.3**, each repeated three times with a reload before every repetition:
 

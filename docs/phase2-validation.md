@@ -16,6 +16,13 @@ passed again from the clean public checkout: **1,975 passed, 25 skipped** in
 directory, with 344 counted assertions plus the JSON parser checks. These
 build, unit and packaging checks add no new real-game loading claim.
 
+**Time note.** The "two minutes" and "ten minutes" checkpoints below
+(scenario `at` 120 and 600) are game **calendar** time, not simulated or real
+time. Per MeitouClient's constant of `1200/11` simulated seconds per in-game
+hour (**Verified** in its code), they correspond to about **3.6** and
+**18.2 simulated seconds**. That equivalence is not yet measured on either
+target (**Unknown**); see [time units](protocol.md#time-units).
+
 The evidence links below refer to **local artifacts ignored by Git and not
 distributed**. No dump, save, private configuration, game image or decompiled
 code is copied into this report.

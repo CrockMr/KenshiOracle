@@ -81,7 +81,7 @@ The probe replaces proven current handles with saved identities in IDs, squad me
 
 [state.schema.json](../schema/state.schema.json), version `0.1`, defines `clock`, `characters`, `squads`, `factions`, and `relations`. All fields are present; explicitly unknown fields permit `null`. A known empty collection is `[]`, not an unknown value. [Field-by-field coverage](state-coverage.md) details accesses and the meaning of each value.
 
-`elapsed_seconds` represents **world calendar seconds**: `getTotalHours() * 3600`. `day` is zero-based, `hour` is hour within the day, and `speed` the effective multiplier, zero while paused. No wall time, frame counter, PID, or address appears in this state. Characters come from the union of update list, retained dead characters, and active-squad members; factions come from the live manager. An unloaded zone is not captured.
+`elapsed_seconds` represents **world calendar seconds**: `getTotalHours() * 3600`. One simulated second is 33 calendar seconds per MeitouClient's constant; see [time units](#time-units). `day` is zero-based, `hour` is hour within the day, and `speed` the effective multiplier, zero while paused. No wall time, frame counter, PID, or address appears in this state. Characters come from the union of update list, retained dead characters, and active-squad members; factions come from the live manager. An unloaded zone is not captured.
 
 Character/squad identities are opaque `hand:TYPE:C:CS:I:S` strings, of saved origin when the binding above is proven. Races/factions use their `GameData.stringID`; medical parts append side to this identity. Lists sort lexically by `id`, squad members by identity, and relations by `(source_id,target_id)`. Relations are directional. Task is the immediate current action identified by its lowercase public name; a target may be absent from the snapshot. Position is exposed only for `move_cus_ordered`, `move_on_free_will`, and `move_on_free_will_fast` when valid; other tasks have `position:null`.
 
@@ -109,11 +109,28 @@ Archiving is best effort: creation/read/copy errors do not block restart. `game_
 
 The MCP request uses a restart token. Reading `restart.request` is bounded to 129 bytes for a1-to 128-character printable ASCII token. Read/consumption errors are exposed in `restart_request_error` and `restart_request_failures` without preventing recovery of a dead/frozen process. After requested restart, acknowledgment remains published even if request removal fails; the same persistent token does not trigger a restart loop. The watchdog preserves a different token observed during consumption.
 
+<a id="time-units"></a>
+
+## Time units: calendar seconds and simulated seconds
+
+Scenario `at` values, checkpoint `requested_at`/`actual_at`/`overshoot_seconds`, `run_until` `target_seconds` and state `clock.elapsed_seconds` all use the same unit on **both targets**: **game calendar seconds**, that is in-game hours × 3600. The "2 min" and "10 min" checkpoints of the examples are two and ten minutes of the in-game calendar, not two and ten minutes of simulated or real time.
+
+| Statement | Status and source |
+| --- | --- |
+| Original target: `elapsed_seconds = getTotalHours() * 3600`. | **Verified** in [`plugin/OracleState.h`](../plugin/OracleState.h) (`gameSeconds`, line 54). |
+| MeitouClient adapter: `elapsed_seconds = session.Clock.TotalHours * 3600`. | **Verified** in MeitouClient `src/Meitou.Game/GameHost.Oracle.cs:141` (commit `08340c7`). |
+| MeitouClient defines 1 in-game hour = `1200/11` ≈ **109.09 simulated seconds**, and advances its game clock by one simulation tick of simulated seconds per tick. | **Verified** in code: MeitouClient `src/Meitou.Engine/Time/GameClock.cs:13` and `src/Meitou.Simulation/World.cs:182` (`SecondsPerGameHour = 1200.0 / 11`), `src/Meitou.Engine/WorldSession.cs:154` (`Clock.Advance(Simulation.TickSeconds)`). |
+| Hence **1 simulated second = 33 calendar seconds** (3600 / (1200/11) = 33): 120 calendar s ≈ 3.6 simulated s, 600 calendar s ≈ 18.2 simulated s, 3600 calendar s ≈ 109.1 simulated s. | Arithmetic from the constant above. The ratio does not depend on game speed: speed changes how fast simulated time passes in real time, not how many calendar seconds one simulated second represents. |
+| Original target: same hour length. | **Observed**, not measured as simulated time: `getLengthOfHourInRealSeconds()` returned 109.090912 and the clock advanced 0.009167878 in-game hours per real second at x1 (≈ 109.08 real s per hour) in the [clock measurements](research/simulation-clock-measurements.md). Real seconds at x1 are not proven to equal simulated seconds. |
+| A direct measurement of simulated seconds per in-game hour (tick count on MeitouClient, an equivalent simulated-time counter on the original). | **Unknown**: pending. Until it is measured on both targets, treat the 33:1 ratio as the code constant, not as a measured equivalence. |
+
+Reports remain expressed in calendar seconds; a simulated-time column is a conversion of these values, not a separate measurement.
+
 <a id="scénarios-et-rapports"></a>
 
 ## Scenarios and reports
 
-[scenario.schema.json](../schema/scenario.schema.json) requires `{schema_version,name,save,speed,repeat,actions,checkpoints}`. `at` is **calendar seconds relative to the first paused state after reload**, not real duration or an absolute deadline. `repeat` is 1 to 100; tool `run_scenario(path, repeat=None)` may override it. Only `pause`, `set_game_speed`, `issue_order` actions are allowed, with validated parameters.
+[scenario.schema.json](../schema/scenario.schema.json) requires `{schema_version,name,save,speed,repeat,actions,checkpoints}`. `at` is **calendar seconds relative to the first paused state after reload**, not real duration or an absolute deadline. One simulated second is 33 calendar seconds per MeitouClient's constant (measurement pending); see [time units](#time-units). `repeat` is 1 to 100; tool `run_scenario(path, repeat=None)` may override it. Only `pause`, `set_game_speed`, `issue_order` actions are allowed, with validated parameters.
 
 Each repetition reloads the save and checks paused readiness. Instants are processed in order; at equal times, actions preserve declared order and precede every checkpoint. Execution remains physically paused during this group; a resume order becomes effective when advancing toward the next instant. Persistent pause without same-instant resume makes a later deadline unreachable and is rejected. Checkpoints record `requested_at`, `actual_at`, and `overshoot_seconds`: the first observed crossing may exceed target, particularly at high speed.
 

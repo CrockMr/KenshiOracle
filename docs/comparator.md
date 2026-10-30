@@ -119,6 +119,14 @@ Bounds `[0, window width]` concern only the sampled window; exact total duration
 remains unknown and `duration_seconds` remains not comparable.
 Three snapshots do not replace a temporal log.
 
+All times, intervals and windows above (`first_observed_at`, window widths,
+`duration_seconds`, checkpoint times) are game **calendar** seconds, like
+scenario `at` and `elapsed_seconds`. Per MeitouClient's constant of `1200/11`
+simulated seconds per in-game hour (**Verified** in its code), one simulated
+second is 33 calendar seconds: a 600-second window covers about 18.2 simulated
+seconds. This conversion is not yet measured on either target (**Unknown**);
+see [time units](protocol.md#time-units).
+
 <a id="écarts-re_kenshi-et-sorties"></a>
 
 ## RE_Kenshi deviations and outputs

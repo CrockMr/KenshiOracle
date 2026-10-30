@@ -124,7 +124,7 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1000000000,
-          "description": "Absolute calendar seconds since world time origin: total world hours multiplied by 3600. Not wall time, QPC, or engine simulation seconds."
+          "description": "Absolute calendar seconds since world time origin: total world hours multiplied by 3600. Not wall time, QPC, or engine simulation seconds. Per MeitouClient's constant of 1200/11 simulated seconds per in-game hour, one simulated second is 33 calendar seconds; this conversion is not yet measured."
         },
         "speed": {
           "type": "number",
