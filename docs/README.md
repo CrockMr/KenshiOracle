@@ -12,6 +12,7 @@ or guarantees for another installation.
   [RE_Kenshi deviations](rekenshi-deviations.md)
 - [MeitouClient target](meitou-target.md) and
   [adapter design and fork maintenance](meitou-oracle-design.md)
+- [Patch-series maintenance and version-change rules](maintenance.md)
 - [State coverage](state-coverage.md), [saved NPC identities](npc-identities-phase1.md)
   and [complete protocol](protocol.md)
 - [Cross-engine comparison](comparator.md)
@@ -21,6 +22,7 @@ or guarantees for another installation.
 - [Quiet-town phase 1 supplement](oracle-ville-calme-validation.md),
   [phase 2 cold-profile milestone](phase2-step0-validation.md) and
   [phase 2 validation and real comparison](phase2-validation.md)
+- [Mod-free campaigns on a fresh city save](mod-free-campaigns.md)
 - [Paused automatic loading](autoload-pause-validation.md) and
   [pause-preserving speed control](pause-preserving-speed-validation.md)
 

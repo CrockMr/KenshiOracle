@@ -31,6 +31,13 @@ The first valid real `dump_state` contains 106 characters, 35 squads, 114 factio
 
 The [initial 0.9.3 trial](../../runtime/oracle-phase1/identities-smoke-093.json), outside Git, prepares 1 470 origins and observes 138 bindings to loaded objects, including three remapped characters and zero remapped squads. The three affected saved HANDs appear in the dump; the corresponding three current HANDs no longer do. Native/MCP/Python bytes agree. The nine final 0.9.3 travel captures retain the three saved HANDs; the independent audit checks all 27 captures from the three examples. The 0.9.5 validation and limitations remain distinguished in the [delivery report](../oracle-phase1-delivery.md). Fake-game tests do not validate Kenshi. Two TODOs remain in code: `ORACLE-ORDER-ENUM` and `ORACLE-CAMERA-NONCHARACTER`.
 
+## Original and MeitouClient on mod-free saves
+
+| Question | Current certainty | Validation or limit |
+| --- | --- | --- |
+| Initial height of characters after load and spawn | Y difference **Observed** on the mod-free base save `oracle-base-nature`, one local setup-test run per engine (outside Git). After the same paused reload, the original holds the player at Y 781.29, then lowers them by about 45 units (781.29 to 736.59) during the first simulated second; MeitouClient places the player at 736.59 from the load. Spawned characters follow the same pattern: about 778, then about 736, on the original; on the ground at once on MeitouClient. MeitouClient ignores the requested spawn Y (**Verified** by code reading). The cause on the original is **Unknown**. | A link to the camera height change after loading (0.936035 units) is not established. Compare `characters[].position.y` only after the first simulated second (33 calendar seconds), or account for the difference before any paused comparison. Evidence: local setup-test runs (outside Git) `20261031T123043Z-original` and `20261031T131358Z-meitou`. |
+| Two town platoons of the clean city appear only on the original (H1) | **Observed**, see [mod-free campaigns](../mod-free-campaigns.md#open-question-h1-two-late-town-platoons). | A fix is proposed to MeitouClient upstream separately. |
+
 <a id="historique-de-profilage-conservé"></a>
 
 ## Retained profiling history
