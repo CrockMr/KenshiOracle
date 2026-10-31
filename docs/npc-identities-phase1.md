@@ -12,7 +12,7 @@ State schema **0.1 remains unchanged and neutral**. Full `hand:TYPE:C:CS:I:S` id
 
 ## Reproducible evidence for the historical 0.9.1 audit
 
-The [npc-identity-readonly-091.py](../runtime/oracle-phase1/npc-identity-readonly-091.py) reader and its [npc-identity-evidence-091.json](../runtime/oracle-phase1/npc-identity-evidence-091.json) output remain in `runtime/oracle-phase1/`, ignored by Git. They contain no copy of game files. The JSON retains SHA-256 hashes of saves read, captures compared, the reader and relevant SDK headers, together with exact keys and matches.
+The npc-identity-readonly-091.py (local evidence, not published) reader and its npc-identity-evidence-091.json (local evidence, not published) output remain in `runtime/oracle-phase1/`, ignored by Git. They contain no copy of game files. The JSON retains SHA-256 hashes of saves read, captures compared, the reader and relevant SDK headers, together with exact keys and matches.
 
 From the project root:
 
@@ -118,7 +118,7 @@ Native canonicalization replaces character and squad IDs, `squad_id`, order targ
 
 ## First real 0.9.3 evidence and limits
 
-The local [identities-smoke-093.json](../runtime/oracle-phase1/identities-smoke-093.json) file, outside Git, contains `completed=true`. The `KenshiProbe_test` context has **1 470 origins**, **138 loaded bindings**, **three remapped characters** and **zero remapped squads**. The three observed public calls resolve these pairs:
+The local identities-smoke-093.json (local evidence, not published) file, outside Git, contains `completed=true`. The `KenshiProbe_test` context has **1 470 origins**, **138 loaded bindings**, **three remapped characters** and **zero remapped squads**. The three observed public calls resolve these pairs:
 
 | Saved HAND | Current HAND returned in the loaded inventory |
 | --- | --- |

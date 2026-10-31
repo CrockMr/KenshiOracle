@@ -90,7 +90,7 @@ remain null and combat mode is false in these snapshots. The
 by Git and not distributed, identifies the three SHA-256 hashes and restoration
 of files/saves. These observations prove neither determinism nor parity.
 
-The [original N = 5 campaign](../runs/ville-calme/20261029T195936.248409Z-8d76ea5c/report.json)
+The original N = 5 campaign (local evidence, not published)
 subsequently completed 15 snapshots in 0.2 with controls and player profile
 restored, with effective evidence after a cold start. Capture DLL SHA-256:
 `a42ac22176204e2a9cfea9e938adc87ba15fa1baa17d9914c9564698040ed512`.
@@ -108,13 +108,13 @@ The [local acceptance record](../../phase2-meitou-first/acceptance.json), not
 distributed, confirms the owned process stopped, player settings and four
 saves unchanged. One snapshot does not validate a complete scenario,
 scenario-control restoration or comparison between engines.
-The [Meitou quiet-town N = 5 campaign](../runs/meitou/ville-calme/20261029T200854.596180Z-c872b96e/report.json)
+The Meitou quiet-town N = 5 campaign (local evidence, not published)
 subsequently completed 15 canonical 0.2 snapshots with seeds 0..4 and restored
 controls; the prepared seed 1729 is restored on the final reload.
-A [Meitou battle N = 1](../runs/meitou/petite-bataille/20261029T200733.030331Z-fe023ab1/report.json)
+A Meitou battle N = 1 (local evidence, not published)
 completed three snapshots and restoration, with a health change observed on
 two targeted saved HANDs. These reports remain local, outside Git.
-A [Meitou travel run N = 1](../runs/meitou/trajet-escouade/20261029T201301.764942Z-52f15f5f/report.json)
+A Meitou travel run N = 1 (local evidence, not published)
 also completed three snapshots and restoration. The 21 Meitou captures,
 5-versus-5 quiet-town comparison and their limits are collected in the
 [phase 2 report](phase2-validation.md).

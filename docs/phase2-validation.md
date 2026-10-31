@@ -49,7 +49,7 @@ code is copied into this report.
 | Meitou, squad travel | 1 | 3 | Move order, verified captures and restoration; no statistical evidence at N = 1. |
 
 The [original acceptance evidence](../../phase2-live-original-five/acceptance.json)
-and [N = 5 report](../runs/ville-calme/20261029T195936.248409Z-8d76ea5c/report.json)
+and N = 5 report (local evidence, not published)
 record six RE_Kenshi options set to false during the experiment, GUI and CRT
 export observations, then restoration of the player profile after a cold
 restart. The INI, `settings.cfg`, previous DLL and four protected saves were
@@ -59,9 +59,9 @@ retains its historical state-0.1 scope.
 The [three-scenario Meitou acceptance evidence](../../phase2-meitou-scenarios/20261029T200649Z/acceptance.json)
 records **21 snapshots**, seed 1729 after each restoration, the owned process
 stopped, and preferences and four saves unchanged. Reports:
-[quiet town](../runs/meitou/ville-calme/20261029T200854.596180Z-c872b96e/report.json),
-[battle](../runs/meitou/petite-bataille/20261029T200733.030331Z-fe023ab1/report.json),
-[travel](../runs/meitou/trajet-escouade/20261029T201301.764942Z-52f15f5f/report.json).
+quiet town (local evidence, not published),
+battle (local evidence, not published),
+travel (local evidence, not published).
 Initial preparation loads the population without an unclocked simulation or
 combat tick; `startup_boundary` identifies that boundary in provenance.
 
@@ -90,7 +90,7 @@ which covers neither assets, mods/load order nor builds.
 | Check | Result and limitation |
 | --- | --- |
 | Shared canonicalization | 62 C#/Python/native vectors, including 59 historical cases; identical expected bytes. |
-| Complete Python suite, phase 2 English sources before publication reorganization | **1,975 passed, 25 skipped, zero failures**, 101.57 s; [log](../runtime/phase2-english-tests/pytest.log) and [JUnit](../runtime/phase2-english-tests/pytest.xml). |
+| Complete Python suite, phase 2 English sources before publication reorganization | **1,975 passed, 25 skipped, zero failures**, 101.57 s; log (local evidence, not published) and JUnit (local evidence, not published). |
 | Targeted Meitou Oracle/camera tests | [115 passed, zero failures](../../phase2-meitou-build/oracle-loading-boundary-tests.txt). |
 | Fast Meitou subset before the preparation fix | [577 passed, 2 skipped](../../phase2-meitou-build/meitou-quick-tests.txt); historical evidence, not a substitute for the current complete run. |
 | Complete Meitou suite excluding `Bench` | **716 passed, 11 failed, 24 skipped**; this suite is not green. |
@@ -127,9 +127,9 @@ clone, as stated above.
 
 ## Quiet-town results
 
-The [readable report](../runs/comparisons/ville-calme-phase2-20261029/report.md),
-[detailed JSON](../runs/comparisons/ville-calme-phase2-20261029/report.json) and
-[English drafts](../runs/comparisons/ville-calme-phase2-20261029/issues) use the
+The readable report (local evidence, not published),
+detailed JSON (local evidence, not published) and
+English drafts (local evidence, not published) use the
 two certified campaigns, the same scenario/save and Meitou seeds 0..4.
 Absolute tolerances: positions/distances **1e-6** world unit, other numbers
 **0**; X/Z arrival radius **5** world units.

@@ -160,9 +160,9 @@ nor unknown coverage with “known deviation”.
 
 With small N, ranges/medians describe only the sample; no significance test
 is presented as proof. An original N = 5, 15-snapshot campaign is
-[validated locally](../runs/ville-calme/20261029T195936.248409Z-8d76ea5c/report.json),
+validated locally (local evidence, not published),
 with cold profile restoration. The
-[Meitou N = 5 campaign](../runs/meitou/ville-calme/20261029T200854.596180Z-c872b96e/report.json)
+Meitou N = 5 campaign (local evidence, not published)
 also completed its 15 snapshots and restoration. These links point to
 Git-ignored evidence, not distributed files. The [validation report](phase2-validation.md)
 presents the real comparison of these batches, divergence families and

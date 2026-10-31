@@ -10,7 +10,7 @@ This randomized confirmation is accepted: **36 blocks,660 reads,330 control wake
 
 ## Verified preregistration
 
-[Preregistration](../../runtime/observer-randomized-20261028T222552055152Z/registration.json) is fixed before capture, SHA-256 **`fc972fefec0fbe94c659256aea7dced759ae0c81703cc13be729f6cf2f643103`**. It retains:
+Preregistration (local evidence, not published) is fixed before capture, SHA-256 **`fc972fefec0fbe94c659256aea7dced759ae0c81703cc13be729f6cf2f643103`**. It retains:
 
 - integer randomization seed **`4337799577124482768`**, from a single64-bit draw before acquisition;
 - full36-block plan, protocol `observer-overhead-randomized-v2`, version 0.8.20, and SHAs of 20 sources;
@@ -137,11 +137,11 @@ The camera moved about **12,561 units before the locked reference**, then **10,7
 
 | Evidence | SHA-256 |
 |---|---|
-| [Accepted capture](../../runtime/scenarios/observer-randomized-20261028T222614566229Z.json), 28 002 828 bytes | `3c99c2e0ec9b0b64b9c95f4aedbd1fc6df5caa4894b8235f0c4023e45391873f` |
-| [Analyzed report](../../runtime/randomized-observer-seed0.json), 142 152 bytes | `ba49c0ff37ce1b479c0a999266626a5973ffc385634d1944f79bc07edb0ac31d` |
-| [Two-replay evidence](../../runtime/randomized-observer-replay-proof.json) | `4000a2f5e44c256795298dbc0459f978c3601be9a2610525ccd349d81c2d5f57` |
-| [Final game/file audit](../../runtime/randomized-observer-final.json) | `30b7f7ed702c4cd187123af46bee8561e60b667272864ae7a6d679bdc91c335e` |
-| [Transport termination audit](../../runtime/randomized-observer-transport-final.json) | `5ca086521ffb3ee381afc95e3ceadae2addeb1f2c1b0351c468630441a4b7caa` |
+| Accepted capture (local evidence, not published), 28 002 828 bytes | `3c99c2e0ec9b0b64b9c95f4aedbd1fc6df5caa4894b8235f0c4023e45391873f` |
+| Analyzed report (local evidence, not published), 142 152 bytes | `ba49c0ff37ce1b479c0a999266626a5973ffc385634d1944f79bc07edb0ac31d` |
+| Two-replay evidence (local evidence, not published) | `4000a2f5e44c256795298dbc0459f978c3601be9a2610525ccd349d81c2d5f57` |
+| Final game/file audit (local evidence, not published) | `30b7f7ed702c4cd187123af46bee8561e60b667272864ae7a6d679bdc91c335e` |
+| Transport termination audit (local evidence, not published) | `5ca086521ffb3ee381afc95e3ceadae2addeb1f2c1b0351c468630441a4b7caa` |
 
 Python hash seeds `0` and `8675309` produce byte-identical reports. They check replay stability without changing the randomization seed or constituting two acquisitions. Evidence retains20 source SHAs; analyzer SHA `920a930faa286ffc3816259d5b07e17a1a1f9fc0e555871ce842b2813bfb0c2e`, controller `3be16ca2a9e88bf6c51171e912259ce324c3dba483d4bc86e002813a028cf530`.
 

@@ -28,7 +28,7 @@ the facts needed to understand it without those files:
 
 - [Acceptance and preservation checks](../../phase2-live-step0/acceptance.json).
 - [Cold-start cycle and restoration report](../../phase2-live-step0/runtime/reference-lifecycle/3c11a806a9b1476c9c653625a9767b5d/report.json).
-- [Scenario report](../runs/ville-calme/20261029T191452.848023Z-4533e9ee/report.json).
+- Scenario report (local evidence, not published).
 
 No snapshot, game data, save, or personal configuration is copied into this
 report or the public source tree.

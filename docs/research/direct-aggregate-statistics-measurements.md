@@ -31,7 +31,7 @@ Default and `detail='full'` still build historical rows. Invalid values remain r
 
 Cases include empty histories,1/7/99/100/101/3600 samples, multiple ring layouts and boundary filters, profiling flags/function targets, unavailable fields, and invalid counts. A boundary test includes calls completed at both endpoints and excludes those completed outside the window; `start_frame` does not replace this admission criterion.
 
-The [native evidence](../../runtime/statistics-detail-native-0820/oracle.json), SHA-256 `ed5d772af789fcd9c8e3a24a9fbc3cedeb716f3a193341222310d6e47c288642`, reports `passed=true`, **2266 assertions**, **198 snapshots**, `toolset='v100 x64'`, `same_aggregate_projection=true`, `default_full_unchanged=true`, `aggregate_detail_rows_built=0`. This equality concerns tested inputs. It measures neither in-game concurrent-call cost, contention, nor network latency.
+The native evidence (local evidence, not published), SHA-256 `ed5d772af789fcd9c8e3a24a9fbc3cedeb716f3a193341222310d6e47c288642`, reports `passed=true`, **2266 assertions**, **198 snapshots**, `toolset='v100 x64'`, `same_aggregate_projection=true`, `default_full_unchanged=true`, `aggregate_detail_rows_built=0`. This equality concerns tested inputs. It measures neither in-game concurrent-call cost, contention, nor network latency.
 
 <a id="benchmark-synthétique"></a>
 
@@ -73,7 +73,7 @@ Nonempty cases show reductions in every observed pair in both modes. The empty c
 
 The report also retains `legacy_full` and `direct_full` durations, whose differences are much smaller and change sign across repetitions. No equivalence threshold was defined to assert general absence of a full-mode performance regression. Content equality relies on the oracle, not a timing result.
 
-The [benchmark manifest](../../runtime/statistics-detail-native-0820/manifest.json), SHA-256 `09c4f85902cd63b2cbef4fc2061404e57c3efac5f904e01ac8a13f7aab7e3825`, attests `completed=true` and unchanged sources/executables. It references all three raw files, the oracle, and [summary](../../runtime/statistics-detail-native-0820/summary.json), SHA-256 `b4df19dcdd49558826ca1a5c8c7b3eb6dc7ea2ddb2307201518a7e701c2c2ce3`. The v100 x64 benchmark SHA-256 is `6b07804c90a9dd1246b4f855f59466a55356d3732621d023c04131667294df02`; the oracle executable is `d129c9704248ef13acce8e063c02b85f5fe83bbe20ba874eeed6c24699dc6b1e`. Measurements took place on28 October, from 21:54:59 to 21:57:35 UTC.
+The benchmark manifest (local evidence, not published), SHA-256 `09c4f85902cd63b2cbef4fc2061404e57c3efac5f904e01ac8a13f7aab7e3825`, attests `completed=true` and unchanged sources/executables. It references all three raw files, the oracle, and summary (local evidence, not published), SHA-256 `b4df19dcdd49558826ca1a5c8c7b3eb6dc7ea2ddb2307201518a7e701c2c2ce3`. The v100 x64 benchmark SHA-256 is `6b07804c90a9dd1246b4f855f59466a55356d3732621d023c04131667294df02`; the oracle executable is `d129c9704248ef13acce8e063c02b85f5fe83bbe20ba874eeed6c24699dc6b1e`. Measurements took place on28 October, from 21:54:59 to 21:57:35 UTC.
 
 Reduced wall duration in a synthetic helper is not an equivalent gain for the complete in-game service: the benchmark includes neither IPC, concurrent mutation, real lock contention, nor rendering. Test samples do not reproduce gameplay's work distribution. History traversal/sorting, other aggregates, and ring copying still execute.
 
@@ -83,7 +83,7 @@ Reduced wall duration in a synthetic helper is not an equivalent gain for the co
 
 The main v100 x64 build produced a **322 560-byte** DLL, SHA-256 `0524ed8a218630b9b993e61966c807c36c2b9356d87a92ba2da0c7128d59b13e`, and corresponding PDB SHA-256 `36a13b93e3e380fe505e159fbb1d696525a6ffdbdf1178c6f3625c745481045d`. The Python suite preceding capture reports **1023 tests passed in 31,62 s**.
 
-The [real preflight](../../runtime/direct-0820-preflight.json), SHA-256 `7650c1a6b67e4c111337ec65e2880ee28c397ad5d99b0492d233bd9fa8075fa5`, is complete: version 0.8.20, Root profiled, three systems and five hook installations, process `28932` created at `1793224737.4120193`. Validation/copy saves and old snapshot retain their **702/702/738 manifest-compliant files**; settings unchanged, restoration guards inactive, copy paused at `404.3333339691162 h`, camera control released, and Edge restored. The watchdog resumed the copy without autoload error, with `session_until=null` and bootstrap explicitly `unlimited` under the new authorization.
+The real preflight (local evidence, not published), SHA-256 `7650c1a6b67e4c111337ec65e2880ee28c397ad5d99b0492d233bd9fa8075fa5`, is complete: version 0.8.20, Root profiled, three systems and five hook installations, process `28932` created at `1793224737.4120193`. Validation/copy saves and old snapshot retain their **702/702/738 manifest-compliant files**; settings unchanged, restoration guards inactive, copy paused at `404.3333339691162 h`, camera control released, and Edge restored. The watchdog resumed the copy without autoload error, with `session_until=null` and bootstrap explicitly `unlimited` under the new authorization.
 
 The accepted pilot retains the observation plan: three conditions, six triads per frequency,5 s blocks,1 s preceding neutral wait, same deterministic permutations, and separate bounds from the [protocol](observer-overhead-protocol.md). All36 blocks contain660 requests, without skipped slots or early starts. Maximum observed start lateness is 16,695 ms. All108 scene reads show **106 loaded characters and one active city**, effective pause and identical time; camera stable under lock. All660 responses retain the same Root binding and service identity `23968 / 134376983374120248`.
 
@@ -136,17 +136,17 @@ Separate MCP-server CPU remains unavailable, so controller CPU is not the full c
 
 ### Restoration and real evidence
 
-The [independent final audit](../../runtime/direct-0820-final.json) is complete: same process `28932`, three final paused readings at the same time, `free_camera=false`, control released, and Edge restored to `true`. All **702/702/738 files**, settings, and guards are compliant. Both identified helpers `21020 / creation 1793224737.2479062` and `40676 / creation 1793224737.2090707` are present; watchdog fresh, without autoload or publication error. These identities describe the audit and require fresh verification before any future stop.
+The independent final audit (local evidence, not published) is complete: same process `28932`, three final paused readings at the same time, `free_camera=false`, control released, and Edge restored to `true`. All **702/702/738 files**, settings, and guards are compliant. Both identified helpers `21020 / creation 1793224737.2479062` and `40676 / creation 1793224737.2090707` are present; watchdog fresh, without autoload or publication error. These identities describe the audit and require fresh verification before any future stop.
 
 Observed camera displacement before lock, after release, and between all three final reads is zero in this acquisition. The controller still does not explicitly restore initial coordinates: this point result promises no absence of drift on a later return to Edge. Controller-owned sources, DLL, and protected files are unchanged during capture.
 
 | Real evidence | SHA-256 |
 |---|---|
-| [Accepted capture](../../runtime/scenarios/observer-overhead-20261028T220047030270Z.json), 27 912 370 bytes | `f387e96e312fbc0babef82e03b7683d4c934451468abef99cc74a06cb2db6649` |
-| [Analyzed report](../../runtime/observer-0820-seed0.json), 94 394 bytes | `4b696a62b6b5fbcbfbefefcd2745fa565b7794ba0a6de762f418143ca9f1b34a` |
-| [Two-replay evidence](../../runtime/observer-0820-replay-proof.json) | `8e73dd1f7a55338c4492ec07800a1f9c8fde9449ede910059d4e78f1d0ce5425` |
-| [Additional checks and request pairs](../../runtime/observer-0820-supplemental.json) | `2bb68f954386fe0646eea9d70c43e3b5a4b2493e3f257a1da6791af4f2e78c7a` |
-| [Final audit](../../runtime/direct-0820-final.json) | `45295a9b29f8c89518f5a3d05d86dd020d26835491124afb29452b2d4545ec1f` |
+| Accepted capture (local evidence, not published), 27 912 370 bytes | `f387e96e312fbc0babef82e03b7683d4c934451468abef99cc74a06cb2db6649` |
+| Analyzed report (local evidence, not published), 94 394 bytes | `4b696a62b6b5fbcbfbefefcd2745fa565b7794ba0a6de762f418143ca9f1b34a` |
+| Two-replay evidence (local evidence, not published) | `8e73dd1f7a55338c4492ec07800a1f9c8fde9449ede910059d4e78f1d0ce5425` |
+| Additional checks and request pairs (local evidence, not published) | `2bb68f954386fe0646eea9d70c43e3b5a4b2493e3f257a1da6791af4f2e78c7a` |
+| Final audit (local evidence, not published) | `45295a9b29f8c89518f5a3d05d86dd020d26835491124afb29452b2d4545ec1f` |
 
 Python seeds `0` and `8675309` produce the same report byte for byte. These are two analyses of the same raw data, not two acquisitions. Replay evidence retains source SHAs used, including controller `f457732bf39ffffd2b0a68f76b78a9fdb5211a8eeefc29f1729f88e52c7fa33f` and analyzer `0c1285da87bc2e0ea88cacc74e90fcbb0ea69ae7405b0335dd40b918a0a18d2e`.
 

@@ -82,14 +82,14 @@ The series supplies no significance test, equivalence margin, stationarity proof
 
 Two raw files remain separately archived and excluded from comparisons:
 
-- [`observer-overhead-20261028T210549980627Z.json`](../../runtime/scenarios/observer-overhead-20261028T210549980627Z.json), SHA-256 `3f6978934f9690f31552f53b12d274345b387b243862a9cbed29c4e9393b0eb8`: stopped before any measurement, **0 measured blocks**, because the camera moved between the initial read and locking. The reference is now taken after stabilization under lock; the final position check precedes release.
-- [`observer-overhead-20261028T211140302156Z.json`](../../runtime/scenarios/observer-overhead-20261028T211140302156Z.json), SHA-256 `cb91beb08dd13b863d9aa2d57788e4bf52acb2a102269d75ebd0ba38d86281c0`: controller declared completion, but strict replay rejected **72 early wakes or starts**, up to **13 ms**. The [early-wake evidence](../../runtime/observer-early-wake-proof.json) is retained. The old `time.monotonic` based on `GetTickCount64`, with declared resolution 15,625 ms, was replaced with QPC and rechecking waits. Old timestamps are neither converted nor mixed with the accepted pilot.
+- `observer-overhead-20261028T210549980627Z.json` (local evidence, not published), SHA-256 `3f6978934f9690f31552f53b12d274345b387b243862a9cbed29c4e9393b0eb8`: stopped before any measurement, **0 measured blocks**, because the camera moved between the initial read and locking. The reference is now taken after stabilization under lock; the final position check precedes release.
+- `observer-overhead-20261028T211140302156Z.json` (local evidence, not published), SHA-256 `cb91beb08dd13b863d9aa2d57788e4bf52acb2a102269d75ebd0ba38d86281c0`: controller declared completion, but strict replay rejected **72 early wakes or starts**, up to **13 ms**. The early-wake evidence (local evidence, not published) is retained. The old `time.monotonic` based on `GetTickCount64`, with declared resolution 15,625 ms, was replaced with QPC and rechecking waits. Old timestamps are neither converted nor mixed with the accepted pilot.
 
 At accepted-pilot exit, the copy remains paused at the same time; `free_camera=false`, camera control released and initial Edge setting restored to `true`. Protected saves, including `KenshiProbe_validation`, the copy and snapshot, are checked against their manifests; pilot-specific settings, DLL and sources are unchanged. Both restoration guards remain `false` before and after.
 
 **Initial camera coordinates are not restored.** Movement between the initial reading and locked reference is about 12,732 units; movement observed after release is about 18,501 units. Stability is established during locked reads through `pre_release_scene`, not after Edge restoration. This distinction also appears in the analyzer's limits.
 
-After this campaign, Computer Use moved the pointer back onto an empty area of the already open RE_Kenshi panel. Three reads one second apart find the camera stable, with no lock held, Edge=true and pointer `(639,354)` in the window. The [supplementary evidence](../../runtime/observer-post-ui-audit.json) rechecks the 702/702/738 files, settings and pause. This is a post-acquisition check, not a modification or retroactive validation of the campaign's visual conditions.
+After this campaign, Computer Use moved the pointer back onto an empty area of the already open RE_Kenshi panel. Three reads one second apart find the camera stable, with no lock held, Edge=true and pointer `(639,354)` in the window. The supplementary evidence (local evidence, not published) rechecks the 702/702/738 files, settings and pause. This is a post-acquisition check, not a modification or retroactive validation of the campaign's visual conditions.
 
 The same evidence directly verifies all 108 counts of 78/1 and constancy of Root/symbol/address/service identity across all 660 responses. These checks supplement generic replay: its contract does not yet enforce those two invariants in every future capture.
 
@@ -97,13 +97,13 @@ The same evidence directly verifies all 108 counts of 78/1 and constancy of Root
 
 ## Evidence and replay outside the game
 
-The final validation suite reports **992 passing tests in 31,94 s**. Sources of the controller, analyzer, relevant helpers and their tests are frozen in [`runtime/observer-sources-20261028T212056197Z`](../../runtime/observer-sources-20261028T212056197Z/manifest.json). The analyzer used has SHA-256 `c5aa755acf16be898e4c0b6ac5e073a3b3c905293726fc22d28eaa0c8355c628`; the controller `46b47e83017c6c5b3f7f953795dc91aebea26c937cf8351718f66b0bf18e8f76`.
+The final validation suite reports **992 passing tests in 31,94 s**. Sources of the controller, analyzer, relevant helpers and their tests are frozen in `runtime/observer-sources-20261028T212056197Z` (local evidence, not published). The analyzer used has SHA-256 `c5aa755acf16be898e4c0b6ac5e073a3b3c905293726fc22d28eaa0c8355c628`; the controller `46b47e83017c6c5b3f7f953795dc91aebea26c937cf8351718f66b0bf18e8f76`.
 
 | Evidence | SHA-256 |
 |---|---|
-| [Accepted raw capture](../../runtime/scenarios/observer-overhead-20261028T212059381502Z.json), 27 917 268 bytes | `f6000a1c50ad1495b34419f33c2ae8dd9bc0cea0c0a74a01a7f20e6f715f11da` |
-| [Analyzed report](../../runtime/observer-overhead-seed0.json), 93 918 bytes | `bb355fb729cf59be9724eb1741b9ecf0e98d56438c96c81162a905552e18df05` |
-| [Evidence of both replays](../../runtime/observer-overhead-replay-proof.json) | `c6022ad33e1e204a383be0e675b6696776588bb981eeb4c1ebc3a5549a7bee75` |
+| Accepted raw capture (local evidence, not published), 27 917 268 bytes | `f6000a1c50ad1495b34419f33c2ae8dd9bc0cea0c0a74a01a7f20e6f715f11da` |
+| Analyzed report (local evidence, not published), 93 918 bytes | `bb355fb729cf59be9724eb1741b9ecf0e98d56438c96c81162a905552e18df05` |
+| Evidence of both replays (local evidence, not published) | `c6022ad33e1e204a383be0e675b6696776588bb981eeb4c1ebc3a5549a7bee75` |
 
 Python seeds `0` and `8675309` produce byte-identical reports. This validates reproducibility of analysis on the same raw capture; these are not two new acquisitions. To rerun analysis only from the project root, choose a **new output name**: exclusive creation rejects overwriting.
 

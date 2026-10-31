@@ -12,7 +12,7 @@ The evidence below is local and ignored by Git; it distributes no save or game d
 
 - Final DLL **0.9.5**, successful **Visual C++ 2010 x64/v100** build: `plugin/build/Release/KenshiProbe.dll`, **523 264 bytes**, SHA-256 `75739c8e64e17f3a78f482132c9be659aac7d55db7b3151b907b51944af5b580`.
 - PDB: **11 447 296 bytes**, SHA-256 `51fa54bc8c0e96daa80b7dc3d6bb831d126a419d89f050899bbf0286af4aadfe`.
-- Real environment: Kenshi **1.0.65 Steam**, RE_Kenshi **0.3.5**, KenshiLib **0.5.0**. Verified deployment: [deployment-095.json](../runtime/oracle-phase1/deployment-095.json).
+- Real environment: Kenshi **1.0.65 Steam**, RE_Kenshi **0.3.5**, KenshiLib **0.5.0**. Verified deployment: deployment-095.json (local evidence, not published).
 - Schema remains **0.1**, without pointers, PID, tokens, source fingerprints, or C++ types. Identity provenance remains protocol metadata.
 
 The0.9.5 fix concerns camera calibration/restoration. State, canonicalization, and identity-resolution algorithms from the final 0.9.3 captures remain unchanged. Evidence for these two DLLs is distinguished below.
@@ -27,7 +27,7 @@ Final command from the root, with dependencies from `requirements-dev.txt`:
 & .\.venv\Scripts\python.exe -m pytest -q --basetemp=runtime/oracle-phase1/pytest-delivery-095-final-20261029 -p no:cacheprovider
 ```
 
-**1 602 tests passed, 1 skipped, 96,51 seconds**. [Full log](../runtime/oracle-phase1/pytest-delivery-095-final.txt). The sole skip concerns creation of an actual symbolic link, denied without Windows privilege/Developer Mode; rejection of simulated reparse attributes is tested. Tests isolate sockets and reject live port47800. Under the Windows sandbox, sockets and the stdio subprocess require authorized execution outside the sandbox; this is not a result from testing without local networking.
+**1 602 tests passed, 1 skipped, 96,51 seconds**. Full log (local evidence, not published). The sole skip concerns creation of an actual symbolic link, denied without Windows privilege/Developer Mode; rejection of simulated reparse attributes is tested. Tests isolate sockets and reject live port47800. Under the Windows sandbox, sockets and the stdio subprocess require authorized execution outside the sandbox; this is not a result from testing without local networking.
 
 The suite covers schemas, defensive parser/protocol, MCP stdio, validation of every snapshot, fake game, scenarios, timeouts, errors and interruptions, recovery lock, watchdog, failed archives, and restart requests. The fake game produces identical bytes for the same state. Origin integration renews raw HANDs on every load and retains the same canonical snapshots across three repetitions.
 
@@ -39,17 +39,17 @@ New camera tests cover follow pivots at heights 0, 9,8, and 17,125, an actor mov
 
 ## Three real examples, each repeated three times
 
-The final **0.9.3** DLL, SHA-256 `ebce02cd618675e88d1cadf7a239b964b3a4347825ecae5e63c7da87c2d52f91`, ran all three examples through **MCP stdio**, reloading before every repetition: **9 repetitions, 27 snapshots**. [Complete batch](../runtime/oracle-phase1/delivery-live-batch-093.json). All three cases completed, with restoration verified; the four protected saves and `settings.cfg` bytes remain unchanged.
+The final **0.9.3** DLL, SHA-256 `ebce02cd618675e88d1cadf7a239b964b3a4347825ecae5e63c7da87c2d52f91`, ran all three examples through **MCP stdio**, reloading before every repetition: **9 repetitions, 27 snapshots**. Complete batch (local evidence, not published). All three cases completed, with restoration verified; the four protected saves and `settings.cfg` bytes remain unchanged.
 
 | Example and report | Stable / variable fields at first checkpoint | Stable / variable fields at last checkpoint | Characters at last checkpoint, repetitions1 /2 /3 |
 | --- | --- | --- | --- |
-| [Route](../runs/trajet-escouade/20261029T010924.945400Z-d9022f41/report.md) | 43 050 / 170 | 45 105 / 2 006 | 190 / 180 / 180 |
-| [Small battle](../runs/petite-bataille/20261029T011252.350028Z-e79d6134/report.md) | 39 771 / 16 373 | 39 776 / 32 435 | 253 / 323 / 284 |
-| [Quiet city](../runs/ville-calme/20261029T011719.115118Z-408fb1ae/report.md) | 42 042 / 3 165 | 42 253 / 5 636 | 130 / 132 / 140 |
+| Route (local evidence, not published) | 43 050 / 170 | 45 105 / 2 006 | 190 / 180 / 180 |
+| Small battle (local evidence, not published) | 39 771 / 16 373 | 39 776 / 32 435 | 253 / 323 / 284 |
+| Quiet city (local evidence, not published) | 42 042 / 3 165 | 42 253 / 5 636 | 130 / 132 / 140 |
 
 A variable field may change value or be absent from a repetition. Reports retain these observations and actual temporal overshoots: maxima **0,320435**, **0,320893**, and **0,310593 calendar second**, respectively. These compare Kenshi repetitions, not engines. Population, positions, health, and tasks can diverge despite identical reloading.
 
-The [independent audit of 27 files](../runtime/oracle-phase1/delivery-evidence-audit-093.json) validates schema, counts, hashes, provenance, and byte identity **native = MCP copy = Python canonicalization**. A second delivery audit rechecked them. The route's first checkpoint contains **106 characters,35 squads,114 factions,12 882 relations**.
+The independent audit of 27 files (local evidence, not published) validates schema, counts, hashes, provenance, and byte identity **native = MCP copy = Python canonicalization**. A second delivery audit rechecked them. The route's first checkpoint contains **106 characters,35 squads,114 factions,12 882 relations**.
 
 Ando, Hisako, and Ishida have individual state in the save; their current HANDs change container on load. Full SDK resolution allows publishing their saved HANDs in **all nine route snapshots**. Neither name, address, nor a simple I/S pair is used as a key. In the city, **80** saved-character identities are shared initially and **92** at 600 seconds. Variable membership of the three saved squads without character files supports activation-time generation for that cohort. An unresolved origin alone does not prove generation: its current HAND is retained. [Detailed audit](npc-identities-phase1.md).
 
@@ -57,11 +57,11 @@ Ando, Hisako, and Ishida have individual state in the save; their current HANDs 
 
 ## Real validation of 0.9.5 restoration
 
-The [0.9.5 recovery test](../runtime/oracle-phase1/recovery-camera-095.json) **passes**. It first verifies a deliberate `[2,1,-3]` offset, observed as an additional `[2,1,-3]` offset, then reloads and restores exactly the original journal's controls. Recorded controls remain unchanged, and `restore_required` becomes false only after verification.
+The 0.9.5 recovery test (local evidence, not published) **passes**. It first verifies a deliberate `[2,1,-3]` offset, observed as an additional `[2,1,-3]` offset, then reloads and restores exactly the original journal's controls. Recorded controls remain unchanged, and `restore_required` becomes false only after verification.
 
 The recovered reference includes center `[-50978.796875,1541.7958984375,2932.4765625]`, position `[-51489.6640625,2067.15087890625,2005.222900390625]`, signed zoom `-1181.855224609375`, quaternion, canonical Imai follow target, strategic mode, enabled scrolling, pause, and prepared selection1.
 
-This repair addresses a real failure after restart: actor height had changed by **0,936035**, and a stable pose remained incorrect. Candidate0.9.4 then incorrectly treated the additional offset as the entire center−actor distance; its restoration failed. [Evidence of that failure](../runtime/oracle-phase1/recovery-camera-094.json). These failures remain retained; reference and tolerances were not relaxed.
+This repair addresses a real failure after restart: actor height had changed by **0,936035**, and a stable pose remained incorrect. Candidate0.9.4 then incorrectly treated the additional offset as the entire center−actor distance; its restoration failed. Evidence of that failure (local evidence, not published). These failures remain retained; reference and tolerances were not relaxed.
 
 Protocol 0.9.5 prepares and observes a stable locked camera, then applies `current offset + requested center − observed center`. No constant height bias or actor movement. After release, a second window compares against the fixed reference: **three distinct frames over at least 0,5 second**, timeout **10 seconds**; center/position/zoom tolerances **0,05**, quaternion **0,0001**, selected speed **0,000001**. [Detailed contract](protocol.md).
 
@@ -69,7 +69,7 @@ Protocol 0.9.5 prepares and observes a stable locked camera, then applies `curre
 
 ## City replay on the delivered0.9.5 DLL
 
-The [final MCP series](../runtime/oracle-phase1/delivery-ville-calme-095.json) is **complete**: **three repetitions, nine captures**, each schema-valid and byte-identical to the native file and its Python canonicalization. An independent audit rechecked all nine files, their hashes, and constant `ville-calme` provenance, fingerprint `sha256:1a7624e7e712526e03b37a3ee8d78bcd5499a0780b8eac5a1e7b0ddaf5c678c5`. All **32 MCP tools** are present. [Stable/variable report](../runs/ville-calme/20261029T021907.110703Z-839230f0/report.md).
+The final MCP series (local evidence, not published) is **complete**: **three repetitions, nine captures**, each schema-valid and byte-identical to the native file and its Python canonicalization. An independent audit rechecked all nine files, their hashes, and constant `ville-calme` provenance, fingerprint `sha256:1a7624e7e712526e03b37a3ee8d78bcd5499a0780b8eac5a1e7b0ddaf5c678c5`. All **32 MCP tools** are present. Stable/variable report (local evidence, not published).
 
 | Checkpoint | Stable fields | Variable fields | Characters, repetitions1 /2 /3 |
 | --- | --- | --- | --- |
@@ -83,11 +83,11 @@ Maximum temporal overshoot is **0,121766 calendar second**. Two-phase restoratio
 
 ## Watchdog and final state
 
-The [real0.9.5 watchdog test](../runtime/oracle-phase1/watchdog-runtime-095.json) **passes**. It verifies path, PID, creation time, and command line of the owned process before its controlled exit: **45812 → 16548**. Supervision archives the log under `crashes/20261029T022312.138729Z`, reason `process_exit`, without archive error; archived-log SHA-256 `076366d35c5a3edbc28869a7e0120332da93b06cc63ec83e04248d598705f9fc`. The new game starts with another instance; recovery reloads `ville-calme`, prepares origins, and restores the verified camera/time reference.
+The real0.9.5 watchdog test (local evidence, not published) **passes**. It verifies path, PID, creation time, and command line of the owned process before its controlled exit: **45812 → 16548**. Supervision archives the log under `crashes/20261029T022312.138729Z`, reason `process_exit`, without archive error; archived-log SHA-256 `076366d35c5a3edbc28869a7e0120332da93b06cc63ec83e04248d598705f9fc`. The new game starts with another instance; recovery reloads `ville-calme`, prepares origins, and restores the verified camera/time reference.
 
-The [final read-only audit](../runtime/oracle-phase1/final-audit-095.json) confirms: built and installed DLL at the stated hash, listener **127.0.0.1:47800**, active watchdog, five historical hooks and three systems retained, world ready **in pause**, prepared selection **1**, compliant Imai follow target and pose, camera lock released, no pending token, and `restore_required:false`. The **four protected saves** and `settings.cfg` SHA-256 match the starting manifest. No game executable, data, or save appears among Git-publishable files.
+The final read-only audit (local evidence, not published) confirms: built and installed DLL at the stated hash, listener **127.0.0.1:47800**, active watchdog, five historical hooks and three systems retained, world ready **in pause**, prepared selection **1**, compliant Imai follow target and pose, camera lock released, no pending token, and `restore_required:false`. The **four protected saves** and `settings.cfg` SHA-256 match the starting manifest. No game executable, data, or save appears among Git-publishable files.
 
-Earlier failures, including the [0.9.3 watchdog test](../runtime/oracle-phase1/watchdog-runtime-093.json) that archived/restarted successfully but then failed restoration, remain archived. Their status is not rewritten. This batch stops after this check; no phase 2 or additional campaign starts.
+Earlier failures, including the 0.9.3 watchdog test (local evidence, not published) that archived/restarted successfully but then failed restoration, remain archived. Their status is not rewritten. This batch stops after this check; no phase 2 or additional campaign starts.
 
 <a id="non-testé-ou-non-démontré-universellement"></a>
 
