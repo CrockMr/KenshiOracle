@@ -12,6 +12,8 @@ def launch_config(cfg):
     result = deepcopy(cfg)
     if result.get('target') != 'meitou':
         raise ValueError('This launcher requires target=meitou')
+    if result.get('launcher_click', False) is not False:
+        raise ValueError('launcher_click applies only to the original kenshi_x64.exe launcher')
     port = result.get('port', 47801)
     if type(port) is not int or not 1 <= port <= 65535 or port == 47800:
         raise ValueError('Meitou requires a valid port distinct from the original default')

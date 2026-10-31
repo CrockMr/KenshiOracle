@@ -6,6 +6,7 @@
   "reference_controls": null,
   "meitou_config": "config.meitou.json",
   "arguments": [],
+  "launcher_click": false,
   "port": 47800,
   "timeout": 10,
   "load_timeout": 120,

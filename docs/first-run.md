@@ -182,6 +182,23 @@ overflowing or expired values leave the launcher interactive. `unlimited`
 requires explicit authorization for that launch session. The file is read
 once when the bootstrap loads; removal affects subsequent launches.
 
+Unless `auto_launch.enabled` is set, click **OK** in Kenshi's launcher
+yourself after each owned start. Alternatively, set `"launcher_click": true` (default `false`) and
+the reference controller and watchdog click it from outside the game, once per
+owned start. Only a visible `#32770` dialog of the owned PID, titled `Kenshi`
+or `Kenshi 1.0.65 - x64 (Newland)`, with a single enabled `OK` button of
+control id 1003, is clicked; any other dialog, a PID/executable mismatch, a
+duplicate button or a timeout (`startup_grace`) refuses and leaves the
+launcher open for a manual click. Each start writes a JSON receipt under
+`launcher/` in the lifecycle output (reference runs, also in `report.json`
+as `launcher_click`) or in `launcher/` under the configured `runtime` folder
+(watchdog). Observed: the same
+clicking rule accepted and closed the runtime-titled launcher on Kenshi 1.0.65
+Steam with RE_Kenshi 0.3.5 in private campaign harnesses; this public wiring
+is covered by offline tests only, and other builds are untested (**Unknown**); a dialog that does not match the rule above is refused.
+Do not combine it with `auto_launch.enabled`. The Meitou watchdog rejects
+the switch.
+
 `startup_save` lets a standalone watchdog request one initial load. It does
 not replace origin preparation, profile verification or scenario restoration.
 `session_until` separately bounds watchdog supervision; Ctrl+C stops its owned

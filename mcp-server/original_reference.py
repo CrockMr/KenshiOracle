@@ -17,6 +17,7 @@ import uuid
 
 import psutil
 
+import launcher_clicker
 from oracle_runner import OracleSession, execute_scenario, markdown_report, scenario_lock, write_json
 from oracle_schema import validate_scenario
 from probe import Client, ProbeError
@@ -121,6 +122,10 @@ class ReferenceGame:
         self.identity = None
         self.instance = None
         self.client = Client(cfg.get('port', 47800), cfg.get('timeout', 10))
+        # Opt-in external click of the launcher OK; without it the user clicks OK.
+        self.launcher = (launcher_clicker.LauncherWatch(self.output / 'launcher', cfg['executable'],
+                                                        timeout=cfg.get('startup_grace', 180))
+                         if launcher_clicker.enabled(cfg) else None)
 
     def state(self):
         games = [p for p in psutil.process_iter(['name'])
@@ -153,6 +158,8 @@ class ReferenceGame:
                 stdout=stdout, stderr=stderr)
         self.identity = psutil.Process(self.process.pid).create_time()
         self.instance = None
+        if self.launcher is not None:
+            self.launcher.start(self.process.pid, self.identity, label)
         ping = await self.wait_ping()
         if ping.get('process_id') != self.process.pid or not ping.get('instance_id'):
             raise RuntimeError('Probe is not the newly launched owned game')
@@ -180,6 +187,8 @@ class ReferenceGame:
         raise RuntimeError('Owned game startup/load timed out: ' + str(last_error))
 
     async def stop(self):
+        if self.launcher is not None and self.process is not None:
+            self.launcher.stopped(self.process.pid)
         if self.process is None or self.process.poll() is not None:
             return
         observed = self.state()
@@ -215,6 +224,7 @@ async def run_original_reference(scenario, cfg, repeat=None):
     for key in ('rekenshi_config', 'rekenshi_module', 'executable', 'working_directory'):
         if not cfg.get(key):
             raise ValueError('Original reference configuration requires ' + key)
+    launcher_clicker.enabled(cfg)
     module = Path(cfg['rekenshi_module']).resolve()
     if Path(cfg['rekenshi_config']).resolve() != (Path(cfg['working_directory']) / 'RE_Kenshi.ini').resolve():
         raise ValueError('The RE_Kenshi profile must belong to this game working directory')
@@ -301,6 +311,9 @@ async def run_original_reference(scenario, cfg, repeat=None):
                     cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
             if captured:
                 lifecycle['reference_profile'] = profile.provenance()
+            if getattr(game, 'launcher', None) is not None:
+                # Receipts only: a refused or absent click never fails the run.
+                lifecycle['launcher_click'] = await asyncio.to_thread(game.launcher.close)
             lifecycle['cleanup_errors'] = cleanup_errors
             lifecycle['owned_game_stopped'] = game.process is None or game.process.poll() is not None
             lifecycle['completed'] = result is not None and not cleanup_errors

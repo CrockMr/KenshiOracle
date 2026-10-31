@@ -67,6 +67,14 @@ nor an agent. `--repeat` overrides the scenario count; it accepts 1 to 100.
 There is no `--prepare` option: cold-start preparation is part of the
 controller.
 
+Each run starts the game twice (reference, then restoration check), whatever
+`--repeat` is, so Kenshi's launcher appears twice. Click **OK** each time, or opt in with
+`"launcher_click": true`: the controller then clicks only the verified
+launcher OK of its own process, once per start, and records receipts in
+`launcher/` and `launcher_click` of the lifecycle report. A refusal never
+fails the run by itself; click manually within `startup_grace`. See
+[optional launcher automation](first-run.md#campagne-autonome-optionnelle).
+
 The initial verifiable profile disables `FixRNG`, `UseCustomGameSpeeds`,
 and the four gameplay overrides. Other persistent settings are retained
 in provenance; their presence does not mean that every setting has an

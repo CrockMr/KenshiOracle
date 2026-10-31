@@ -11,6 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from probe import Client, ProbeError, config
+import launcher_clicker
 
 
 def warn(message):
@@ -44,6 +45,10 @@ class Watchdog:
         self.restart_request_failures = 0
         self.runtime = Path(cfg['runtime'])
         self.runtime.mkdir(parents=True, exist_ok=True)
+        # Opt-in external click of the launcher OK; receipts in runtime/launcher/.
+        self.launcher = (launcher_clicker.LauncherWatch(self.runtime / 'launcher', cfg['executable'],
+                                                        timeout=cfg.get('startup_grace', 120))
+                         if launcher_clicker.enabled(cfg) else None)
 
     def publish(self):
         state = dict(running=self.process is not None and self.process.poll() is None,
@@ -91,6 +96,8 @@ class Watchdog:
         self.process = self.spawn([str(exe), *self.cfg.get('arguments', [])],
                                   cwd=self.cfg.get('working_directory', str(exe.parent)),
                                   env=environment)
+        if self.launcher is not None:
+            self.launcher.start(self.process.pid, None, 'watchdog')
         self.started = self.last_progress = self.clock()
         self.frame = self.heartbeat = None
         self.awaiting_gameplay = False
@@ -100,6 +107,8 @@ class Watchdog:
         self.publish()
 
     def stop(self):
+        if self.launcher is not None and self.process is not None:
+            self.launcher.stopped(self.process.pid)
         if self.process and self.process.poll() is None:
             self.process.kill()
             self.process.wait(timeout=10)
@@ -271,6 +280,8 @@ class Watchdog:
             if self.expired():
                 self.reason = 'session_deadline'
             self.stop()
+            if self.launcher is not None:
+                self.launcher.close()
             self.publish()
 
 
