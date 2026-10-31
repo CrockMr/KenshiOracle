@@ -8,6 +8,12 @@ comparator produced a **quiet-town comparison with N = 5 against N = 5**.
 The results describe these observations; five repetitions do not establish
 generalization.
 
+**Saves with mod definitions.** These campaigns used saves that reference
+Workshop mod definitions (**Verified** by save inspection). The original
+registered mod resource locations (**Observed**); the effective load order is
+**Unknown**. See
+[earlier figures obtained with mods](mod-free-campaigns.md#earlier-figures-obtained-with-mods).
+
 Publication rebuild: [KenshiProbe 0.10.0](../release/v0.10.0-notes.md) packages
 the current native source separately from the campaign binaries identified
 below. After the research-directory reorganization, the complete Python suite
@@ -20,8 +26,12 @@ build, unit and packaging checks add no new real-game loading claim.
 (scenario `at` 120 and 600) are game **calendar** time, not simulated or real
 time. Per MeitouClient's constant of `1200/11` simulated seconds per in-game
 hour (**Verified** in its code), they correspond to about **3.6** and
-**18.2 simulated seconds**. That equivalence is measured on MeitouClient;
-on the original it is argued, not measured directly (**Unknown**); see [time units](protocol.md#time-units).
+**18.2 simulated seconds**. On MeitouClient that ratio is **Verified** in code
+(`Simulation.TickSeconds` 1/30) and its 1.1-calendar-second checkpoint steps
+are **Observed** and consistent with it; on the original the engine reports the
+same 109.09-second hour (**Verified**) and the calendar advances about 33
+calendar seconds per real second at x1 (**Observed**), but no simulated-time
+counter is read (**Unknown**); see [time units](protocol.md#time-units).
 
 The evidence links below refer to **local artifacts ignored by Git and not
 distributed**. No dump, save, private configuration, game image or decompiled

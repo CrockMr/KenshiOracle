@@ -124,10 +124,13 @@ All times, intervals and windows above (`first_observed_at`, window widths,
 scenario `at` and `elapsed_seconds`. Per MeitouClient's constant of `1200/11`
 simulated seconds per in-game hour (**Verified** in its code), one simulated
 second is 33 calendar seconds: a 600-second window covers about 18.2 simulated
-seconds. This conversion is measured on MeitouClient; on the original the
-engine reports the same hour length, but simulated time is not measured
-directly (**Unknown**);
-see [time units](protocol.md#time-units).
+seconds. On MeitouClient this ratio is **Verified** in code (`Simulation.TickSeconds`
+1/30, `SecondsPerGameHour` 1200/11), and checkpoint stops on 1.1-calendar-second
+steps are **Observed** and consistent with it. On the original the engine reports
+the same hour length (**Verified**) and the calendar advances about 33 calendar
+seconds per real second at x1 (**Observed**); no simulated-time counter is read,
+so simulated-time equivalence there is **Unknown**; see
+[time units](protocol.md#time-units).
 
 <a id="écarts-re_kenshi-et-sorties"></a>
 
