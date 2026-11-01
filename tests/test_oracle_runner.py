@@ -1600,6 +1600,44 @@ def test_setup_timeouts_and_lost_replies_fail_once_and_restore(tmp_path, case, s
         assert report['restoration']['verified'] is True and guard_for(cfg)['restore_required'] is False
 
 
+def _keep_world_mutated(fake, params, result):
+    """Pings after the cleanup reload still report the scene-setup world as mutated."""
+    if len(fake.loads) >= 3:
+        return dict(result, world_mutated=True)
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_cleanup_reload_that_keeps_world_mutated_leaves_the_guard_armed(tmp_path, fail):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    fake.hooks['ping'] = _keep_world_mutated
+    if fail:
+        fake.hooks['setup_set_relation'] = _kill_member
+    with pytest.raises(ScenarioError, match='restoration required'):
+        run_setup(fake, cfg)
+    report = report_for(cfg)
+    assert 'did not clear world_mutated' in report['restoration_error']
+    assert 'restoration' not in report and guard_for(cfg)['restore_required'] is True
+    assert 'prepare_scene_control' not in fake.calls  # Controls are never restored over that world.
+
+
+def test_recovery_of_a_scene_setup_probe_requires_world_mutated_cleared(tmp_path):
+    cfg = config(tmp_path)
+    fake = SetupProbe(cfg['oracle_output'])
+    fake.hooks['ping'] = lambda probe, params, result: dict(result, world_mutated=True) if probe.loads else None
+    original = asyncio.run(fake.call('get_scene_state'))
+    Path(cfg['runtime']).mkdir()
+    guard = dict(restore_required=True, save='Synthetic save', controls=original, instance_id='old-instance')
+    (Path(cfg['runtime']) / 'oracle-restoration.json').write_text(json.dumps(guard), encoding='utf-8')
+    with pytest.raises(ScenarioError, match='did not clear world_mutated'):
+        asyncio.run(restore_interrupted_scenario(cfg, client=fake))
+    pending = guard_for(cfg)
+    assert pending['restore_required'] is True and 'world_mutated' in pending['recovery_attempt']['error']
+    assert 'prepare_scene_control' not in fake.calls
+    # The same probe recovers once its reload clears the flag.
+    fake.hooks.clear()
+    assert asyncio.run(restore_interrupted_scenario(cfg, client=fake))['restored'] is True
+
+
 def test_meitou_squad_size_and_rng_key_follow_the_target_shape():
     from oracle_setup import SetupFailure, _Block
     block = _Block(None, setup_scenario(), '.', None, None)

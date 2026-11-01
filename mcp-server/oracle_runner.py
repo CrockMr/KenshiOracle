@@ -438,6 +438,12 @@ class OracleSession:
         return state, record
 
 
+def require_unmutated(loaded):
+    """A restoration reload of a scene-setup probe must clear world_mutated, or the guard stays armed."""
+    if loaded['ready'].get('world_mutated') is not False:
+        raise ScenarioError('Restoration reload did not clear world_mutated; the scene-setup world may remain')
+
+
 def control_params(scene):
     required = ('camera_center', 'camera_orientation', 'camera_zoom', 'free_camera',
                 'edge_scrolling', 'selected_game_speed', 'paused')
@@ -936,9 +942,11 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                     await session.client.call('pause', paused=True)
                     await session.client.call('set_camera_free', enabled=original['free_camera'])
                     if original_seed is None:
-                        await session.load(scenario['save'], lock_edge=True)
+                        loaded = await session.load(scenario['save'], lock_edge=True)
                     else:
-                        await session.load(scenario['save'], lock_edge=True, seed=original_seed)
+                        loaded = await session.load(scenario['save'], lock_edge=True, seed=original_seed)
+                    if setup is not None:
+                        require_unmutated(loaded)
                     report['restoration'] = dict(verified=False, save=scenario['save'],
                                                baseline_observations=[], observations=[])
                     restored = await session.restore_controls(original,
@@ -1015,12 +1023,15 @@ to another save. The original record is kept until those controls are verified.
         await session.client.call('pause', paused=True)
         await session.client.call('set_camera_free', enabled=original['free_camera'])
         if recovery_seed is None:
-            await session.load(name, lock_edge=True)
+            loaded = await session.load(name, lock_edge=True)
         else:
-            await session.load(name, lock_edge=True, seed=recovery_seed)
+            loaded = await session.load(name, lock_edge=True, seed=recovery_seed)
         attempt = dict(started_at=timestamp(), instance_id=session.instance,
                        save=name, baseline_observations=[], observations=[])
         try:
+            capabilities = status.get('capabilities')
+            if type(capabilities) is list and 'scene_setup' in capabilities:
+                require_unmutated(loaded)
             restored = await session.restore_controls(original,
                 observations=attempt['observations'],
                 baseline_observations=attempt['baseline_observations'])
