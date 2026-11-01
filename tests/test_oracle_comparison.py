@@ -996,3 +996,18 @@ def test_null_commit_is_refused_for_scenario_02(tmp_path):
     save_report(original, report)
     with pytest.raises(ValueError, match='build_commit'):
         compare_campaigns(original, meitou, output)
+
+
+def test_campaign_limitations_are_carried_into_the_comparison_by_target(tmp_path):
+    original, meitou, left, right, output = scene_campaigns(tmp_path)
+    left['limitations'] = ['war flag not observable on original']
+    right['limitations'] = ['war flag not observable on meitou', 'build commit not recorded']
+    save_report(original, left)
+    save_report(meitou, right)
+    report = scene_report(original, meitou, output)
+    carried = [text for text in report['limitations'] if text.startswith(('original: ', 'meitou: '))]
+    assert carried == ['original: war flag not observable on original', 'meitou: war flag not observable on meitou']
+    left['limitations'] = 'war flag not observable on original'
+    save_report(original, left)
+    with pytest.raises(ValueError, match='limitations'):
+        compare_campaigns(original, meitou, tmp_path/'second')

@@ -78,6 +78,18 @@ def reference_proof(provenance, *, restored=False):
             raise ValueError('The original campaign did not verify player-profile restoration')
 
 
+def campaign_limitations(campaign, target):
+    """Limitations the runner recorded for one campaign (a war flag not observable, for example).
+
+    They are carried into the comparison prefixed by the target; the commit
+    limitation is stated once by the comparison itself.
+    """
+    recorded = campaign['report'].get('limitations', [])
+    if type(recorded) is not list or any(type(text) is not str for text in recorded):
+        raise ValueError('Campaign limitations must be a list of strings')
+    return [target + ': ' + text for text in recorded if text != COMMIT_NOT_RECORDED]
+
+
 def campaign_build_commit(report, scenario):
     """The campaign's build commit, or None for a 0.1 campaign without a recorded commit.
 
@@ -495,6 +507,7 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
                      setup_members=dict(original=original['setup_members'], meitou=meitou['setup_members']))
     findings.sort(key=lambda row: (CLASSES.index(row['classification']), row['checkpoint'], row['metric']))
     build_limitations = [COMMIT_NOT_RECORDED] if None in (original['build_commit'], meitou['build_commit']) else []
+    build_limitations += campaign_limitations(original, 'original') + campaign_limitations(meitou, 'meitou')
     report = dict(format_version='0.2', scenario=scenario,
         original=dict(n=original['n'], report=original['path'], build_commit=original['build_commit']),
         meitou=dict(n=meitou['n'], report=meitou['path'], seeds=meitou['seeds'], build_commit=meitou['build_commit']),
