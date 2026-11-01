@@ -146,6 +146,12 @@ def _gamedata_id(value: str, path: str) -> None:
         raise OracleSchemaError(f'{path}: GameData id exceeds 128 UTF-8 bytes')
 
 
+def _integer(value, path: str) -> None:
+    # JSON Schema "integer" accepts 3.0; probes answer "<key> must be an integer".
+    if type(value) is not int:
+        raise OracleSchemaError(f'{path}: must be an integer')
+
+
 def _index(text: str) -> int:
     # Alias indexes are small; avoid converting an arbitrarily long digit string.
     return int(text) if len(text) <= 3 else 1000
@@ -169,21 +175,26 @@ def _validate_setup(scenario: dict) -> None:
             spawns[spawn['alias']] = spawn['expected_templates']
             _gamedata_id(spawn['squad_template'], f'{path}.squad_template')
             _gamedata_id(spawn['faction_id'], f'{path}.faction_id')
-            for template in spawn['expected_templates']:
+            _integer(spawn['count'], f'{path}.count')
+            for template, count in spawn['expected_templates'].items():
                 _gamedata_id(template, f'{path}.expected_templates')
+                _integer(count, f'{path}.expected_templates.{template}')
             if sum(spawn['expected_templates'].values()) != spawn['count']:
                 raise OracleSchemaError(f'{path}.expected_templates: counts must sum to count')
-        pairs = set()
+        directions = {}
         for index, relation in enumerate(setup['relations']):
             path = f'$.setup.relations[{index}]'
             _gamedata_id(relation['a'], f'{path}.a')
             _gamedata_id(relation['b'], f'{path}.b')
             if relation['a'] == relation['b']:
                 raise OracleSchemaError(f'{path}: a and b must differ')
-            pair = frozenset((relation['a'], relation['b']))
-            if pair in pairs:
-                raise OracleSchemaError(f'{path}: duplicate faction pair')
-            pairs.add(pair)
+            _integer(relation['a_to_b'], f'{path}.a_to_b')
+            _integer(relation['b_to_a'], f'{path}.b_to_a')
+            # A repeated pair is harmless, but S6 could never read back two values.
+            for cell, value in (((relation['a'], relation['b']), relation['a_to_b']),
+                                ((relation['b'], relation['a']), relation['b_to_a'])):
+                if directions.setdefault(cell, value) != value:
+                    raise OracleSchemaError(f'{path}: conflicting values for faction pair')
     player_forms = set()
     for index, action in enumerate(scenario['actions']):
         if action['command'] != 'issue_order':
@@ -218,8 +229,8 @@ def validate_scenario(scenario: dict) -> dict:
     """Validate a scenario and reject a timeline that would wait forever in pause."""
     # Dispatch by version like validate_state; an unknown version, including a
     # bare "0.2", fails the 0.1 constant.
-    kind = ('scenario-0.2' if type(scenario) is dict and scenario.get('schema_version') == 'scenario-0.2'
-            else 'scenario')
+    kind = ('scenario-0.2' if type(scenario) is dict
+            and scenario.get('schema_version') == SCENARIO_SCHEMA_VERSIONS[1] else 'scenario')
     _validate_shape(scenario, kind)
     if kind == 'scenario-0.2':
         _validate_setup(scenario)

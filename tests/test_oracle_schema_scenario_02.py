@@ -143,6 +143,29 @@ def test_relations_have_no_symmetry_or_threshold_constraint(values):
     assert validate_scenario(value) is value
 
 
+@pytest.mark.parametrize('relation', [
+    dict(a='enemy-faction', b='player-faction', a_to_b=-60, b_to_a=-60),
+    dict(a='player-faction', b='enemy-faction', a_to_b=-60, b_to_a=-60),
+], ids=['repeated', 'reversed'])
+def test_repeated_relation_pair_with_the_same_values_is_accepted(relation):
+    value = scenario_02()
+    value['setup']['relations'].append(relation)
+    assert validate_scenario(value) is value
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda s: s['relations'][0].update(a_to_b=-60.0),
+    lambda s: s['relations'][0].update(b_to_a=-60.0),
+    lambda s: s['spawns'][0].update(count=3.0),
+    lambda s: s['spawns'][0]['expected_templates'].update({'grunt.base': 2.0}),
+], ids=['a-to-b', 'b-to-a', 'count', 'template-count'])
+def test_integral_floats_are_not_integers(mutate):
+    value = scenario_02()
+    mutate(value['setup'])
+    rejects(value, 'must be an integer')
+    rejects(json.loads(json.dumps(value)), 'must be an integer')
+
+
 @pytest.mark.parametrize('mutate', [
     lambda s: s['moves'].append(dict(alias='player', offset=[1, 0])),
     lambda s: s.update(heal='players_only'),
