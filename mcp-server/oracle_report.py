@@ -187,9 +187,9 @@ def _nearest_squad_rows(report):
             if row['metric'].startswith(NEAREST_SQUAD)}
     order = [point['name'] for point in sorted(report['scenario']['checkpoints'], key=lambda point: point['at'])]
     lines = ['', '## Background: nearest squad outside the scene', '',
-        'X/Z distance in world units from the player to the nearest member of the nearest squad, excluding the '
-        "spawn alias squads and the player's squad, with that squad's faction. Recorded per repetition as "
-        '`/background/nearest_squad/` metrics; never classified and never a finding.', '',
+        'X/Z distance in world units from the nearest player character to the nearest member of the nearest squad, '
+        "excluding the spawn alias squads and every player character's squad, with that squad's faction. Recorded "
+        'per repetition as `/background/nearest_squad/` metrics; never classified and never a finding.', '',
         '| Checkpoint | Original | MeitouClient |', '| --- | --- | --- |']
     for name in order:
         distance = rows.get((name, NEAREST_SQUAD + 'distance'))

@@ -1102,3 +1102,61 @@ def test_report_limitations_carry_the_relation_share_and_not_the_generic_claim(t
     assert sum(expected in text for text in report['limitations']) == 1
     if scene:
         assert relations == 4
+
+
+def test_nearest_squad_distance_is_rounded_and_an_unknown_faction_has_no_name():
+    from oracle_scope import nearest_squad_metrics, scene_scope
+    value = scene_state('meitou', 1, dict(name='initial'))
+    # X/Z (3, 4.04) from the player: 5.0322..., recorded as 5.0; Y is ignored.
+    value['characters'].append(person('local:frac', 'unknown-faction', 'local:squad-frac', [3, 250, 4.04]))
+    value['squads'].append(dict(id='local:squad-frac', faction_id='unknown-faction', members=['local:frac'],
+                                leader_id='local:frac', identity_origin=None, template_id=None, origin_town_id=None))
+    metrics = nearest_squad_metrics(value, alias_map('meitou', 1), scene_scope(SETUP_SCENARIO))
+    assert metrics == {'/background/nearest_squad/distance': 5.0,
+                       '/background/nearest_squad/faction_id': 'unknown-faction',
+                       '/background/nearest_squad/faction_name': None}
+
+
+def test_nearest_squad_with_several_players_excludes_every_player_squad_and_takes_the_nearer_player():
+    from oracle_scope import nearest_squad_metrics, scene_scope
+    value = scene_state('meitou', 1, dict(name='initial'))
+    aliases = alias_map('meitou', 1)
+    aliases['player/1'] = aliases.pop('player')
+    aliases['player/2'] = 'local:second-player'
+    value['characters'] += [person('local:second-player', 'player-faction', 'local:squad-second', [10000, 0, 0]),
+                            person('local:second-mate', 'player-faction', 'local:squad-second', [10000, 0, 10]),
+                            person('local:far-squad', 'enemy-faction', 'local:squad-far', [10300, 0, 400])]
+    value['squads'] += [dict(id='local:squad-second', faction_id='player-faction',
+                             members=['local:second-player', 'local:second-mate'], leader_id='local:second-player',
+                             identity_origin=None, template_id=None, origin_town_id=None),
+                        dict(id='local:squad-far', faction_id='enemy-faction', members=['local:far-squad'],
+                             leader_id='local:far-squad', identity_origin=None, template_id=None, origin_town_id=None)]
+    metrics = nearest_squad_metrics(value, aliases, scene_scope(SETUP_SCENARIO))
+    # The second player's own squad (10 away) is excluded; the squad 500 from the second player beats the
+    # bystander 5000 from both players.
+    assert metrics['/background/nearest_squad/distance'] == 500.0
+    assert metrics['/background/nearest_squad/faction_id'] == 'enemy-faction'
+
+
+def test_nearest_squad_is_null_when_no_other_squad_has_a_positioned_member():
+    from oracle_scope import nearest_squad_metrics, scene_scope
+    value = scene_state('meitou', 1, dict(name='initial'))
+    next(row for row in value['characters'] if row['id'] == BYSTANDER)['position'] = None
+    metrics = nearest_squad_metrics(value, alias_map('meitou', 1), scene_scope(SETUP_SCENARIO))
+    assert metrics == {'/background/nearest_squad/distance': None,
+                       '/background/nearest_squad/faction_id': None,
+                       '/background/nearest_squad/faction_name': None}
+
+
+def test_report_md_writes_null_for_a_repetition_without_a_nearest_squad(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and index == 3:
+            next(row for row in value['characters'] if row['id'] == BYSTANDER)['position'] = None
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    distance = rows_by_metric(report['background_metrics'], 'initial')['/background/nearest_squad/distance']
+    assert values(distance, 'meitou') == [5000.0, 5000.0, None, 5000.0, 5000.0]
+    summary = (output/'report.md').read_text(encoding='utf-8')
+    assert ('| 1: 5000 Synthetic bystander-faction; 2: 5000 Synthetic bystander-faction; 3: null; '
+            '4: 5000 Synthetic bystander-faction; 5: 5000 Synthetic bystander-faction |') in summary
+    assert 'from the nearest player character' in summary
