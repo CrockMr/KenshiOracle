@@ -12,7 +12,7 @@ Design approved on October 29, 2026, before implementation. The examined clone i
 on the current `master`. It is still marked as an undecided, unimplemented
 concept. Component names below are proposals for our adapter, not APIs present
 in MeitouClient. The current integration target is upstream
-`100c6caec876cb1cdb4e3a404eed7e6d7b33eb54` (see the [patch series](../integrations/meitou/README.md)); the source links
+`88ae71a1eeb65bc7081751f19763f032093b2621` (see the [patch series](../integrations/meitou/README.md)); the source links
 below still document the examined commit.
 
 The [Meitou target guide](meitou-target.md) describes the contract now implemented
