@@ -23,7 +23,7 @@ namespace oracle {
 static const unsigned int setupMaximumPlayers=64,setupMaximumMembers=64,setupMaximumSpawnRows=32,setupMaximumRelationRows=100;
 // Load lifecycle (Q1). requested*: the last accepted load_save. It completes on
 // the first ready frame where the epoch accepts it and SaveManager::getCurrentGame()
-// equals it (equal in every private receipt, Observed); loaded* then holds that
+// equals it (Observed equal in local runs; see docs/scene-setup.md); loaded* then holds that
 // load and the epoch serial it completed in. A failed load never completes, and
 // a UI load changes the serial, which closes the gate without clearing worldMutated.
 struct SetupLoad {
@@ -53,7 +53,8 @@ struct SetupRefusal {
 };
 // Gate rows in contract order: G1, G2, G3, M1, M2 (mutations), G4, G5 (saved
 // origins: census, spawn, heal). More than 64 player characters is an
-// engine-internal safety failure reported after G4.
+// engine-internal safety failure, not a gate row: requireSetupGate raises it
+// after the gate passes, so gate.refusal never carries it.
 inline SetupRefusal setupRefusal(GameWorld* world,bool mutation,bool origins){
     if(!worldReady(world))return SetupRefusal("world_not_ready","world is unavailable or a save is loading");
     if(!setupProbeLoadCurrent())return SetupRefusal("not_allowed","scene setup requires a world loaded by the probe's load_save");
@@ -62,11 +63,11 @@ inline SetupRefusal setupRefusal(GameWorld* world,bool mutation,bool origins){
     // Q4: OptionsHolder::autosave, absent options refused. Whether that flag is the effective autosave state is Unknown.
     if(mutation&&(!::options||::options->autosave))return SetupRefusal("not_allowed","scene setup mutations are refused while autosave is enabled");
     if(!world->player||!world->player->getAllPlayerCharacters().size())return SetupRefusal("state_unavailable","player unavailable");
-    if(world->player->getAllPlayerCharacters().size()>setupMaximumPlayers)return SetupRefusal("state_unavailable","more than 64 player characters");
     if(origins&&!savedOrigins.prepared)return SetupRefusal("origin_context_required","scene setup requires prepared saved origins");
     return SetupRefusal();
 }
-inline void requireSetupGate(GameWorld* world,bool mutation,bool origins){synchronizeWorld(world);SetupRefusal r=setupRefusal(world,mutation,origins);if(r.code)throw Error(r.code,r.message);}
+inline const lektor<Character*>& setupPlayers(GameWorld* world){if(!world->player)throw Error("state_unavailable","player unavailable");const lektor<Character*>& list=world->player->getAllPlayerCharacters();if(!list.size())throw Error("state_unavailable","player unavailable");if(list.size()>setupMaximumPlayers)throw Error("state_unavailable","more than 64 player characters");return list;}
+inline void requireSetupGate(GameWorld* world,bool mutation,bool origins){synchronizeWorld(world);SetupRefusal r=setupRefusal(world,mutation,origins);if(r.code)throw Error(r.code,r.message);setupPlayers(world);}
 inline Value setupRefusalValue(const SetupRefusal& r){if(!r.code)return Value();Value v=Value::obj();v.object["code"]=Value(std::string(r.code));v.object["message"]=Value(std::string(r.message));return v;}
 inline Value setupGate(GameWorld* world){
     bool current=setupProbeLoadCurrent();Value v=Value::obj();
@@ -100,10 +101,11 @@ inline Value setupCharacterRow(Character* c){
 }
 // setup_heal shape: parts in body order (part index), id <record id>:<side>.
 // strict (setup_heal) refuses what the reply cannot state; a spawn row degrades
-// to null instead, and a negative or non-finite maximum to max:null.
+// to null instead (including an invalid part count, since the squad already
+// exists), and a negative or non-finite maximum to max:null.
 inline Value setupMedical(Character* c,bool strict){
     MedicalSystem* m=c->getMedical();if(!m){if(strict)throw Error("state_unavailable","medical system unavailable");return Value();}
-    int count=m->getPartCount();if(count<0||count>256)throw Error("state_unavailable","invalid health part count");Value parts=Value::arr();
+    int count=m->getPartCount();if(count<0||count>256){if(strict)throw Error("state_unavailable","invalid health part count");return Value();}Value parts=Value::arr();
     for(int i=0;i<count;++i){MedicalSystem::HealthPartStatus* part=m->getPart((unsigned __int64)i);const char* side=part?sideName(part->side):0;std::string id=part?dataId(part->data):std::string();
         if(!side||id.empty()){if(strict)throw Error("state_unavailable","medical system unavailable");return Value();}
         bool maximum=_finite(part->_maxHealth)&&part->_maxHealth>=0;if(!maximum&&strict)throw Error("state_unavailable","medical system unavailable");
@@ -116,7 +118,6 @@ inline Faction* setupFaction(GameWorld* world,const std::string& id){
     for(unsigned int i=0;i<all->size();++i){Faction* f=(*all)[i];if(f&&factionId(f)==id){if(found&&found!=f)throw Error("state_unavailable","faction id is ambiguous");found=f;}}
     if(!found)throw Error("not_found","faction not found");return found;
 }
-inline const lektor<Character*>& setupPlayers(GameWorld* world){if(!world->player)throw Error("state_unavailable","player unavailable");const lektor<Character*>& list=world->player->getAllPlayerCharacters();if(!list.size())throw Error("state_unavailable","player unavailable");if(list.size()>setupMaximumPlayers)throw Error("state_unavailable","more than 64 player characters");return list;}
 
 // --- setup_info (gate G1 only) ---------------------------------------------
 inline Value setupInfo(GameWorld* world,const Value& p){
@@ -135,10 +136,10 @@ struct SetupCensusLess {bool operator()(const SetupCensusRow& a,const SetupCensu
 inline Value setupAreaCensus(GameWorld* world,const Value& p){
     const char* allowed[]={"center","radius","limit"};keys(p,allowed,3);requireSetupGate(world,false,true);
     Ogre::Vector3 center=readPosition(p,"center");double radius=number(p,"radius",0.1,20000),limit=number(p,"limit",1,100);if(floor(limit)!=limit)throw Error("invalid_request","limit must be an integer");
-    Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);std::vector<SetupCensusRow> found;
+    Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);std::vector<SetupCensusRow> found;std::set<std::string> ids;
     // A non-finite position cannot be placed inside or outside the radius: an internal failure, never a skipped row.
-    for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Ogre::Vector3 at=i->second->getPosition();position(at);double d=setupDistanceXZ(at,center);if(d<=radius){SetupCensusRow row={d,setupCanonicalId(i->first),i->second};found.push_back(row);}}
-    std::sort(found.begin(),found.end(),SetupCensusLess());for(size_t i=1;i<found.size();++i)if(found[i-1].id==found[i].id)throw Error("origin_identity_ambiguous","census contains duplicate character IDs");
+    for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Ogre::Vector3 at=i->second->getPosition();position(at);double d=setupDistanceXZ(at,center);if(d<=radius){SetupCensusRow row={d,setupCanonicalId(i->first),i->second};if(!ids.insert(row.id).second)throw Error("origin_identity_ambiguous","census contains duplicate character IDs");found.push_back(row);}}
+    std::sort(found.begin(),found.end(),SetupCensusLess());
     Value rows=Value::arr();int alive=0,dead=0,unconscious=0,player=0;
     for(size_t i=0;i<found.size();++i){Character* c=found[i].character;bool d=c->isDead(),u=c->isUnconcious(),own=c->isPlayerCharacter();dead+=d;unconscious+=(!d&&u);alive+=(!d&&!u);player+=own;
         if(rows.array.size()<(size_t)limit){Value row=setupCharacterRow(c);row.object["id"]=Value(found[i].id);row.object["is_player"]=Value::flag(own);row.object["distance_xz"]=Value(found[i].distance);rows.array.push_back(row);}}
