@@ -324,13 +324,23 @@ class OracleSession:
         their eye position from the settled rig's boom, without guessing a
         target's camera height. A requested resume happens only after the pose
         was verified in pause; subsequent reads verify discrete controls only.
-        No failed prepare/commit/pause mutation is retried.
+        No failed prepare/commit/pause mutation is retried. Restoring a saved
+        scene with a follow target commits only after every held sample of the
+        baseline window shows the reference's own follow pivot: the engine's
+        pivot is provisional for an unpredictable number of frames after the
+        follow is attached, and calibrating against it would leave a constant
+        center error.
         """
         if (original is None) == (params is None):
             raise ValueError('Provide exactly one original scene or control params')
         requested = control_params(original) if original is not None else dict(params)
         desired = restoration_reference(requested, original=original)
         desired_paused = desired['paused']
+        # Measured before any mutation: a reference without its pivot cannot be
+        # restored to a settled pivot.
+        reference_pivot = (follow_pivot(original, 'reference controls')
+                           if original is not None and desired.get('camera_follow_id') is not None
+                           else None)
         prepare_params = dict(requested, paused=True)
         status = await self.ping()
         require_control_world(status)
@@ -346,7 +356,7 @@ class OracleSession:
                 or not token.isascii() or any(ord(c) < 33 or ord(c) > 126 for c in token)):
             raise ScenarioError('Probe returned no valid camera restoration token')
         baseline = await wait_stable_controls(self, observations=baseline_observations,
-                                               held=True, hold_token=token)
+                                               held=True, hold_token=token, pivot=reference_pivot)
         baseline_settings = dict(desired, edge_scrolling=False, paused=True)
         if original is None and requested.get('camera_follow_id') is not None:
             canonical_follow = prepared.get('camera_follow_id')
@@ -369,6 +379,8 @@ class OracleSession:
         scene = await wait_stable_controls(self, paused_reference, observations=observations)
         result = dict(response=response, scene=scene, baseline=baseline,
                       pose_verified_in_pause=True, unpaused_after_verification=False)
+        if reference_pivot is not None:
+            result['reference_follow_pivot'] = reference_pivot
         if not desired_paused:
             require_control_world(await self.ping(), paused=True)
             await self.call('pause', paused=False)
@@ -537,15 +549,32 @@ def check_controls(expected, actual, *, camera_lock=False):
             raise ScenarioError('Restoration mismatch: '+key+' (max difference '+str(delta)+')')
 
 
+def follow_pivot(scene, source='held sample'):
+    """The engine's follow pivot: center - follow position - additional offset.
+
+    The probe reports center - follow position as camera_follow_center_delta.
+    """
+    delta, offset = scene.get('camera_follow_center_delta'), scene.get('camera_follow_offset')
+    if (not isinstance(delta, (list, tuple)) or not isinstance(offset, (list, tuple))
+            or len(delta) != 3 or len(offset) != 3
+            or any(type(value) not in (int, float) or not math.isfinite(value)
+                   for value in (*delta, *offset))):
+        raise ScenarioError('Restoration cannot verify the camera follow pivot of the ' + source)
+    return [a-b for a, b in zip(delta, offset)]
+
+
 async def wait_stable_controls(session, expected=None, *, observations=None,
-                               timeout=10.0, stable_seconds=.5, held=False, hold_token=None):
+                               timeout=10.0, stable_seconds=.5, held=False, hold_token=None,
+                               pivot=None):
     """Observe three distinct frames over a bounded, continuous ready window.
 
     Without expected controls, capture the last paused pose of that window
     before arming the restoration guard. With expected controls, every accepted
     pose must match the original reference; a stable wrong pose never succeeds.
     This reads controls after the native release, without retrying a mutation or
-    claiming that future user input cannot move the camera.
+    claiming that future user input cannot move the camera. With a reference
+    pivot, every accepted held sample must also show that settled follow pivot;
+    a provisional pivot restarts the window like any other mismatch.
     """
     timeout = min(10.0, positive_timeout(timeout, 'control stability timeout'))
     stable_seconds = max(.5, positive_timeout(stable_seconds, 'control stability window'))
@@ -605,6 +634,11 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
             check_controls(reference, scene, camera_lock=held)
             if expected is not None and anchor is not None:
                 check_controls(anchor, scene, camera_lock=held)
+            if pivot is not None:
+                delta = max(abs(a-b) for a, b in zip(pivot, follow_pivot(scene)))
+                if delta > .05:
+                    raise ScenarioError('Restoration mismatch: camera follow pivot (max difference '
+                                        + str(delta) + ')')
             frame = scene.get('frame')
             if type(frame) is not int or frame < 0:
                 raise ScenarioError('Control observation has no valid frame identity')

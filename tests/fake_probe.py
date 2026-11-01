@@ -67,7 +67,8 @@ def float32(value):
 class FakeProbe(FakePlugin):
     def __init__(self, output_directory, state=None, *, mode='normal', completion_polls=1,
                  require_saved_origins=False, save_root=None, origin_aliases=None,
-                 camera_tracking_base_offset=None, camera_move_duration=0):
+                 camera_tracking_base_offset=None, camera_move_duration=0,
+                 camera_pivot_settle_frames=None):
         super().__init__(mode)
         self.output_directory = Path(output_directory).resolve()
         self.output_directory.mkdir(parents=True, exist_ok=True)
@@ -95,6 +96,17 @@ class FakeProbe(FakePlugin):
                 or not math.isfinite(camera_move_duration) or not 0 <= camera_move_duration <= 10):
             raise ValueError('Invalid synthetic camera baseline or move duration')
         self.camera_move_duration = camera_move_duration
+        # Opt-in transient follow pivot: after each follow attach (prepare and
+        # commit) the engine's pivot is provisionally Y=10 and settles to the
+        # configured base offset N frames later. An int applies to both
+        # attaches, a pair gives (prepare, commit) frames. None keeps it off.
+        settle = camera_pivot_settle_frames
+        settle = (settle, settle) if settle is None or type(settle) is int else tuple(settle)
+        if len(settle) != 2 or any(value is not None and (type(value) is not int or value < 0)
+                                   for value in settle):
+            raise ValueError('Invalid synthetic follow pivot settle frames')
+        self.camera_pivot_settle_frames = settle
+        self._camera_pivot_settles_at = None
         self._camera_pending = None
         self._camera_sequence = 0
         self._camera_tracking_active = False
@@ -328,8 +340,19 @@ class FakeProbe(FakePlugin):
         actor = next((row for row in self.state['characters'] if row['id'] == self.camera_follow_id), None)
         if actor is None:
             return deepcopy(self.camera_center)
-        return [actor['position'][i]+self.camera_tracking_base_offset[i]+self.camera_follow_offset[i]
-                for i in range(3)]
+        return [actor['position'][i]+pivot+self.camera_follow_offset[i]
+                for i, pivot in enumerate(self._camera_pivot())]
+
+    def _camera_pivot(self):
+        pivot = list(self.camera_tracking_base_offset)
+        if self._camera_pivot_settles_at is not None and self.frame < self._camera_pivot_settles_at:
+            pivot[1] = 10
+        return pivot
+
+    def _attach_camera_follow(self, phase):
+        frames = self.camera_pivot_settle_frames[phase]
+        self._camera_pivot_settles_at = (None if frames is None or self.camera_follow_id is None
+                                         else self.frame + frames)
 
     def _update_camera(self):
         if self._camera_transition is not None:
@@ -356,7 +379,20 @@ class FakeProbe(FakePlugin):
                     camera_restore_token=self._camera_pending['token'] if self._camera_pending else None,
                     camera_move_duration=self.camera_move_duration,
                     game_total_hours=clock['elapsed_seconds']/3600,
-                    loaded_character_count=len(self.state['characters']), frame=self.frame)
+                    loaded_character_count=len(self.state['characters']), frame=self.frame,
+                    **self._camera_follow_diagnostics())
+
+    def _camera_follow_diagnostics(self):
+        # Probe 0.9.5 diagnostics; the pivot is center - position - offset.
+        out = dict(camera_follow_offset=None, camera_follow_position=None, camera_follow_center_delta=None)
+        actor = next((row for row in self.state['characters'] if row['id'] == self.camera_follow_id), None)
+        if self.camera_follow_id is not None:
+            out['camera_follow_offset'] = deepcopy(self.camera_follow_offset)
+        if actor is not None:
+            out['camera_follow_position'] = deepcopy(actor['position'])
+            out['camera_follow_center_delta'] = [center-at for center, at
+                                                 in zip(self.camera_center, actor['position'])]
+        return out
 
     async def call(self, command, **params):
         """Also usable as an in-process client by tests of orchestration failures."""
@@ -596,6 +632,7 @@ class FakeProbe(FakePlugin):
             self.selected_speed = requested['speed']
             self.state['clock']['paused'] = True
             self._camera_tracking_active = self.camera_follow_id is not None
+            self._attach_camera_follow(0)
             if self.camera_move_duration:
                 self._camera_transition = dict(started=time.monotonic(), **{'from': deepcopy(self.camera_center)})
             else:
@@ -626,6 +663,8 @@ class FakeProbe(FakePlugin):
                 self.camera_follow_offset = offset
             self._camera_transition = None
             self.camera_center = deepcopy(requested['camera_center'])
+            # The commit re-follows; a provisional pivot moves the center again.
+            self._attach_camera_follow(1)
             self.edge_scrolling = requested['edge_scrolling']
             self.camera_owned = False
             self.selected_speed = requested['speed']
