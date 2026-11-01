@@ -4,8 +4,8 @@
 
 These instructions target **KenshiProbe 0.11.0** and phase 2: the original
 reference controller, additive state 0.2 and the MeitouClient comparator.
-The [scene-setup block](scene-setup.md) is implemented; its live validation is
-pending.
+The [scene-setup block](scene-setup.md) is implemented and was first run live
+on 2026-11-01 (see the release notes).
 State 0.1 remains supported. Start with the [documentation index](README.md),
 [field coverage](state-coverage.md) and [validation scope](phase2-validation.md).
 Historical campaign reports identify the exact earlier binaries they tested;

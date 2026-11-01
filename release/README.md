@@ -70,12 +70,14 @@ the clean public repository, whose `origin` is already configured:
 
 ```powershell
 $SourceCommit = (git rev-parse HEAD).Trim()
+git -c user.name="KenshiOracle contributors" -c user.email="contributors@users.noreply.github.com" tag -a v0.11.0 $SourceCommit -m "KenshiProbe v0.11.0"
 git push origin main
-git tag -a v0.11.0 $SourceCommit -m "KenshiProbe v0.11.0"
 git push origin refs/tags/v0.11.0
 gh release create v0.11.0 --verify-tag --title "KenshiProbe v0.11.0" --notes-file dist/v0.11.0/release-notes.md dist/v0.11.0/KenshiProbe-v0.11.0-win-x64.zip dist/v0.11.0/SHA256SUMS dist/v0.11.0/source-manifest.json dist/v0.11.0/build-info.json dist/v0.11.0/binary-audit.json dist/v0.11.0/installation-verification.json dist/v0.11.0/release-notes.md
 ```
 
-GitHub CLI must be installed and authenticated for the final command. The tag
+The tag is created before anything is pushed, with an explicit identity, so a
+repository without `user.name` and `user.email` does not stop the sequence
+halfway. GitHub CLI must be installed and authenticated for the final command. The tag
 must point to the same reviewed commit as `build-info.json`. Do not force-push
 or publish from the old working repository.

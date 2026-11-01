@@ -1,7 +1,8 @@
 KenshiProbe 0.11.0 - Windows x64 / Visual C++ 2010 (v100)
 
 Earlier releases were validated with Kenshi 1.0.65 Steam, RE_Kenshi 0.3.5 and
-KenshiLib 0.5.0; the 0.11.0 scene setup is not yet validated in the game.
+KenshiLib 0.5.0; the 0.11.0 scene setup was first run live on 2026-11-01
+for one scenario and one save (see the release notes).
 Install RE_Kenshi and its matching KenshiLib from their official distribution
 first. This archive does not contain the game, SDK libraries or saved games.
 
