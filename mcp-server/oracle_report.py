@@ -163,7 +163,43 @@ def _scene_rows(report):
                     + _json(total) + ' |')
     if len(facts) > PAGE_SIZE:
         rows += ['', f'{len(facts) - PAGE_SIZE} further member rows are in the complete JSON report.']
-    return rows
+    return rows + _nearest_squad_rows(report)
+
+
+NEAREST_SQUAD = '/background/nearest_squad/'
+
+
+def _nearest_squad_cell(distance_rows, faction_rows):
+    names = {row['repetition']: row['value'] for row in faction_rows}
+    cells = []
+    for row in distance_rows:
+        value = row['value']
+        text = 'null' if value is None else str(round(value))
+        if names.get(row['repetition']) is not None:
+            text += ' ' + _cell(names[row['repetition']])
+        cells.append(str(row['repetition']) + ': ' + text)
+    return '; '.join(cells)
+
+
+def _nearest_squad_rows(report):
+    """Background table: distance to the nearest squad outside the scene, never classified."""
+    rows = {(row['checkpoint'], row['metric']): row for row in report['background_metrics']
+            if row['metric'].startswith(NEAREST_SQUAD)}
+    order = [point['name'] for point in sorted(report['scenario']['checkpoints'], key=lambda point: point['at'])]
+    lines = ['', '## Background: nearest squad outside the scene', '',
+        'X/Z distance in world units from the player to the nearest member of the nearest squad, excluding the '
+        "spawn alias squads and the player's squad, with that squad's faction. Recorded per repetition as "
+        '`/background/nearest_squad/` metrics; never classified and never a finding.', '',
+        '| Checkpoint | Original | MeitouClient |', '| --- | --- | --- |']
+    for name in order:
+        distance = rows.get((name, NEAREST_SQUAD + 'distance'))
+        faction = rows.get((name, NEAREST_SQUAD + 'faction_name'))
+        if distance is None:
+            continue
+        lines.append('| ' + _cell(name) + ' | '
+                     + ' | '.join(_nearest_squad_cell(distance[target], faction[target] if faction else [])
+                                  for target in ('original', 'meitou')) + ' |')
+    return lines
 
 
 def render_reports(report, output, *, rewrite=False):

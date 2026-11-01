@@ -177,6 +177,45 @@ def scene_metrics(state, alias_map, scope):
     return values
 
 
+NEAREST_SQUAD_PREFIX = BACKGROUND_PREFIX + '/nearest_squad/'
+
+
+def nearest_squad_metrics(state, alias_map, scope):
+    """Background distance from the players to the nearest squad outside the scene.
+
+    The distance is the X/Z distance from a player character to the nearest
+    positioned member of the nearest squad, excluding the spawn alias squads and
+    every player character's squad. The squad's faction is recorded with it. The
+    values are ``/background/`` metrics: recorded per checkpoint, never classified.
+    Distance and faction are null when no player has a known position or no other
+    squad has a positioned member.
+    """
+    characters = {row['id']: row for row in state['characters']}
+    players = [characters.get(alias_map[key]) for key in player_aliases(alias_map)]
+    excluded = {alias_map[alias] for alias in scope['spawns']}
+    excluded |= {row['squad_id'] for row in players if row is not None and row.get('squad_id') is not None}
+    # _distance_xz is None exactly when a position is missing or not finite.
+    origins = [(row['position'][0], row['position'][2]) for row in players
+               if row is not None and _distance_xz(row.get('position'), (0, 0)) is not None]
+    faction_names = {row['id']: row.get('name') for row in state['factions']}
+    best = None
+    for squad in state['squads']:
+        if squad['id'] in excluded:
+            continue
+        for identity in squad['members']:
+            row = characters.get(identity)
+            if row is None:
+                continue
+            for origin in origins:
+                distance = _distance_xz(row.get('position'), origin)
+                if distance is not None and (best is None or distance < best[0]):
+                    best = distance, squad
+    faction = best[1]['faction_id'] if best is not None else None
+    return {NEAREST_SQUAD_PREFIX + 'distance': round(best[0], 1) if best is not None else None,
+            NEAREST_SQUAD_PREFIX + 'faction_id': faction,
+            NEAREST_SQUAD_PREFIX + 'faction_name': faction_names.get(faction) if faction is not None else None}
+
+
 def background_baseline(baseline, alias_map, scope):
     """The first checkpoint without the alias and player cohorts (faction cohorts outside them)."""
     excluded = {identity for members in cohorts(alias_map, scope).values() for identity in members}

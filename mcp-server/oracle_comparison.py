@@ -12,7 +12,8 @@ from oracle_compare import classify_metric, saved_metrics, saved_observations
 from oracle_identity import validate_origin_fingerprint
 from oracle_schema import canonical_bytes, validate_scenario
 from oracle_scope import (BACKGROUND_PREFIX, COMMIT_NOT_RECORDED, RECEIPT_FORMAT, background_baseline,
-                          cohorts, is_pair_relation_metric, labels, metric_scope, scene_metrics, scene_scope,
+                          cohorts, is_pair_relation_metric, labels, metric_scope, nearest_squad_metrics,
+                          scene_metrics, scene_scope,
                           setup_hash, validate_alias_map)
 from oracle_scope import limitations as scope_limitations
 from oracle_traces import trace_metrics
@@ -396,8 +397,9 @@ def scene_comparison(original, meitou, scope, tolerances=None, known_deviations=
     for point in scenario['checkpoints']:
         name = point['name']
         rows = original['checkpoints'][name], meitou['checkpoints'][name]
-        scene = [{row['repetition']: scene_metrics(row['state'], row['alias_map'], scope) for row in side}
-                 for side in rows]
+        scene = [{row['repetition']: {**scene_metrics(row['state'], row['alias_map'], scope),
+                                      **nearest_squad_metrics(row['state'], row['alias_map'], scope)}
+                  for row in side} for side in rows]
         for key, left_rows, right_rows in metric_observations(*rows, *scene):
             if metric_scope(key) != 'scene':
                 record(key, name, left_rows, right_rows)
@@ -462,6 +464,22 @@ def write_reports(report, output, rewrite=False):
     return render_reports(report, output, rewrite=rewrite)
 
 
+def is_relation_metric(metric):
+    """True for a faction relation metric, scene-scoped or not."""
+    return metric.startswith(('/relations/', '/scene/relations/'))
+
+
+def relation_share_limitation(findings):
+    """The parity caveat with the computed share of relation metrics in the compared set."""
+    total = len(findings)
+    relations = sum(is_relation_metric(row['metric']) for row in findings)
+    if not total:
+        return 'No metric was compared, so there is no count of identical fields.'
+    share = f'{relations} of the {total} compared metrics ({100 * relations / total:.1f}%) are faction relations'
+    dominant = '; they are the majority of that total' if 2 * relations > total else ''
+    return 'The number of identical fields is not an overall parity score: ' + share + dominant + '.'
+
+
 def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions=5, tolerances=None,
                       known_deviations=None, arrival_radius=5.0):
     output = Path(output).resolve()
@@ -515,7 +533,7 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
         reference_deviations=original['report']['reference_profile'].get('known_deviations', []),
         tolerances=tolerances or {}, arrival_radius_world_units=arrival_radius, limitations=[
             'Ranges observed in five repetitions do not characterize the engine’s full distribution.',
-            'The number of identical fields is not an overall parity score: the many relations carry substantial weight in that total.',
+            relation_share_limitation(findings),
             'A missing or null value in any repetition retains not-comparable coverage.',
             'Loaded population depends on each engine’s loading rules; its scope is described in state-coverage.',
             'Times are calendar times; the instants actually reached may overshoot the requested checkpoints.',

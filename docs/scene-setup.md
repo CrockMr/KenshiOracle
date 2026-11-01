@@ -497,7 +497,7 @@ execution's, and the same alias key set in every execution.
 | in scope | alias ids, player ids, characters with X/Z distance to `scene_center` `<= scene_radius` | |
 | `/scene/` | alias presence and missing, `/scene/intruders/count`, the declared relation pairs both ways | classified |
 | `/scene/outcome/` | alias and player cohort survivors, dead, unconscious, health, engagement traces | reported per repetition, never classified |
-| `/background/` | `/population/*`, `/clock/*`, every other relation, saved metrics and temporal findings outside the alias and player cohorts | `report.background_metrics`, never classified |
+| `/background/` | `/population/*`, `/clock/*`, every other relation, saved metrics and temporal findings outside the alias and player cohorts; `/background/nearest_squad/*` (distance and faction of the nearest squad outside the scene, see the [comparator](comparator.md#scene-scope)) | `report.background_metrics`, never classified |
 
 A limitations line in the comparison states that outcome and background
 metrics are not classified.

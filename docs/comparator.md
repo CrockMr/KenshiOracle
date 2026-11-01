@@ -166,7 +166,7 @@ from HAND proof, and a spawned id never appears in a metric path.
 | --- | --- | --- |
 | `/scene/` | `/scene/squads/<spawn>/present`; `/scene/cohort/<cohort>/size`, `present`, `missing`; `/scene/intruders/count` (in-radius characters outside the alias and player cohorts; null when a position is unknown); `/scene/relations/<a>/<b>/value` for each declared pair, both directions | classified, in `findings` |
 | `/scene/outcome/` | per cohort `survivors`, `dead`, `unconscious` and `health/current_total`, `stun_total`, `maximum_total`; the player's individual fields under `/scene/outcome/characters/alias:<alias>/`; engagement of each cohort over the whole scenario | `scene_outcome`, one observation per repetition, never classified |
-| `/background/` | the metrics of the sections above with this prefix: population, clock, every other relation, faction starting cohorts and faction engagement without the cohort members, saved characters other than the players, saved-squad trajectories and id-based moves outside the cohorts | `background_metrics`, never classified |
+| `/background/` | the metrics of the sections above with this prefix: population, clock, every other relation, faction starting cohorts and faction engagement without the cohort members, saved characters other than the players, saved-squad trajectories and id-based moves outside the cohorts; and, per checkpoint, `/background/nearest_squad/distance`, `faction_id` and `faction_name` (below) | `background_metrics`, never classified |
 
 Cohorts are `player` (the `player` or `player/<n>` aliases) and
 `<spawn alias>/<template>`. Spawned members are interchangeable: they are
@@ -184,6 +184,19 @@ background metrics are not classified. `report.md` adds a short section with
 the outcome and background counts, the cohort outcome per repetition and the
 part maxima total per alias and repetition (at most 100 rows each; the full
 data stays in `report.json`).
+
+**Nearest squad outside the scene.** At every checkpoint the comparator
+records the X/Z distance from a player character to the nearest positioned
+member of the nearest squad, excluding each spawn alias squad and every player
+character's own squad, with that squad's `faction_id` and faction name.
+Distances are rounded to 0.1 world units; all three values are null when no
+player has a known position or no other squad has a positioned member. The
+values are background facts, one observation per repetition: they are never
+classified, never become a finding and never count toward a class. They show
+where the roaming population starts relative to the scene, which a yes-or-no
+intruder count hides. `report.md` lists them per checkpoint in a
+"Background: nearest squad outside the scene" table. A scenario without a setup
+block has no such metric.
 
 The two campaigns need not bind the same player alias form: one may bind
 `player` and the other `player/1..n`. The `player` cohort aggregates either
@@ -207,6 +220,10 @@ nor unknown coverage with “known deviation”.
 
 - `report.md`: summary, N on both sides, sorted classes and preview limited to
   20 strong discrepancies, linking all details.
+  Its limitations state the computed share of faction relation metrics
+  (`/relations/` and `/scene/relations/`) among the compared metrics, adding
+  that they are the majority of that total only when they are; the count of
+  identical fields is never an overall parity score.
 - `details/index.md` and pages: discrepancies/coverage, available N, ranges,
   medians, out-of-range observations, tolerances and snapshots. At most 100
   indicators per page, targeting 200 KiB where a row's size permits.

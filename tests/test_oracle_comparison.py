@@ -1011,3 +1011,94 @@ def test_campaign_limitations_are_carried_into_the_comparison_by_target(tmp_path
     save_report(original, left)
     with pytest.raises(ValueError, match='limitations'):
         compare_campaigns(original, meitou, tmp_path/'second')
+
+
+# Background metric: nearest squad outside the scene (recorded, never classified).
+
+def test_nearest_squad_metric_excludes_the_scene_squads_and_takes_the_nearest_member():
+    from oracle_scope import nearest_squad_metrics, scene_scope
+    scope = scene_scope(SETUP_SCENARIO)
+    value = scene_state('meitou', 1, dict(name='initial'))
+    # A two-member squad: its nearer member counts, measured in X/Z only from the player.
+    value['characters'] += [person('local:near-a', 'bystander-faction', 'local:squad-near', [3000, 900, 4000]),
+                            person('local:near-b', 'bystander-faction', 'local:squad-near', [1200, -50, 1600])]
+    value['squads'].append(dict(id='local:squad-near', faction_id='enemy-faction',
+                                members=['local:near-a', 'local:near-b'], leader_id='local:near-a',
+                                identity_origin=None, template_id='squad-template.near', origin_town_id=None))
+    metrics = nearest_squad_metrics(value, alias_map('meitou', 1), scope)
+    # The raiders alias squad at 30 and the player's own squad are excluded.
+    assert metrics == {'/background/nearest_squad/distance': 2000.0,
+                       '/background/nearest_squad/faction_id': 'enemy-faction',
+                       '/background/nearest_squad/faction_name': 'Synthetic enemy-faction'}
+    value['squads'] = [row for row in value['squads'] if row['id'] != 'local:squad-near']
+    metrics = nearest_squad_metrics(value, alias_map('meitou', 1), scope)
+    assert metrics['/background/nearest_squad/distance'] == 5000.0
+    assert metrics['/background/nearest_squad/faction_id'] == 'bystander-faction'
+    by_alias(value, 'meitou', 1, 'player')['position'] = None
+    assert set(nearest_squad_metrics(value, alias_map('meitou', 1), scope).values()) == {None}
+
+
+def test_nearest_squad_is_a_background_metric_per_checkpoint_and_never_classified(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou':
+            next(row for row in value['characters'] if row['id'] == BYSTANDER)['position'] = [1600 + index, 7, 0]
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    assert not any('nearest_squad' in row['metric'] for row in report['findings'])
+    assert all(row['classification'] == 'stable_identical' for row in report['findings'])
+    for checkpoint in ('initial', 'later'):
+        background = rows_by_metric(report['background_metrics'], checkpoint)
+        distance = background['/background/nearest_squad/distance']
+        assert 'classification' not in distance
+        assert values(distance, 'original') == [5000.0]*5
+        assert values(distance, 'meitou') == [1601.0, 1602.0, 1603.0, 1604.0, 1605.0]
+        faction = background['/background/nearest_squad/faction_id']
+        assert values(faction, 'original') == values(faction, 'meitou') == ['bystander-faction']*5
+    summary = (output/'report.md').read_text(encoding='utf-8')
+    assert '## Background: nearest squad outside the scene' in summary
+    assert ('| initial | 1: 5000 Synthetic bystander-faction; 2: 5000 Synthetic bystander-faction; '
+            '3: 5000 Synthetic bystander-faction; 4: 5000 Synthetic bystander-faction; '
+            '5: 5000 Synthetic bystander-faction | 1: 1601 Synthetic bystander-faction;') in summary
+
+
+def test_nearest_squad_metric_is_absent_for_scenario_01(tmp_path):
+    campaign(tmp_path/'original', 'original')
+    campaign(tmp_path/'meitou', 'meitou')
+    compare_campaigns(tmp_path/'original', tmp_path/'meitou', tmp_path/'output')
+    text = (tmp_path/'output'/'report.json').read_text(encoding='utf-8')
+    assert 'nearest_squad' not in text
+    assert 'nearest squad' not in (tmp_path/'output'/'report.md').read_text(encoding='utf-8')
+
+
+# The parity caveat states the computed share of relation metrics.
+
+def test_relation_share_limitation_is_computed_from_the_compared_metrics():
+    from oracle_comparison import relation_share_limitation
+    rows = lambda *metrics: [dict(metric=metric) for metric in metrics]
+    text = relation_share_limitation(rows('/relations/a/b/value', '/scene/relations/b/a/value',
+                                          '/population/loaded/total', '/clock/day'))
+    assert text == ('The number of identical fields is not an overall parity score: 2 of the 4 compared '
+                    'metrics (50.0%) are faction relations.')
+    text = relation_share_limitation(rows('/relations/a/b/value', '/relations/b/a/value', '/clock/day'))
+    assert text.endswith('3 compared metrics (66.7%) are faction relations; they are the majority of that total.')
+    assert 'majority' not in relation_share_limitation(rows('/clock/day'))
+    assert relation_share_limitation([]).startswith('No metric was compared')
+
+
+@pytest.mark.parametrize('scene', [False, True])
+def test_report_limitations_carry_the_relation_share_and_not_the_generic_claim(tmp_path, scene):
+    if scene:
+        original, meitou, _, _, output = scene_campaigns(tmp_path)
+    else:
+        original, meitou, output = tmp_path/'original', tmp_path/'meitou', tmp_path/'output'
+        campaign(original, 'original')
+        campaign(meitou, 'meitou')
+    compare_campaigns(original, meitou, output)
+    report = json.loads((output/'report.json').read_text(encoding='utf-8'))
+    total = len(report['findings'])
+    relations = sum(row['metric'].startswith(('/relations/', '/scene/relations/')) for row in report['findings'])
+    assert not any('substantial weight' in text for text in report['limitations'])
+    expected = f'{relations} of the {total} compared metrics ({100 * relations / total:.1f}%) are faction relations'
+    assert sum(expected in text for text in report['limitations']) == 1
+    if scene:
+        assert relations == 4
