@@ -16,6 +16,7 @@ or guarantees for another installation.
 - [State coverage](state-coverage.md), [saved NPC identities](npc-identities-phase1.md)
   and [complete protocol](protocol.md)
 - [Cross-engine comparison](comparator.md)
+- [Scene setup contract](scene-setup.md) (0.11.0, scenario-0.2)
 - [Phase 1 delivery](oracle-phase1-delivery.md),
   [phase 1 validation](oracle-phase1-validation.md) and
   [acceptance scope](phase1-acceptance.md)

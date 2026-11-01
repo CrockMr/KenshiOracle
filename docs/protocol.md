@@ -204,6 +204,8 @@ Since 0.7.1, `get_scene_state` also exposes `edge_scrolling`, `scene_camera_cont
 
 `prepare_battle_scene` uses `RootObjectFactory::createRandomCharacter`, then `separateIntoMyOwnSquad(true)`, `clearAllAIGoals`, and mutual `UNPROVOKED_FOCUSED_MELEE_ATTACK` objectives. No faction relation changes. The three-second preparation budget is checked **between** creations; a single call may exceed it. Partial preparation requires reload, without automatic retry. Engine generation is unseeded: identical parameters/save do not guarantee identical stats/equipment. `prepared=true` confirms creation/objectives, not actual landed hits.
 
+Comparable scene preparation on both engines uses the separate `setup_*` commands of the [scene setup contract](scene-setup.md); `prepare_battle_scene` is unchanged.
+
 `battle` identifies actors by a unique name prefix without retaining pointers between frames; it exposes members still present in the update list, combat/received-attack/dead/unconscious states, and SDK blood. An actor absent from this list is not presumed dead. Counts are instantaneous observations, not an exhaustive event journal.
 
 TCP IPv4, 127.0.0.1 only. Port47800, configurable with KENSHI_PROBE_PORT in the game-process environment; also set `port` in config.json. Compact UTF-8 JSON, one LF-terminated line per message.65536-byte limit including LF. Maximum JSON depth16, duplicate keys and non-finite numbers rejected. No authentication: any local process may call the plugin.
