@@ -107,6 +107,8 @@ class OracleSession:
             raise ValueError('state_schema must be 0.1 or 0.2')
         self.deadline = None
         self.identity_source = None
+        # Optional callable(command, params) -> record dict; each reply is stored in record['reply'].
+        self.recorder = None
 
     def check_deadline(self):
         if self.deadline is not None and time.monotonic() >= self.deadline:
@@ -114,13 +116,18 @@ class OracleSession:
 
     async def call(self, command, **params):
         self.check_deadline()
+        record = self.recorder(command, params) if self.recorder is not None else None
         if self.deadline is None:
-            return await self.client.call(command, **params)
-        try:
-            return await asyncio.wait_for(self.client.call(command, **params),
-                                          max(.001, self.deadline-time.monotonic()))
-        except TimeoutError as exc:
-            raise ScenarioError('Scenario exceeded scenario_timeout during ' + command) from exc
+            reply = await self.client.call(command, **params)
+        else:
+            try:
+                reply = await asyncio.wait_for(self.client.call(command, **params),
+                                               max(.001, self.deadline-time.monotonic()))
+            except TimeoutError as exc:
+                raise ScenarioError('Scenario exceeded scenario_timeout during ' + command) from exc
+        if record is not None:
+            record['reply'] = reply
+        return reply
 
     async def ping(self):
         result = await self.call('ping')
@@ -714,9 +721,6 @@ def markdown_report(report):
     return '\n'.join(rows) + '\n'
 
 
-CAPABILITY = 'scene_setup'
-
-
 async def scene_capture(session, setup, receipt):
     """Checkpoint record of a setup scenario: hash, alias map and scene census (not compared)."""
     preflight = setup['preflight']
@@ -784,10 +788,11 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                 raise ScenarioError('Probe does not support a common state schema')
             report['state_schema'] = session.state_schema
             report['target'] = ping.get('target', 'original')
+            capabilities = ping.get('capabilities')
+            if setup is not None and (type(capabilities) is not list or oracle_setup.CAPABILITY not in capabilities):
+                raise ScenarioError('Probe lacks capability scene_setup; this scenario needs probe 0.11.0')
             report['build_commit'], report['build_commit_known'] = oracle_setup.build_commit(
                 ping, report['limitations'], required=setup is not None)
-            if setup is not None and CAPABILITY not in (ping.get('capabilities') or ()):
-                raise ScenarioError('Probe lacks capability scene_setup; this scenario needs probe 0.11.0')
             if report['target'] == 'meitou':
                 original_seed = seed_value(ping.get('seed'))
                 if ping.get('seed_applied_before_load') is not True:
@@ -852,10 +857,8 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                 if scenario['speed'] > 0:
                     await session.call('set_game_speed', speed=scenario['speed'], preserve_pause=True)
                 if setup is not None:
-                    receipt = await oracle_setup.run_setup_block(session, scenario, folder, execution,
-                                                                 setup_entries[index - 1], engine_facts)
-                    report['limitations'].extend(limitation for limitation in receipt['limitations']
-                                                 if limitation not in report['limitations'])
+                    await oracle_setup.run_setup_block(session, scenario, folder, execution,
+                                                       setup_entries[index - 1], engine_facts)
                 start = await session.call('get_clock')
                 origin = start['elapsed_seconds']
                 execution['initial_clock'] = start
@@ -879,20 +882,19 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                         command, params = action['command'], action['params']
                         if command == 'pause':
                             logical_pause = params['paused']
-                            result = await session.call('pause', paused=True)
+                            params = dict(paused=True)
                         elif command == 'set_game_speed':
                             logical_pause = params['speed'] == 0
                             if logical_pause:
-                                result = await session.call('pause', paused=True)
+                                command, params = 'pause', dict(paused=True)
                             else:
-                                result = await session.call(command, speed=params['speed'], preserve_pause=True)
-                        else:
-                            if setup is not None and command == 'issue_order':
-                                params = oracle_setup.resolve_aliases(params, execution['setup']['alias_map'])
-                            result = await session.call(command, **params)
+                                params = dict(speed=params['speed'], preserve_pause=True)
+                        elif setup is not None and command == 'issue_order':
+                            params = oracle_setup.resolve_aliases(params, execution['setup']['alias_map'])
+                        result = await session.call(command, **params)
                         record = dict(request=action, result=result)
                         if setup is not None:
-                            record['resolved_params'] = params
+                            record['resolved_params'] = params  # The parameters actually sent.
                         record['clock'] = await session.call('get_clock')
                         execution['actions'].append(record)
                     for point in group['checkpoints']:
@@ -958,6 +960,11 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                     report['status'] = 'failed'
                     if caught is None:
                         caught = exc
+            for execution in report['executions']:
+                # Receipt limitations reach the report also when the setup failed.
+                for limitation in (execution.get('setup') or {}).get('limitations', []):
+                    if limitation not in report['limitations']:
+                        report['limitations'].append(limitation)
             report['variability'] = variability(report['executions'])
             write_json(root / 'report.json', report)
             (root / 'report.md').write_text(markdown_report(report), encoding='utf-8')

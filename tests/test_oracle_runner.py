@@ -1065,7 +1065,21 @@ def test_setup_block_runs_between_speed_and_origin_and_records_the_receipt(tmp_p
             if step['request']['command'] in SETUP_MUTATIONS] == ['S2'] + ['S5'] * 5 + ['S4'] * 2
     assert all(step['verdict'] == 'passed' for step in receipt['steps'])
     commands = [row['request']['command'] for row in receipt['steps']]
-    assert commands.count('ping') == commands.count('setup_info') - 1 >= 10  # S0 also reads setup_info.
+    # One step per command sent, in order: the opening ping, a ping and setup_info per guard (S0 also
+    # reads setup_info), and every ping and poll that until() sends during the settle.
+    assert commands[0] == 'ping' and receipt['steps'][0]['step'] == 'S0'
+    polls = commands.count('run_until') + commands.count('run_until_status')
+    assert commands.count('run_until') == 1 and polls >= 2
+    assert commands.count('ping') == 1 + (commands.count('setup_info') - 1) + polls
+    assert commands.count('setup_info') - 1 >= 10
+    sent = [row for row in fake.requests if row['command'].startswith('setup_')
+            or row['command'] in ('run_until', 'run_until_status', 'dump_state')]
+    recorded = [row for row in receipt['steps'] if row['request']['command'] in {r['command'] for r in sent}]
+    assert [(row['request']['command'], row['request']['params']) for row in recorded] == \
+        [(row['command'], row['params']) for row in sent[:len(recorded)]]
+    dumps = [row for row in receipt['steps'] if row['request']['command'] == 'dump_state']
+    assert [list(row['request']['params']) for row in dumps] == [['filename']] * 3  # The fake offers 0.1 only.
+    assert [row['read_back']['path'] for row in dumps] == ['setup/S3b.json', 'setup/S5.json', 'setup/S6.json']
     # Call order: reload, speed preparation, S0..S6, then the origin clock.
     calls = fake.calls[fake.calls.index('commit_saved_origins'):]
     order = calls.index('issue_order')
@@ -1114,16 +1128,23 @@ def test_runner_and_comparator_share_one_setup_hash_rule():
 
 def test_setup_actions_resolve_aliases_and_record_resolved_params(tmp_path):
     fake, cfg, saved = setup_fixture(tmp_path)
-    run_setup(fake, cfg)
+    value = setup_scenario()
+    value['actions'][1]['params'] = dict(paused=False)  # A logical resume still sends paused:true.
+    value['actions'] += [dict(at=2, command='set_game_speed', params=dict(speed=2)),
+                         dict(at=2, command='set_game_speed', params=dict(speed=0))]
+    run_setup(fake, cfg, value)
     execution = report_for(cfg)['executions'][0]
     alias_map = execution['setup']['alias_map']
     attack = execution['actions'][0]
-    assert attack['request'] == setup_scenario()['actions'][0]
+    assert attack['request'] == value['actions'][0]
     assert attack['resolved_params'] == dict(type='attack', squad_id=alias_map['raiders'], target_id=saved[0])
     assert attack['result']['affected_characters'] == 4
     sent = next(row['params'] for row in fake.requests if row['command'] == 'issue_order')
     assert sent == attack['resolved_params']
-    assert execution['actions'][1]['resolved_params'] == dict(paused=True)
+    # resolved_params are the parameters actually sent, not the request as written.
+    assert [row['request'] for row in execution['actions'][1:]] == value['actions'][1:]
+    assert [row['resolved_params'] for row in execution['actions'][1:]] == [
+        dict(paused=True), dict(speed=2, preserve_pause=True), dict(paused=True)]
 
 
 def test_alias_resolution_refuses_unbound_or_mismatched_aliases():
@@ -1208,6 +1229,8 @@ def test_changed_build_commit_between_repetitions_fails_the_run(tmp_path):
     ('unpinned save', 'No engine profile pins exist'),
     ('no engine facts', 'engine_facts'),
     ('no build commit', 'build_commit'),
+    ('pre-0.11 probe', 'capability scene_setup'),
+    ('capabilities not a list', 'capability scene_setup'),
 ])
 def test_setup_refusals_before_the_guard_is_armed(tmp_path, case, match):
     fake, cfg, _ = setup_fixture(tmp_path, fingerprint='sha256:' + 'b' * 64 if case == 'missing pin' else None,
@@ -1222,6 +1245,10 @@ def test_setup_refusals_before_the_guard_is_armed(tmp_path, case, match):
         facts = {}
     elif case == 'no build commit':
         fake.build_commit = None
+    elif case == 'pre-0.11 probe':
+        fake.capabilities, fake.build_commit = [], None
+    elif case == 'capabilities not a list':
+        fake.capabilities = 'scene_setup'
     with pytest.raises(ScenarioError, match=match):
         run_setup(fake, cfg, value, facts=facts)
     assert set(fake.calls) <= {'ping'}
@@ -1475,6 +1502,102 @@ def test_each_setup_step_failure_restores_without_retry(tmp_path, step, case, ma
         assert fake.loads == [SETUP_SAVE] * 3  # Preload, the repetition, then cleanup.
         cleanup = [row['params'] for row in fake.requests if row['command'] == 'load_save'][-1]
         assert 'allow_setup' not in cleanup and fake.world_mutated is False
+
+
+def _cancel_heal(fake, params, result):
+    raise asyncio.CancelledError()
+
+
+def test_cancellation_mid_setup_still_writes_the_failed_receipt(tmp_path):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    fake.hooks['setup_heal'] = _cancel_heal
+    with pytest.raises(ScenarioError):
+        run_setup(fake, cfg)
+    report = report_for(cfg)
+    assert report['error'] == 'CancelledError: '
+    receipt = report['executions'][0]['setup']
+    assert receipt['verdict'] == 'failed'
+    assert receipt['failure'] == dict(step='S5', message='CancelledError: ')
+    folder = Path(report['output']) / '1'
+    assert json.loads((folder / 'setup' / 'setup.json').read_text(encoding='utf-8')) == receipt
+    assert receipt['steps'][-1]['request']['command'] == 'setup_heal' and receipt['steps'][-1]['reply'] is None
+    assert report['restoration']['verified'] is True and guard_for(cfg)['restore_required'] is False
+
+
+def test_receipt_limitations_reach_the_report_when_setup_fails(tmp_path):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    fake.hooks['setup_set_relation'] = _kill_member  # Fails at S6, after the S4 limitation.
+    with pytest.raises(ScenarioError, match='Scene setup S6 failed'):
+        run_setup(fake, cfg)
+    report = report_for(cfg)
+    assert report['executions'][0]['setup']['limitations'] == ['war flag not observable on original']
+    assert report['limitations'] == ['war flag not observable on original']
+
+
+def test_mirrored_relation_cells_pass_as_on_both_engines(tmp_path):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    fake.mirror_relations = True  # One set changes both cells, the second changes none (Observed/Verified).
+    assert run_setup(fake, cfg)['status'] == 'completed'
+    receipt = report_for(cfg)['executions'][0]['setup']
+    sets = [row for row in receipt['steps'] if row['request']['command'] == 'setup_set_relation']
+    assert [row['read_back']['changed_cells'] for row in sets] == [2, 0]
+
+
+def _sleep_on(command, seconds):
+    def wrap(fake):
+        send = fake.call
+
+        async def call(sent, /, **params):
+            if sent == command:
+                await asyncio.sleep(seconds)
+            return await send(sent, **params)
+        fake.call = call
+    return wrap
+
+
+def _lose_reply(fake, params, result):
+    raise ProbeError('Jeu figé ou non lancé : délai expiré ou connexion impossible')
+
+
+def _restart_on_advance(fake):
+    fake.instance_id = 'replacement-instance'
+
+
+@pytest.mark.parametrize('case,step,match', [
+    ('run_timeout', 'S3', 'run_until'),
+    ('run_stalled', 'S3', 'deadline'),
+    ('scenario deadline during heal', 'S5', 'scenario_timeout'),
+    ('lost spawn reply', 'S2', 'délai expiré'),
+    ('restart during settle', 'S3', 'restarted'),
+])
+def test_setup_timeouts_and_lost_replies_fail_once_and_restore(tmp_path, case, step, match):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    if case in ('run_timeout', 'run_stalled'):
+        fake.mode = case
+    elif case == 'scenario deadline during heal':
+        _sleep_on('setup_heal', 30)(fake)
+        cfg['scenario_timeout'] = 3
+    elif case == 'lost spawn reply':
+        fake.hooks['setup_spawn_squad'] = _lose_reply
+    else:
+        fake.advance_hook = _restart_on_advance
+    with pytest.raises(ScenarioError, match=match) as caught:
+        run_setup(fake, cfg)
+    assert 'Scene setup ' + step + ' failed' in str(caught.value)
+    report = report_for(cfg)
+    receipt = report['executions'][0]['setup']
+    assert receipt['failure']['step'] == step and report['executions'][0]['checkpoints'] == []
+    assert receipt['steps'][-1]['verdict'] == 'failed'
+    assert all(row['verdict'] == 'passed' for row in receipt['steps'][:-1])
+    assert fake.calls.count('setup_spawn_squad') <= 1 and fake.calls.count('run_until') <= 1
+    assert 'issue_order' not in fake.calls
+    if case == 'restart during settle':
+        # The old operation is never sent to the new process, and the guard stays armed.
+        assert 'cancel_run_until' not in fake.calls
+        assert 'restarted' in report['restoration_error'] and guard_for(cfg)['restore_required'] is True
+    else:
+        assert fake.calls.count('cancel_run_until') == (1 if case.startswith('run_') else 0)
+        assert report['restoration']['verified'] is True and guard_for(cfg)['restore_required'] is False
 
 
 def test_meitou_squad_size_and_rng_key_follow_the_target_shape():

@@ -173,6 +173,31 @@ class _Block:
             self.fail(command + ' returned no object')
         return record
 
+    async def recorded(self, factory):
+        """Run a session helper and record each command it sends as its own step.
+
+        Every answered command passes; when the helper fails, the last command it
+        sent carries the failure. Returns (result, records).
+        """
+        records = []
+
+        def record(command, params):
+            row = dict(step=self.step, request=dict(command=command, params=deepcopy(params)),
+                       reply=None, read_back={}, verdict='passed')
+            self.steps.append(row)
+            records.append(row)
+            return row
+        self.session.recorder = record
+        try:
+            result = await factory()
+        except BaseException:
+            if records:
+                records[-1]['verdict'] = 'failed'
+            raise
+        finally:
+            self.session.recorder = None
+        return result, records
+
     @staticmethod
     def passed(record, **read_back):
         record['read_back'].update(read_back)
@@ -262,16 +287,11 @@ class _Block:
                 self.fail(f'mutation reply {key} is not a paused finite clock')
 
     async def dump(self, name):
-        path = self.folder / 'setup' / (name + '.json')
-        holder = {}
-
-        async def call():
-            holder['state'], record = await self.session.dump(path)
-            return record
-        record = await self.command('dump_state', dict(destination='setup/' + name + '.json'), call)
-        reply = record['reply']
-        self.passed(record, sha256=reply['sha256'])
-        return holder['state'], dict(path='setup/' + name + '.json', sha256=reply['sha256'])
+        relative = 'setup/' + name + '.json'
+        (state, capture), records = await self.recorded(lambda: self.session.dump(self.folder / relative))
+        record = next(row for row in reversed(records) if row['request']['command'] == 'dump_state')
+        record['read_back'].update(path=relative, sha256=capture['sha256'])
+        return state, dict(path=relative, sha256=capture['sha256'])
 
     # Steps -----------------------------------------------------------------
 
@@ -424,12 +444,13 @@ class _Block:
         self.passed(record)
         target = start + SETTLE_CALENDAR_SECONDS
         timeout = self.session.cfg.get('run_until_timeout', 120)
-        record = await self.command('run_until', dict(target_seconds=target, timeout_seconds=timeout),
-                                    lambda: self.session.until(target, timeout))
-        end = record['reply'].get('clock', {}).get('elapsed_seconds')
+        # until() sends ping, run_until, then ping and run_until_status polls; each is a step.
+        completed, records = await self.recorded(lambda: self.session.until(target, timeout))
+        end = completed.get('clock', {}).get('elapsed_seconds')
         if not _number(end):
+            records[-1]['verdict'] = 'failed'
             self.fail('settle completion has no finite clock')
-        self.passed(record)
+        records[-1]['read_back'].update(target_seconds=target, end_seconds=end)
         await self.guard(mutated=True)
         census = await self.census()
         player = next((row for row in census['reply']['characters'] if row['id'] == self.alias_map['player']), None)
@@ -593,7 +614,8 @@ async def run_setup_block(session, scenario, folder, execution, profile, facts):
     block.dumps = receipt['dumps']
     execution['setup'] = receipt
     try:
-        ping = await session.ping()
+        record = await block.command('ping', call=session.ping)
+        ping = block.passed(record)
         block.target = receipt['target'] = ping.get('target', 'original')
         receipt['build_commit'], receipt['build_commit_known'] = build_commit(ping, block.limitations,
                                                                               required=True)
@@ -607,11 +629,13 @@ async def run_setup_block(session, scenario, folder, execution, profile, facts):
         receipt['members'] = block.healed
         await block.s4()
         await block.s6(s5)
-    except Exception as exc:
+    except BaseException as exc:
         message = str(exc) if isinstance(exc, (ProbeError, EngineProfileError)) else type(exc).__name__ + ': ' + str(exc)
         receipt.update(squad_size=getattr(block, 'squad_size', None), settle=getattr(block, 'settle', None),
                        members=getattr(block, 'healed', []), failure=dict(step=block.step, message=message))
         write_json(Path(folder) / 'setup' / 'setup.json', receipt)
+        if not isinstance(exc, Exception):
+            raise  # Cancellation and interrupts keep their own type once the receipt is written.
         raise ScenarioError(f'Scene setup {block.step} failed: {message}') from exc
     receipt['verdict'] = 'passed'
     write_json(Path(folder) / 'setup' / 'setup.json', receipt)
