@@ -70,6 +70,14 @@ def _position(value):
     return type(value) is list and len(value) == 3 and all(_number(v) for v in value)
 
 
+_GATE_KEYS = ('open', 'probe_loaded_save', 'allow_setup', 'epoch', 'refusal', 'mutation_refusal')
+
+
+def _gate(value):
+    """A gate object with every contract key, or None."""
+    return value if isinstance(value, dict) and all(key in value for key in _GATE_KEYS) else None
+
+
 def _line_multiplier(line):
     """Parse one settings.cfg line by the contract's selection rule; None if it does not match."""
     if type(line) is not str:
@@ -187,9 +195,9 @@ class _Block:
             self.fail('saved origins are not prepared')
         self.passed(record)
         record = await self.command('setup_info')
-        gate = record['reply'].get('gate')
-        if not isinstance(gate, dict) or gate.get('open') is not True:
-            self.fail('scene-setup gate is not open')
+        gate = _gate(record['reply'].get('gate'))
+        if gate is None or gate['open'] is not True:
+            self.fail('scene-setup gate is not open or incomplete')
         if gate.get('allow_setup') is not True or gate.get('probe_loaded_save') != self.scenario['save']:
             self.fail('scene-setup gate does not belong to this allow_setup load of the scenario save')
         if self.epoch is None:
@@ -202,24 +210,56 @@ class _Block:
             self.fail('mutation refused: ' + json.dumps(gate['mutation_refusal'], sort_keys=True))
         return self.passed(record)
 
+    def echo(self, command, reply, request, *, numbers=(), exact=()):
+        """Echoed numbers equal float32(request), element by element; other echoes are equal."""
+        for key in numbers:
+            wanted, value = request[key], reply.get(key)
+            if type(wanted) is list:
+                matches = (type(value) is list and len(value) == len(wanted)
+                           and all(_number(v) and v == float32(w) for v, w in zip(value, wanted)))
+            else:
+                matches = _number(value) and value == float32(wanted)
+            if not matches:
+                self.fail(f'{command} echoed {key} {value!r}, expected float32 of {wanted!r}')
+        for key, wanted in exact:
+            value = reply.get(key)
+            if type(value) is not type(wanted) or value != wanted:
+                self.fail(f'{command} echoed {key} {value!r}, expected {wanted!r}')
+
     async def census(self):
-        record = await self.command('setup_area_census', dict(center=list(self.center), radius=self.radius,
-                                                              limit=CENSUS_LIMIT))
+        request = dict(center=list(self.center), radius=self.radius, limit=CENSUS_LIMIT)
+        record = await self.command('setup_area_census', request)
         reply = record['reply']
+        self.echo('setup_area_census', reply, request, numbers=('center', 'radius'))
+        gate = _gate(reply.get('gate'))
+        if gate is None or gate['open'] is not True:
+            self.fail('census gate is not open or incomplete')
         rows = reply.get('characters')
         if type(rows) is not list or reply.get('truncated') is not False or reply.get('count') != len(rows):
             self.fail('census is truncated or inconsistent')
         for row in rows:
             if (not isinstance(row, dict) or type(row.get('id')) is not str or not _position(row.get('position'))
-                    or type(row.get('dead')) is not bool or type(row.get('unconscious')) is not bool):
+                    or type(row.get('dead')) is not bool or type(row.get('unconscious')) is not bool
+                    or type(row.get('faction_id')) is not str or type(row.get('is_player')) is not bool
+                    or (row.get('squad_id') is not None and type(row.get('squad_id')) is not str)):
                 self.fail('census row is malformed')
         if len({row['id'] for row in rows}) != len(rows):
             self.fail('census repeats a character id')
         return record
 
     def mutation_reply(self, reply):
+        """The common keys of every mutating reply (docs/scene-setup.md, Shared command rules)."""
         if reply.get('saved') is not False or reply.get('world_mutated') is not True:
             self.fail('mutation reply is not saved:false and world_mutated:true')
+        gate = _gate(reply.get('gate'))
+        if gate is None or gate['open'] is not True:
+            self.fail('mutation reply gate is not open or incomplete')
+        for key in ('world_before', 'world_after'):
+            world = reply.get(key)
+            # Mutations are refused unless the world is paused (M1), and none of them resumes it.
+            if (not isinstance(world, dict) or not _number(world.get('elapsed_seconds'))
+                    or world.get('paused') is not True):
+                self.fail(f'mutation reply {key} is not a paused finite clock')
 
     async def dump(self, name):
         path = self.folder / 'setup' / (name + '.json')
@@ -278,14 +318,18 @@ class _Block:
     def squad_size_facts(self, info):
         multiplier = self.setup['preflight']['squad_size_multiplier']
         if self.target == 'original':
+            if info.get('squad_size') is not None:
+                self.fail('setup_info squad_size must be null on the original')
             facts = deepcopy((self.facts or {}).get('squad_size'))
             source = 'engine_facts'
         else:
             facts = deepcopy(info.get('squad_size'))
             source = 'setup_info'
-            if not isinstance(facts, dict) or facts.get('source') != 'settings.cfg':
+            if (not isinstance(facts, dict) or facts.get('source') != 'settings.cfg'
+                    or facts.get('path') != 'settings.cfg'):
                 self.fail('setup_info squad_size does not come from settings.cfg')
-        if not isinstance(facts, dict) or type(facts.get('sha256')) is not str:
+        if (not isinstance(facts, dict) or type(facts.get('sha256')) is not str
+                or type(facts.get('multiplier')) not in (int, float)):
             self.fail('squad size facts are missing')
         line = facts.get('line')
         parsed = _line_multiplier(line)
@@ -311,12 +355,18 @@ class _Block:
             before = await self.census()
             self.passed(before)
             known = {row['id'] for row in before['reply']['characters']}
-            record = await self.command('setup_spawn_squad', dict(
-                template_id=spawn['squad_template'], faction_id=spawn['faction_id'],
-                position=position, max_count=spawn['count']))
+            request = dict(template_id=spawn['squad_template'], faction_id=spawn['faction_id'],
+                           position=position, max_count=spawn['count'])
+            record = await self.command('setup_spawn_squad', request)
             mutated = True
             reply = record['reply']
             self.mutation_reply(reply)
+            self.echo('setup_spawn_squad', reply, request, numbers=('position',),
+                      exact=[(key, request[key]) for key in ('template_id', 'faction_id', 'max_count')]
+                      + [('permanent', False)])
+            multiplier = self.setup['preflight']['squad_size_multiplier']
+            if type(reply.get('size_multiplier')) not in (int, float) or reply['size_multiplier'] != multiplier:
+                self.fail(f'spawn size_multiplier {reply.get("size_multiplier")!r} differs from {multiplier!r}')
             squad, members = reply.get('returned_squad_id'), reply.get('returned_members')
             if type(squad) is not str or not squad or type(members) is not list:
                 self.fail(f'spawn {spawn["alias"]} returned no squad')
@@ -426,6 +476,7 @@ class _Block:
             record = await self.command('setup_heal', dict(character_id=target['id']))
             reply = record['reply']
             self.mutation_reply(reply)
+            self.echo('setup_heal', reply, {}, exact=[('character_id', target['id'])])
             after, before = reply.get('after'), reply.get('before')
             if not isinstance(after, dict) or not isinstance(before, dict):
                 self.fail(f'heal of {target["alias"]} returned no medical state')
@@ -456,10 +507,12 @@ class _Block:
             final = None
             for source, target, value in ((a, b, relation['a_to_b']), (b, a, relation['b_to_a'])):
                 await self.guard(mutated=True, mutation=True)
-                record = await self.command('setup_set_relation', dict(source_id=source, target_id=target,
-                                                                       value=value))
+                request = dict(source_id=source, target_id=target, value=value)
+                record = await self.command('setup_set_relation', request)
                 reply = record['reply']
                 self.mutation_reply(reply)
+                self.echo('setup_set_relation', reply, request, numbers=('value',),
+                          exact=[('source_id', source), ('target_id', target)])
                 changes = reply.get('changes')
                 if type(changes) is not list or reply.get('changes_truncated') is not False:
                     self.fail('relation changes are missing or truncated')
@@ -468,9 +521,11 @@ class _Block:
                     self.fail(f'relation set {source}->{target} changed a cell outside the pair')
                 for key in ('source_to_target', 'target_to_source'):
                     side = reply.get(key)
-                    if (not isinstance(side, dict) or not isinstance(side.get('before'), dict)
-                            or not isinstance(side.get('after'), dict)):
-                        self.fail('relation reply has no ' + key)
+                    if not isinstance(side, dict) or any(
+                            not isinstance(side.get(when), dict) or 'at_war' not in side[when]
+                            or (side[when]['at_war'] is not None and type(side[when]['at_war']) is not bool)
+                            for when in ('before', 'after')):
+                        self.fail('relation reply has no complete ' + key)
                     old, new = side['before'].get('at_war'), side['after'].get('at_war')
                     if old is None or new is None:
                         self.war_unobservable = True

@@ -1263,6 +1263,138 @@ def _restart(fake, params, result):
     fake.instance_id = 'replacement-instance'
 
 
+def _reply(command, change):
+    """A hook that returns a changed copy of one setup reply (the world itself is unchanged)."""
+    def hook(fake, params, result):
+        result = deepcopy(result)
+        change(result)
+        return result
+    return command, hook
+
+
+def _drop(key):
+    return lambda result: result.pop(key)
+
+
+def _set(key, value):
+    return lambda result: result.__setitem__(key, value)
+
+
+def _nudge_y(result):
+    result['position'][1] += 0.5
+
+
+def _census_center(result):
+    result['center'][0] += 1
+
+
+def _drop_mutation_refusal(result):
+    del result['gate']['mutation_refusal']
+
+
+def _world_unpaused(result):
+    result['world_after']['paused'] = False
+
+
+def _census_row(key, value):
+    def change(result):
+        result['characters'][0][key] = value
+    return change
+
+
+def _at_war(fake, params, result):
+    result = deepcopy(result)
+    result['source_to_target']['before']['at_war'] = False
+    result['source_to_target']['after']['at_war'] = True
+    return result
+
+
+def _at_war_missing(fake, params, result):
+    result = deepcopy(result)
+    del result['target_to_source']['after']['at_war']
+    return result
+
+
+def _mutation_refused(fake, params, result):
+    if result['gate']['mutation_refusal'] is None and fake.world_mutated is False and fake.calls.count('setup_info') > 2:
+        result = deepcopy(result)
+        result['gate']['mutation_refusal'] = dict(code='not_allowed', message='the game must be paused')
+    return result
+
+
+def _epoch_change(fake, params, result):
+    if fake.calls.count('setup_heal') == 2:
+        result = deepcopy(result)
+        result['gate']['epoch'] += 1
+    return result
+
+
+def _gate_without_opt_in(fake, params, result):
+    if fake.world_mutated:
+        result = deepcopy(result)
+        result['gate']['allow_setup'] = False
+    return result
+
+
+REPLY_FAILURES = [
+    ('S0', 'census center echo', _reply('setup_area_census', _census_center), 'echoed center'),
+    ('S0', 'census radius echo', _reply('setup_area_census', _set('radius', 1499.5)), 'echoed radius'),
+    ('S0', 'census gate closed', _reply('setup_area_census', lambda r: r['gate'].update(open=False)),
+     'census gate'),
+    ('S0', 'census row without faction', _reply('setup_area_census', _census_row('faction_id', None)),
+     'census row is malformed'),
+    ('S0', 'census row is_player missing', _reply('setup_area_census', _census_row('is_player', 1)),
+     'census row is malformed'),
+    ('S0', 'census row squad_id number', _reply('setup_area_census', _census_row('squad_id', 3)),
+     'census row is malformed'),
+    ('S0', 'gate without mutation_refusal', _reply('setup_info', _drop_mutation_refusal), 'incomplete'),
+    ('S0', 'native squad_size reported',
+     _reply('setup_info', _set('squad_size', dict(source='settings.cfg', multiplier=1.0, line=SETTINGS_LINE,
+                                                  sha256='0' * 64, path='settings.cfg'))),
+     'null on the original'),
+    ('S2', 'spawn position echo', _reply('setup_spawn_squad', _nudge_y), 'echoed position'),
+    ('S2', 'spawn template echo', _reply('setup_spawn_squad', _set('template_id', 'fixture-other')),
+     'echoed template_id'),
+    ('S2', 'spawn faction echo', _reply('setup_spawn_squad', _set('faction_id', 'fixture-bystander')),
+     'echoed faction_id'),
+    ('S2', 'spawn max_count echo', _reply('setup_spawn_squad', _set('max_count', 3)), 'echoed max_count'),
+    ('S2', 'spawn permanent echo', _reply('setup_spawn_squad', _set('permanent', True)), 'echoed permanent'),
+    ('S2', 'spawn size_multiplier', _reply('setup_spawn_squad', _set('size_multiplier', 2.0)),
+     'size_multiplier'),
+    ('S2', 'spawn without world_before', _reply('setup_spawn_squad', _drop('world_before')), 'world_before'),
+    ('S2', 'spawn without gate', _reply('setup_spawn_squad', _drop('gate')), 'mutation reply gate'),
+    ('S2', 'spawn world resumed', _reply('setup_spawn_squad', _world_unpaused), 'world_after'),
+    ('S5', 'heal character echo', _reply('setup_heal', _set('character_id', 'char:other')),
+     'echoed character_id'),
+    ('S5', 'heal saved', _reply('setup_heal', _set('saved', True)), 'saved:false'),
+    ('S4', 'relation value echo', _reply('setup_set_relation', _set('value', -59.0)), 'echoed value'),
+    ('S4', 'relation source echo', _reply('setup_set_relation', _set('source_id', 'fixture-bystander')),
+     'echoed source_id'),
+    ('S4', 'relation target echo', _reply('setup_set_relation', _set('target_id', 'fixture-bystander')),
+     'echoed target_id'),
+    ('S4', 'war flag changed', ('setup_set_relation', _at_war), 'war flag'),
+    ('S4', 'war flag key missing', ('setup_set_relation', _at_war_missing), 'no complete target_to_source'),
+    ('S2', 'mutation refused', ('setup_info', _mutation_refused), 'mutation refused'),
+    ('S5', 'epoch changed', ('setup_info', _epoch_change), 'epoch changed'),
+    ('S2', 'opt-in lost', ('setup_info', _gate_without_opt_in), 'allow_setup load'),
+]
+
+
+@pytest.mark.parametrize('step,case,hook,match', REPLY_FAILURES, ids=[row[1] for row in REPLY_FAILURES])
+def test_setup_reply_checks_fail_the_step_and_restore(tmp_path, step, case, hook, match):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    command, change = hook
+    fake.hooks[command] = change
+    with pytest.raises(ScenarioError, match=match) as caught:
+        run_setup(fake, cfg)
+    assert 'Scene setup ' + step + ' failed' in str(caught.value)
+    report = report_for(cfg)
+    receipt = report['executions'][0]['setup']
+    assert receipt['verdict'] == 'failed' and receipt['failure']['step'] == step
+    assert report['executions'][0]['checkpoints'] == [] and 'issue_order' not in fake.calls
+    assert report['restoration']['verified'] is True and guard_for(cfg)['restore_required'] is False
+
+
 @pytest.mark.parametrize('step,case,match', [
     ('S0', 'autosave enabled', 'autosave'),
     ('S0', 'autosave configured', 'autosave'),
@@ -1362,10 +1494,23 @@ def test_meitou_squad_size_and_rng_key_follow_the_target_shape():
     with pytest.raises(SetupFailure, match='multiplier'):
         block.squad_size_facts(dict(squad_size=dict(reported, line=two, multiplier=2.0,
                                                     sha256=hashlib.sha256(two.encode('utf-8')).hexdigest())))
-    # The original never reads setup_info for the multiplier: engine facts are the only source.
+    for wrong in (dict(reported, path='other.cfg'), dict(reported, multiplier=True),
+                  dict(reported, path=None)):
+        with pytest.raises(SetupFailure):
+            block.squad_size_facts(dict(squad_size=wrong))
+    # The original never reads setup_info for the multiplier: engine facts are the only source,
+    # and setup_info reports null there.
     block.target = 'original'
-    with pytest.raises(SetupFailure, match='missing'):
+    with pytest.raises(SetupFailure, match='null on the original'):
         block.squad_size_facts(dict(squad_size=reported))
+    with pytest.raises(SetupFailure, match='missing'):
+        block.squad_size_facts(dict(squad_size=None))
+    native = dict(reported, source='engine_facts')
+    block.facts = dict(squad_size=dict(native, multiplier=True))
+    with pytest.raises(SetupFailure, match='missing'):
+        block.squad_size_facts(dict(squad_size=None))
+    block.facts = dict(squad_size=native)
+    assert block.squad_size_facts(dict(squad_size=None)) == native
 
 
 def test_meitou_setup_pins_resolve_from_the_save_source_for_every_seed(tmp_path):
