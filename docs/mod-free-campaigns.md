@@ -154,9 +154,15 @@ With 12 to 16 members, these two platoons account for only part of the
 original's +23 to +43 increase (**Observed**). The rest of the increase comes
 from other squads, including other saved squads that also first appear between
 120 and 300 calendar s in some runs (**Observed**); they are outside H1, as are
-the unfiled platoons already present at load. A fix is
-proposed to MeitouClient upstream separately and is not part of this
-repository.
+the unfiled platoons already present at load.
+
+**Fixed upstream:** the H1 gap was corrected in MeitouClient by
+[pull request #182](https://github.com/VlcekM/MeitouClient/pull/182) (merged
+2026-11-01); the fix is not part of this repository. The merged version,
+improved by the MeitouClient maintainer, makes each platoon in place, so its
+characters keep the platoon's saved identifier, as on the original: on this
+save, both late platoons were absent at 4 and present at 6 simulated seconds
+and every other identifier was unchanged, on 5 seeds (**Observed**).
 
 ## Other open question
 
