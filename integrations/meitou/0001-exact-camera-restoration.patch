@@ -1,9 +1,10 @@
-From 99add603ab4077e924020ea5a1ffb4d37d55ee20 Mon Sep 17 00:00:00 2001
+From e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:41:14 +0100
 Subject: [PATCH] Add exact camera pose restoration for controlled sessions
 
 (cherry picked from commit bf0753b9853dd15935c154f236fb43297e7bb34f)
+(cherry picked from commit 99add603ab4077e924020ea5a1ffb4d37d55ee20)
 ---
  src/Meitou.Engine/Cameras/CameraRig.cs        | 14 +++++
  src/Meitou.Engine/Cameras/StrategyCamera.cs   | 20 +++++++

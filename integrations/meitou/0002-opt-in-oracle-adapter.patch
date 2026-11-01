@@ -1,9 +1,10 @@
-From 5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6 Mon Sep 17 00:00:00 2001
+From 2b10478095651fdfbb5fd7ea38c8a20ef9e75750 Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:42:53 +0100
 Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
 
 (cherry picked from commit 118b16488d1b9e71389ad168ecca70692cd37a28)
+(cherry picked from commit 5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6)
 ---
  docs/README.md                                |    1 +
  docs/launch-options.md                        |    3 +
@@ -17,7 +18,7 @@ Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
  src/Meitou.Game/GameHost.cs                   |    4 +-
  src/Meitou.Game/GameOptions.cs                |   17 +
  src/Meitou.Game/Oracle/OracleCanonicalJson.cs |  148 +
- src/Meitou.Game/Oracle/OracleProtocol.cs      |  162 +
+ src/Meitou.Game/Oracle/OracleProtocol.cs      |  164 +
  src/Meitou.Game/Oracle/OracleServer.cs        |  276 +
  src/Meitou.Game/Oracle/OracleState.cs         |  183 +
  src/Meitou.Game/Program.cs                    |    5 +
@@ -28,7 +29,7 @@ Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
  .../Oracle/OracleProtocolTests.cs             |   75 +
  .../Meitou.Tests/Oracle/OracleServerTests.cs  |  226 +
  tests/Meitou.Tests/Oracle/OracleStateTests.cs |  133 +
- 23 files changed, 7001 insertions(+), 8 deletions(-)
+ 23 files changed, 7003 insertions(+), 8 deletions(-)
  create mode 100644 docs/oracle.md
  create mode 100644 src/Meitou.Game/GameHost.Oracle.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleCanonicalJson.cs
@@ -56,7 +57,7 @@ index 861f7cdf..43ef96f5 100644
  - [render-clouds](render-clouds.md)
  - [render-distance-benchmark](render-distance-benchmark.md)
 diff --git a/docs/launch-options.md b/docs/launch-options.md
-index e79778ba..605e0cc3 100644
+index 4971c8c0..dfcc0a26 100644
 --- a/docs/launch-options.md
 +++ b/docs/launch-options.md
 @@ -17,6 +17,9 @@ Authority: `src/Meitou.Game/GameOptions.cs` (`Split`, `Usage`), `src/Meitou.Game
@@ -200,10 +201,10 @@ index 00000000..137bd11e
 +by functional verification. A future mod needs host loading, seed, lifecycle
 +and paused-service APIs before it can replace this seam.
 diff --git a/src/Meitou.Game/GameHost.Interactive.cs b/src/Meitou.Game/GameHost.Interactive.cs
-index 8b0f1ffd..cc2d85a3 100644
+index c9b47a5c..5ef1f826 100644
 --- a/src/Meitou.Game/GameHost.Interactive.cs
 +++ b/src/Meitou.Game/GameHost.Interactive.cs
-@@ -542,7 +542,7 @@ sealed partial class GameHost
+@@ -548,7 +548,7 @@ sealed partial class GameHost
                  session.Input.Consume();
              }
              // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
@@ -212,7 +213,7 @@ index 8b0f1ffd..cc2d85a3 100644
              session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
              session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off } || g.PlayBench is not null;
              if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
-@@ -557,6 +557,7 @@ sealed partial class GameHost
+@@ -563,6 +563,7 @@ sealed partial class GameHost
              HandleNewGame();
              HandleMainMenu();
              StepSceneLoad();
@@ -221,7 +222,7 @@ index 8b0f1ffd..cc2d85a3 100644
              animClock = true;
              UpdateNav();
 diff --git a/src/Meitou.Game/GameHost.Metal.cs b/src/Meitou.Game/GameHost.Metal.cs
-index 8c873f7e..edacc079 100644
+index e26f7d26..2553949c 100644
 --- a/src/Meitou.Game/GameHost.Metal.cs
 +++ b/src/Meitou.Game/GameHost.Metal.cs
 @@ -602,6 +602,7 @@ sealed partial class GameHost
@@ -251,7 +252,7 @@ index 8c873f7e..edacc079 100644
                  if (!tourHolds) ApplyCamera(session.CameraAt());
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
 new file mode 100644
-index 00000000..1614f318
+index 00000000..95d54c35
 --- /dev/null
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
 @@ -0,0 +1,540 @@
@@ -413,7 +414,7 @@ index 00000000..1614f318
 +        {
 +            case "ping":
 +                OracleKeys(p);
-+                return new { target = "meitou", plugin_version = "0.10.0", game_version = "MeitouClient",
++                return new { target = "meitou", plugin_version = OracleProtocol.AdapterVersion, game_version = "MeitouClient",
 +                    schema_version = "0.2", supported_schema_versions = new[] { "0.1", "0.2" },
 +                    instance_id = oracleInstance, process_id = Environment.ProcessId, oracle_available = true,
 +                    world_ready = OracleReady, frame = oracleFrame, timestamp_ms = realTime.Elapsed.TotalMilliseconds,
@@ -819,10 +820,10 @@ index 38563161..9f1d61b5 100644
  
      void SandboxFollowCamera()
 diff --git a/src/Meitou.Game/GameHost.Saving.cs b/src/Meitou.Game/GameHost.Saving.cs
-index 7f0c21e0..3dcdcd28 100644
+index 2209ab43..6ff4110e 100644
 --- a/src/Meitou.Game/GameHost.Saving.cs
 +++ b/src/Meitou.Game/GameHost.Saving.cs
-@@ -149,6 +149,7 @@ sealed partial class GameHost
+@@ -147,6 +147,7 @@ sealed partial class GameHost
      /// </summary>
      void Autosave(double realDt)
      {
@@ -830,7 +831,7 @@ index 7f0c21e0..3dcdcd28 100644
          if (autosaveDue)
          {
              autosaveDue = false;
-@@ -263,7 +264,7 @@ sealed partial class GameHost
+@@ -261,7 +262,7 @@ sealed partial class GameHost
              Stage("read", () => read = Task.Run(() => SaveGame.Load(SaveFolder.Open(folder), ReadArrivalHour))),
              Stage("systems", () => { prepared = PrepareSystems(read!, interactive: true); return null; }, duringAscent: true),
              Stage("build", () => SwapInSave(read!, interactive: true, out summary, prepared: prepared)),
@@ -839,7 +840,7 @@ index 7f0c21e0..3dcdcd28 100644
      }
  
      /// <summary>
-@@ -335,6 +336,7 @@ sealed partial class GameHost
+@@ -333,6 +334,7 @@ sealed partial class GameHost
      Task SwapInSave(Task<SaveGame> read, bool interactive, out string summary, SaveLoadOptions? loadOptions = null, PreparedSystems? prepared = null)
      {
          var watch = Stopwatch.StartNew();
@@ -875,7 +876,7 @@ index cf8fa158..f5d492ce 100644
          previousById.Clear();
          player.Reset();
 diff --git a/src/Meitou.Game/GameHost.cs b/src/Meitou.Game/GameHost.cs
-index 76a8f87e..27c4044e 100644
+index 0c30ad56..a3316320 100644
 --- a/src/Meitou.Game/GameHost.cs
 +++ b/src/Meitou.Game/GameHost.cs
 @@ -97,6 +97,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
@@ -904,10 +905,10 @@ index 76a8f87e..27c4044e 100644
          if (interactive)
          {
 diff --git a/src/Meitou.Game/GameOptions.cs b/src/Meitou.Game/GameOptions.cs
-index c0ca5333..5d661553 100644
+index 81674ea4..8e3cd0e5 100644
 --- a/src/Meitou.Game/GameOptions.cs
 +++ b/src/Meitou.Game/GameOptions.cs
-@@ -57,6 +57,10 @@ sealed class GameOptions
+@@ -59,6 +59,10 @@ sealed class GameOptions
      public double? QuitAfter;
      /// <summary>A save folder (Meitou's or the original game's) started in instead of a new world, loaded as the game menu's Load does (<c>--load</c>).</summary>
      public string? Load;
@@ -918,7 +919,7 @@ index c0ca5333..5d661553 100644
      /// <summary><c>--play-bench &lt;dir&gt;</c>: the interactive game driven by a script, every frame measured, the results written there (GameHost.PlayBench.cs).</summary>
      public string? PlayBench;
      /// <summary><c>--no-precompile</c>: the methods are compiled on their first call only, not ahead on a background thread (JitWarmup).</summary>
-@@ -112,6 +116,9 @@ sealed class GameOptions
+@@ -115,6 +119,9 @@ sealed class GameOptions
                                       (frame, update, world tick steps and systems, render stages, GPU stages, collections); writes frames.csv and summary.md there and
                                       quits; frame limit and vsync off; MEITOU_BENCH_ONLY=a,b keeps those segments
            --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
@@ -928,7 +929,7 @@ index c0ca5333..5d661553 100644
            --renderer <vulkan|metal>  the renderer for the whole frame: vulkan (the default) or metal (macOS: the scene, HUD and faithful panels, the port's current slice)
            --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
            world options as meitou-viewer --world: --at, --zone, --town, --radius, --time, --screenshot, --size, --no-foliage, ...
-@@ -207,6 +214,12 @@ sealed class GameOptions
+@@ -211,6 +218,12 @@ sealed class GameOptions
                  case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
                  case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                  case "--load": g.Load = Next(); break;
@@ -941,7 +942,7 @@ index c0ca5333..5d661553 100644
                  case "--renderer":
                  {
                      string renderer = Next().ToLowerInvariant();
-@@ -224,6 +237,10 @@ sealed class GameOptions
+@@ -228,6 +241,10 @@ sealed class GameOptions
                  default: rest.Add(a); break;
              }
          }
@@ -1108,10 +1109,10 @@ index 00000000..2fa42efb
 +}
 diff --git a/src/Meitou.Game/Oracle/OracleProtocol.cs b/src/Meitou.Game/Oracle/OracleProtocol.cs
 new file mode 100644
-index 00000000..877b7b96
+index 00000000..3b9d3af1
 --- /dev/null
 +++ b/src/Meitou.Game/Oracle/OracleProtocol.cs
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,164 @@
 +using System.Text;
 +using System.Text.Json;
 +
@@ -1120,6 +1121,8 @@ index 00000000..877b7b96
 +/// <summary>The bounded JSON-line envelope, independent of game state and snapshot encoding.</summary>
 +internal static class OracleProtocol
 +{
++    /// <summary>The adapter version ping reports as <c>plugin_version</c>; it follows the KenshiOracle protocol release it implements.</summary>
++    internal const string AdapterVersion = "0.10.0";
 +    internal const int MaxLineBytes = 65536; // Includes the terminating LF.
 +    internal const int QueueCapacity = 64;
 +    static readonly UTF8Encoding Utf8 = new(false, true);
@@ -1746,7 +1749,7 @@ index 00000000..a4f9dd3f
 +        && Math.Abs(value.X) <= 1e9 && Math.Abs(value.Y) <= 1e9 && Math.Abs(value.Z) <= 1e9 ? new JsonArray(value.X, value.Y, value.Z) : null;
 +}
 diff --git a/src/Meitou.Game/Program.cs b/src/Meitou.Game/Program.cs
-index cd4b42ca..af581973 100644
+index 3503f47a..53c2b8fd 100644
 --- a/src/Meitou.Game/Program.cs
 +++ b/src/Meitou.Game/Program.cs
 @@ -35,6 +35,11 @@ static class Program

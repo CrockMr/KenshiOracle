@@ -1,21 +1,33 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
-  "upstream_base": "100c6caec876cb1cdb4e3a404eed7e6d7b33eb54",
-  "fork_tip": "5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6",
+  "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
+  "fork_tip": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
     {
       "file": "0001-exact-camera-restoration.patch",
-      "source_commit": "99add603ab4077e924020ea5a1ffb4d37d55ee20",
-      "sha256": "f6483c4695b63c6292963d898be0d78aae0cea47d3816abdb36151a494ed55f3",
-      "bytes": 6407
+      "source_commit": "e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c",
+      "sha256": "d36a1aa39be270b2d2a61cd5d376a08a6ab68766a2c6a68cf52bd5e88954a89f",
+      "bytes": 6476
     },
     {
       "file": "0002-opt-in-oracle-adapter.patch",
-      "source_commit": "5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6",
-      "sha256": "aa536212098750aebec0eccd114c8e3fe71aa01dd231db6a68dca693a3ba6337",
-      "bytes": 333773
+      "source_commit": "2b10478095651fdfbb5fd7ea38c8a20ef9e75750",
+      "sha256": "a77ceb9f55507c51acdb455fcefb221962f9a849bdd43affffbbd8b8fecd8276",
+      "bytes": 334064
+    },
+    {
+      "file": "0003-scene-setup-simulation.patch",
+      "source_commit": "8b255b96d877094e184edce14b212afbd893ada4",
+      "sha256": "3d8bd3d011294ef133df5017843d77ee71876398df9444a8027c47d492ceef75",
+      "bytes": 14676
+    },
+    {
+      "file": "0004-scene-setup-adapter.patch",
+      "source_commit": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
+      "sha256": "0632138778c0c1cd1294da61442f35905cd64cc3bd6faf68ee1ad765f0a9e711",
+      "bytes": 67753
     }
   ]
 }

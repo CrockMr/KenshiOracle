@@ -2,8 +2,10 @@
 
 # MeitouClient target
 
-The local fork uses branch `oracle-adapter-100c6ca` (base `100c6cae`), activated
-only by `--oracle`; earlier branches (`oracle-adapter-08340c7`, `oracle-adapter`
+The [patch series](../integrations/meitou/README.md) now targets base
+`88ae71a1` (branch `oracle-adapter-88ae71a` in its README). The evidence below
+was obtained on branch `oracle-adapter-100c6ca` (base `100c6cae`); the adapter
+is activated only by `--oracle`. Earlier branches (`oracle-adapter-08340c7`, `oracle-adapter`
 on `1df4493`) may be kept as backups.
 It does not provide a plugin/modding API. Its `docs/oracle.md` describes the
 seam and limits; the [durable-fork design](meitou-oracle-design.md) specifies
