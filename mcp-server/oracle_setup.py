@@ -66,6 +66,12 @@ def _number(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def same_float32(value, wanted):
+    """A reply number denotes float32(wanted). An engine may print a float32 in its shortest decimal form
+    (MeitouClient: 736.593) or in full (the native probe), so the reply is rounded to float32 too: no tolerance."""
+    return _number(value) and abs(value) <= 3.4028234663852886e38 and float32(value) == float32(wanted)
+
+
 def _position(value):
     return type(value) is list and len(value) == 3 and all(_number(v) for v in value)
 
@@ -236,14 +242,14 @@ class _Block:
         return self.passed(record)
 
     def echo(self, command, reply, request, *, numbers=(), exact=()):
-        """Echoed numbers equal float32(request), element by element; other echoes are equal."""
+        """Echoed numbers denote float32(request), element by element; other echoes are equal."""
         for key in numbers:
             wanted, value = request[key], reply.get(key)
             if type(wanted) is list:
                 matches = (type(value) is list and len(value) == len(wanted)
-                           and all(_number(v) and v == float32(w) for v, w in zip(value, wanted)))
+                           and all(same_float32(v, w) for v, w in zip(value, wanted)))
             else:
-                matches = _number(value) and value == float32(wanted)
+                matches = same_float32(value, wanted)
             if not matches:
                 self.fail(f'{command} echoed {key} {value!r}, expected float32 of {wanted!r}')
         for key, wanted in exact:
@@ -558,7 +564,7 @@ class _Block:
             reads = {(b, a): final['source_to_target']['after'], (a, b): final['target_to_source']['after']}
             for (source, target), value in (((a, b), relation['a_to_b']), ((b, a), relation['b_to_a'])):
                 read = reads[(source, target)]
-                if read.get('relation') != float32(value):
+                if not same_float32(read.get('relation'), value):
                     self.fail(f'relation {source}->{target} reads {read.get("relation")!r}, expected {value}')
                 if type(read.get('is_enemy')) is not bool or (value <= _HOSTILE_AT and read['is_enemy'] is not True):
                     self.fail(f'relation {source}->{target} at {value} does not read hostile')
@@ -579,7 +585,7 @@ class _Block:
         for relation in self.setup['relations']:
             for cell, value in (((relation['a'], relation['b']), relation['a_to_b']),
                                 ((relation['b'], relation['a']), relation['b_to_a'])):
-                if after.get(cell) != float32(value):
+                if not same_float32(after.get(cell), value):
                     self.fail(f'S6 dump reads relation {cell[0]}->{cell[1]} as {after.get(cell)!r}, expected {value}')
         census = await self.census()
         rows = {row['id']: row for row in census['reply']['characters']}

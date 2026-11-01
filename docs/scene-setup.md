@@ -52,8 +52,10 @@ error envelope, time units and `issue_order` are those of the
   state ids, `local:` for spawned characters). Faction and template ids are
   `GameData` string ids; part ids are `<record id>:<side>`.
 - Echoed numbers (`center`, `position`, `value`) are the values applied,
-  rounded to float32 on both engines; the runner compares them with
-  `float32(request)`.
+  rounded to float32 on both engines; the runner checks that the echo denotes
+  `float32(request)`, i.e. `float32(echo) == float32(request)`, because an
+  engine may print a float32 in its shortest decimal form (MeitouClient
+  `736.593`, **Observed**) or in full. No tolerance beyond that rounding.
 - Positions in replies are finite: a non-finite character position is an
   internal failure, never a silently skipped row.
 - Every mutating reply carries `saved:false`, `world_mutated:true`, `gate`,

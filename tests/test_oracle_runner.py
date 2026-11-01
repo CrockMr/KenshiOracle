@@ -4,6 +4,7 @@ from copy import deepcopy
 import hashlib
 import json
 import re
+import struct
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,7 @@ from oracle_runner import (OracleSession, ScenarioError, check_controls, execute
                            control_params,
                            restore_interrupted_scenario, run_scenario_file,
                            scenario_lock, variability, wait_stable_controls)
+import oracle_setup
 from oracle_schema import canonical_bytes, load_state
 from probe import ProbeError
 
@@ -1691,3 +1693,15 @@ def test_meitou_setup_pins_resolve_from_the_save_source_for_every_seed(tmp_path)
     with pytest.raises(ScenarioError, match='No engine profile entry'):
         asyncio.run(prepare_setup(OracleSession(cfg, fake), setup_scenario(), cfg, dict(ping, target='original'),
                                   'sha256:' + 'c' * 64, [None], squad_facts()))
+
+
+def test_echoes_printed_in_shortest_float32_form_are_the_same_value():
+    # MeitouClient prints float32 736.593 as 736.593; the native probe prints it in full: both denote float32(736.593).
+    assert oracle_setup.same_float32(736.593, 736.593)
+    assert oracle_setup.same_float32(oracle_setup.float32(736.593), 736.593)
+    assert oracle_setup.same_float32(-60, -60) and oracle_setup.same_float32(-60.0, -60)
+    one_ulp = struct.unpack('<f', struct.pack('<I', struct.unpack('<I', struct.pack('<f', 736.593))[0] + 1))[0]
+    assert not oracle_setup.same_float32(one_ulp, 736.593)
+    assert not oracle_setup.same_float32(736.6, 736.593)
+    assert not oracle_setup.same_float32(True, 1) and not oracle_setup.same_float32(float('nan'), 0)
+    assert not oracle_setup.same_float32(1e300, 1e300)
