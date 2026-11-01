@@ -4,7 +4,7 @@ This directory makes the Meitou adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the four patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `b052e78cdfb4151eebd24a60700853d229e08af3`;
+correspond to the local fork tip `893114dec3a8543ade4147fb8f2f4040ac4cf365`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -16,7 +16,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c` |
 | 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `2b10478095651fdfbb5fd7ea38c8a20ef9e75750` |
 | 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `8b255b96d877094e184edce14b212afbd893ada4` |
-| 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `b052e78cdfb4151eebd24a60700853d229e08af3` |
+| 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `893114dec3a8543ade4147fb8f2f4040ac4cf365` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -70,10 +70,10 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `b052e78c` on `88ae71a1`, in the fork's own checkout
+**Verified** at fork tip `893114de` on `88ae71a1`, in the fork's own checkout
 (whose tree equals the `git am` result above), with SDK 10.0.403:
-- The focused Oracle/camera tests (the filter above) passed 143 of 143.
-- The quick suite (`Category!=Slow&Category!=Bench`) had 917 passes and 0
+- The focused Oracle/camera tests (the filter above) passed 145 of 145.
+- The quick suite (`Category!=Slow&Category!=Bench`) had 919 passes and 0
   failures (3 skipped).
 - The complete suite, the run with `KENSHI_ORACLE_VECTORS`, the start without
   `--oracle` and a quick city run were not repeated on this base; the last such
@@ -143,7 +143,8 @@ MeitouClient and this derivative patch series are distributed under
 [additional permission for specified NVIDIA libraries](LICENSE-EXCEPTION.md)
 are preserved verbatim from the pinned upstream commit. The latter permission
 does not cover unrelated non-free dependencies. Upstream work is by the
-MeitouClient contributors; the four modifications are by KenshiOracle
-contributors. No proprietary executable, disassembled listing or decompiled
+MeitouClient contributors; the four modifications were made for KenshiOracle,
+with patches 1-2 committed as KenshiOracle contributors and patches 3-4 as
+CrockMr (each patch's `From:` line). No proprietary executable, disassembled listing or decompiled
 game code is included. Upstream dependency notices remain in the separately
 obtained MeitouClient checkout.

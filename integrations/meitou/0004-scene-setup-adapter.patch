@@ -1,4 +1,4 @@
-From b052e78cdfb4151eebd24a60700853d229e08af3 Mon Sep 17 00:00:00 2001
+From 893114dec3a8543ade4147fb8f2f4040ac4cf365 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Sun, 1 Nov 2026 10:17:52 +0100
 Subject: [PATCH] Expose scene-setup commands, readiness and save refusal in
@@ -23,8 +23,9 @@ adapter 0.11.0) behind --oracle.
   world_mutated and build_commit from the new OracleBuildCommit assembly
   metadata (full commit, or "unknown" without git or with local changes).
 - Oracle mode drops every key, menu and import save/load request.
-- issue_order orders only loaded squad members, refuses a dead target,
-  a dead actor or an actor that is its own target, and replies
+- issue_order orders only loaded squad members and, as the native probe
+  (same order and texts), refuses a dead target, an empty squad, a dead
+  actor or an actor that is its own target; it replies
   affected_characters (characters kept for one release).
 - docs/oracle.md documents the commands; OracleSetupTests covers the
   gate, the probe-load rule, readiness keys, spawn keys, the ping
@@ -32,19 +33,19 @@ adapter 0.11.0) behind --oracle.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- docs/oracle.md                                |  62 +-
- src/Meitou.Game/GameHost.Oracle.cs            |  56 +-
- src/Meitou.Game/GameHost.OracleSetup.cs       | 533 ++++++++++++++++++
+ docs/oracle.md                                |  65 +-
+ src/Meitou.Game/GameHost.Oracle.cs            |  82 ++-
+ src/Meitou.Game/GameHost.OracleSetup.cs       | 554 ++++++++++++++++++
  src/Meitou.Game/GameHost.Saving.cs            |   7 +
  src/Meitou.Game/Meitou.Game.csproj            |  26 +
  src/Meitou.Game/Oracle/OracleProtocol.cs      |   2 +-
  src/Meitou.Game/Oracle/OracleState.cs         |   3 +
- tests/Meitou.Tests/Oracle/OracleSetupTests.cs |  99 ++++
- 8 files changed, 763 insertions(+), 25 deletions(-)
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs | 101 ++++
+ 8 files changed, 802 insertions(+), 38 deletions(-)
  create mode 100644 src/Meitou.Game/GameHost.OracleSetup.cs
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index 137bd11e..835abec6 100644
+index 137bd11e..64195121 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
 @@ -22,7 +22,8 @@ services commands at safe frame boundaries including pause, and joins/settles
@@ -57,7 +58,7 @@ index 137bd11e..835abec6 100644
  Initial preparation readies population without an unclocked simulation/combat
  tick; ping records `startup_boundary:"population_prepared_without_simulation_tick"`.
  
-@@ -54,8 +55,21 @@ Network reads do not advance timestamps and cannot hide a stopped host.
+@@ -54,8 +55,22 @@ Network reads do not advance timestamps and cannot hide a stopped host.
  Supported commands: `ping`, `get_clock`, `dump_state`, `pause`,
  `set_game_speed`, `run_until`, `run_until_status`, `cancel_run_until`,
  `load_save`, `issue_order`, `get_scene_state`, `set_camera_free`,
@@ -75,13 +76,14 @@ index 137bd11e..835abec6 100644
 +time), or `"unknown"` without git, on a git failure or with uncommitted changes
 +(`git status --porcelain`); it is checked against `^[0-9a-f]{40}$` at startup.
 +The UI's short `GitCommit` is separate. `issue_order` orders only loaded squad
-+members, refuses a dead or missing target and a dead actor or one that is its
-+own target (as the native probe), and replies `affected_characters` (and
++members, checks the attack target before the actors, refuses a dead or missing
++target, a squad with no loaded member and a dead actor or one that is its own
++target, with the native probe's texts, and replies `affected_characters` (and
 +`characters`, kept for one release).
  `run_until` has an operation ID and finishes paused; batches can overshoot the
  requested calendar time. Capture actual time rather than claiming exact-tick
  arrival. Loads are asynchronous, end paused, and report readiness through ping.
-@@ -89,10 +103,48 @@ outside common state. KenshiOracle uses `base_seed + repetition - 1`, then
+@@ -89,10 +104,50 @@ outside common state. KenshiOracle uses `base_seed + repetition - 1`, then
  reloads with the pre-experiment seed during restoration. A known seed does not
  remove timing differences from asynchronous services or reconstruct consumed RNG.
  
@@ -118,7 +120,9 @@ index 137bd11e..835abec6 100644
 +  tick.
 +- `setup_info.squad_size` reads the install's raw `settings.cfg` line by the
 +  contract's rule; `source` is `user_config` when the user config held the
-+  Gameplay settings at startup.
++  Gameplay settings at startup, else `settings.cfg` when Meitou's own reader
++  takes the multiplier from that file (even from duplicate lines, where the
++  contract's `line` is null), else `default`.
 +
 +In-game behaviour of these commands: **Unknown** until run.
 +
@@ -126,14 +130,14 @@ index 137bd11e..835abec6 100644
  
 -**Verified:** 115 focused Oracle/camera tests pass; the 62 shared canonical
 -vectors, including 59 historical cases, match Python/native expected bytes.
-+**Verified:** 143 focused Oracle/camera tests pass (fork tip on `88ae71a1`);
++**Verified:** 145 focused Oracle/camera tests pass (fork tip on `88ae71a1`);
 +the 62 shared canonical vectors, including 59 historical cases, match
 +Python/native expected bytes.
  Tests use synthetic worlds and ephemeral loopback ports, never production ports.
  See [Oracle tests](../tests/Meitou.Tests/Oracle) and
  [camera restoration tests](../tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs).
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
-index 95d54c35..c81919d4 100644
+index 95d54c35..c97604ae 100644
 --- a/src/Meitou.Game/GameHost.Oracle.cs
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
 @@ -61,6 +61,7 @@ sealed partial class GameHost
@@ -230,34 +234,59 @@ index 95d54c35..c81919d4 100644
      }
  
      object SetOracleSpeed(JsonElement p)
-@@ -437,10 +447,13 @@ sealed partial class GameHost
-         {
-             if (!oracleState.TryResolveSquad(OracleText(p, "squad_id", 200), out var id) || session.World.Squads.Find(id) is not { } found)
-                 throw new OracleHostError("not_found", "squad is not loaded");
--            actors.AddRange(found.Members);
-+            actors.AddRange(found.Members.Where(session.World.Characters.IsAlive));
-         }
-         if (actors.Count == 0 || actors.Count > 256) throw new OracleHostError("state_unavailable", "order requires 1..256 loaded actors");
+@@ -426,35 +436,43 @@ sealed partial class GameHost
+         if (type is not ("move" or "attack")) throw new OracleHostError("not_implemented", "only move and attack orders are implemented");
+         bool character = p.TryGetProperty("character_id", out _), squad = p.TryGetProperty("squad_id", out _);
+         if (character == squad) throw new ArgumentException("provide exactly one character_id or squad_id");
++        if (type == "move" && p.TryGetProperty("target_id", out _)) throw new ArgumentException("move uses position, not target_id");
++        if (type == "attack" && p.TryGetProperty("position", out _)) throw new ArgumentException("attack uses target_id, not position");
++        string actor = OracleText(p, character ? "character_id" : "squad_id", 200);
++        Vector3 destination = type == "move" ? OraclePosition(p, "position") : default;
+         oracleState!.Capture(session, popData!, "0.2");
 +        var table = session.World.Characters;
 +        bool Dead(CharacterId id) => table.Cold(id.Slot)?.Medical?.Dead == true;
-         SimCommand order;
++        // In the native probe's order: the attack target, then the actors.
 +        CharacterId? target = null;
-         if (type == "move")
-         {
-             if (p.TryGetProperty("target_id", out _)) throw new ArgumentException("move uses position, not target_id");
-@@ -449,12 +462,17 @@ sealed partial class GameHost
-         else
-         {
-             if (p.TryGetProperty("position", out _)) throw new ArgumentException("attack uses target_id, not position");
--            if (!oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var target)) throw new OracleHostError("not_found", "attack target is not loaded");
--            order = new Meitou.Simulation.Combat.AttackOrder(actors, target) { Tick = session.World.Tick };
++        if (type == "attack")
++        {
 +            if (!oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var victim) || !table.IsAlive(victim) || Dead(victim))
 +                throw new OracleHostError("not_found", "attack target is not loaded and alive");
 +            target = victim;
-+            order = new Meitou.Simulation.Combat.AttackOrder(actors, victim) { Tick = session.World.Tick };
++        }
+         List<CharacterId> actors = [];
+         if (character)
+         {
+-            if (!oracleState.TryResolveCharacter(OracleText(p, "character_id", 200), out var id)) throw new OracleHostError("not_found", "character is not loaded");
++            if (!oracleState.TryResolveCharacter(actor, out var id)) throw new OracleHostError("not_found", "character is not loaded");
+             actors.Add(id);
          }
+         else
+         {
+-            if (!oracleState.TryResolveSquad(OracleText(p, "squad_id", 200), out var id) || session.World.Squads.Find(id) is not { } found)
++            if (!oracleState.TryResolveSquad(actor, out var id) || session.World.Squads.Find(id) is not { } found)
+                 throw new OracleHostError("not_found", "squad is not loaded");
+-            actors.AddRange(found.Members);
+-        }
+-        if (actors.Count == 0 || actors.Count > 256) throw new OracleHostError("state_unavailable", "order requires 1..256 loaded actors");
+-        SimCommand order;
+-        if (type == "move")
+-        {
+-            if (p.TryGetProperty("target_id", out _)) throw new ArgumentException("move uses position, not target_id");
+-            order = new MoveOrder(actors, OraclePosition(p, "position")) { Tick = session.World.Tick };
+-        }
+-        else
+-        {
+-            if (p.TryGetProperty("position", out _)) throw new ArgumentException("attack uses target_id, not position");
+-            if (!oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var target)) throw new OracleHostError("not_found", "attack target is not loaded");
+-            order = new Meitou.Simulation.Combat.AttackOrder(actors, target) { Tick = session.World.Tick };
++            actors.AddRange(found.Members.Where(table.IsAlive));
+         }
++        if (actors.Count == 0) throw new OracleHostError("not_found", "no loaded members in requested squad");
++        if (actors.Count > 256) throw new OracleHostError("state_unavailable", "order requires 1..256 loaded actors");
 +        // As the native probe: a dead actor or one that is its own target refuses the whole order.
 +        if (actors.Any(id => Dead(id) || id == target)) throw new OracleHostError("invalid_request", "an order actor is dead, unavailable, or its own target");
++        SimCommand order = target is { } victimId ? new Meitou.Simulation.Combat.AttackOrder(actors, victimId) { Tick = session.World.Tick }
++            : new MoveOrder(actors, destination) { Tick = session.World.Tick };
          session.World.Commands.Enqueue(order);
          session.World.ApplyPausedInterfaceCommands();
 -        return new { accepted = true, type, characters = actors.Count };
@@ -268,10 +297,10 @@ index 95d54c35..c81919d4 100644
      static JsonArray OracleVector(Vector3 v) => new(v.X, v.Y, v.Z);
 diff --git a/src/Meitou.Game/GameHost.OracleSetup.cs b/src/Meitou.Game/GameHost.OracleSetup.cs
 new file mode 100644
-index 00000000..58f9f3d5
+index 00000000..ef179b4c
 --- /dev/null
 +++ b/src/Meitou.Game/GameHost.OracleSetup.cs
-@@ -0,0 +1,533 @@
+@@ -0,0 +1,554 @@
 +using System.Globalization;
 +using System.Numerics;
 +using System.Reflection;
@@ -374,9 +403,9 @@ index 00000000..58f9f3d5
 +    {
 +        SetupKeys(p);
 +        if (!OracleReady) throw new OracleHostError(OracleSetupPolicy.NotReady.Code, OracleSetupPolicy.NotReady.Message);
-+        var (line, sha256, value) = OracleSquadSizeLine();
++        var (line, sha256) = OracleSquadSizeLine();
 +        float multiplier = OracleSpawner().Settings.SquadSizeMultiplier;
-+        string source = oracleGameplayFromUserConfig ? "user_config" : value is not null ? "settings.cfg" : "default";
++        string source = oracleGameplayFromUserConfig ? "user_config" : OracleInstallSetsSquadSize() ? "settings.cfg" : "default";
 +        bool probe = OracleProbeLoad;
 +        return new JsonObject
 +        {
@@ -388,15 +417,26 @@ index 00000000..58f9f3d5
 +        };
 +    }
 +
-+    /// <summary>The install's settings.cfg squad-size line (<see cref="OracleSetupPolicy.SquadSizeLine"/>); all null when the file is absent or unreadable.</summary>
-+    (string? Line, string? Sha256, float? Value) OracleSquadSizeLine()
++    /// <summary>The install's settings.cfg squad-size line (<see cref="OracleSetupPolicy.SquadSizeLine"/>); both null when the file is absent or unreadable.</summary>
++    (string? Line, string? Sha256) OracleSquadSizeLine()
 +    {
 +        try
 +        {
 +            string file = Path.Combine(install.Root, "settings.cfg");
-+            return File.Exists(file) ? OracleSetupPolicy.SquadSizeLine(File.ReadAllBytes(file)) : (null, null, null);
++            return File.Exists(file) ? OracleSetupPolicy.SquadSizeLine(File.ReadAllBytes(file)) : (null, null);
 +        }
-+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (null, null, null); }
++        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (null, null); }
++    }
++
++    /// <summary>Whether Meitou's own reader takes the squad-size multiplier from the install's settings.cfg (<see cref="OracleSetupPolicy.InstallSetsSquadSize"/>).</summary>
++    bool OracleInstallSetsSquadSize()
++    {
++        try
++        {
++            string file = Path.Combine(install.Root, "settings.cfg");
++            return File.Exists(file) && OracleSetupPolicy.InstallSetsSquadSize(File.ReadLines(file));
++        }
++        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
 +    }
 +
 +    // ---- census ----
@@ -444,10 +484,13 @@ index 00000000..58f9f3d5
 +        int count = SetupInteger(p, "max_count", 1, 16);
 +        bool permanent = p.TryGetProperty("permanent", out _) && SetupBool(p, "permanent");
 +        var record = popData!.Db.Find(sid);
-+        int faction = OracleFindFaction(fid);
++        bool squadTemplate = record?.Type == FcsRecordType.SQUAD_TEMPLATE;
++        // Each lookup runs only once the refusals before it passed, so an engine failure in a later one never hides an earlier refusal.
++        int faction = squadTemplate ? OracleFindFaction(fid) : -1;
++        bool nearPlayer = faction >= 0 && faction != popData.PlayerFaction && OracleNearPlayer(at, 2000);
 +        var spawner = OracleSpawner();
 +        float multiplier = spawner.Settings.SquadSizeMultiplier;
-+        if (OracleSetupPolicy.SpawnRefusal(record is not null, record?.Type == FcsRecordType.SQUAD_TEMPLATE, faction, popData.PlayerFaction, OracleNearPlayer(at, 2000), multiplier)
++        if (OracleSetupPolicy.SpawnRefusal(record is not null, squadTemplate, faction, popData.PlayerFaction, nearPlayer, multiplier)
 +            is { } refusal) throw new OracleHostError(refusal.Code, refusal.Message);
 +        // Planned before any change: a unique character consumes no spawn serial and leaves world_mutated alone.
 +        ulong key = OracleSetupPolicy.SpawnKey(sid, oracleSpawnSerial + 1);
@@ -763,10 +806,10 @@ index 00000000..58f9f3d5
 +
 +    /// <summary>
 +    /// The settings.cfg squad-size line by the contract's rule: split the raw bytes on LF, strip one trailing CR and a UTF-8 BOM on the first line; a line matches when the bytes
-+    /// before its first '=', trimmed of ASCII whitespace and ASCII case-folded, are <c>squad size multiplier</c>. Exactly one match gives the line, the lowercase SHA-256 of its
-+    /// bytes and its value as Meitou parses it (null when unparsable); zero or several give nulls.
++    /// before its first '=', trimmed of ASCII whitespace and ASCII case-folded, are <c>squad size multiplier</c>. Exactly one match gives the line and the lowercase SHA-256 of
++    /// its bytes; zero or several give nulls.
 +    /// </summary>
-+    internal static (string? Line, string? Sha256, float? Value) SquadSizeLine(byte[] file)
++    internal static (string? Line, string? Sha256) SquadSizeLine(byte[] file)
 +    {
 +        byte[]? match = null;
 +        int start = 0, matches = 0;
@@ -782,11 +825,18 @@ index 00000000..58f9f3d5
 +            ++matches;
 +            match = line.ToArray();
 +        }
-+        if (matches != 1) return (null, null, null);
-+        string text = new UTF8Encoding(false, false).GetString(match!);
-+        float? value = float.TryParse(text[(text.IndexOf('=') + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out float v) && float.IsFinite(v) ? v : null;
-+        return (text, Convert.ToHexStringLower(SHA256.HashData(match!)), value);
++        if (matches != 1) return (null, null);
++        return (new UTF8Encoding(false, false).GetString(match!), Convert.ToHexStringLower(SHA256.HashData(match!)));
 +    }
++
++    /// <summary>
++    /// Whether <see cref="GameplaySettings.FromInstall"/> takes the squad-size multiplier from these settings.cfg lines: a key before the first '=', trimmed and compared
++    /// ignoring case, followed by a finite invariant float (the last such line wins there, clamped). It decides <c>squad_size.source</c>, which the contract's single-line
++    /// rule cannot: duplicate or unparsable lines still feed Meitou's reader.
++    /// </summary>
++    internal static bool InstallSetsSquadSize(IEnumerable<string> lines) => lines.Any(line => line.IndexOf('=') is > 0 and var eq
++        && string.Equals(line[..eq].Trim(), "Squad size multiplier", StringComparison.OrdinalIgnoreCase)
++        && float.TryParse(line[(eq + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out float v) && float.IsFinite(v));
 +
 +    /// <summary>
 +    /// World-readiness terms for ping, reads only. Meitou terms: initialized = session, player, population data and loaded save all present; loading_from_save = a scene load
@@ -886,7 +936,7 @@ index a4f9dd3f..66d033a0 100644
      internal bool TryResolveSquad(string identity, out int id) => currentSquads.TryGetValue(identity, out id);
  
 diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-index a1896126..eaa075be 100644
+index a1896126..249b1051 100644
 --- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 @@ -1,5 +1,8 @@
@@ -898,7 +948,7 @@ index a1896126..eaa075be 100644
  using Meitou.Simulation;
  using SimWorld = Meitou.Simulation.World;
  
-@@ -10,6 +13,102 @@ public class OracleSetupTests
+@@ -10,6 +13,104 @@ public class OracleSetupTests
  {
      static float Ground(float x, float z) => 7 + x * 0.01f;
  
@@ -914,6 +964,8 @@ index a1896126..eaa075be 100644
 +    [InlineData(true, true, true, true, true, false, true, 1, "not_allowed:autosave")]           // M2
 +    [InlineData(true, true, true, true, true, false, null, 1, "not_allowed:autosave")]           // M2: unreadable autosave
 +    [InlineData(true, true, true, false, true, false, false, 0, "state_unavailable")]            // G4
++    [InlineData(true, true, true, true, false, false, false, 0, "invalid_request")]              // M1 before G4
++    [InlineData(true, true, true, true, true, false, true, 0, "not_allowed:autosave")]           // M2 before G4
 +    [InlineData(true, false, false, true, false, true, true, 0, "not_allowed:load_save")]        // the first failing row wins
 +    public void The_gate_refuses_in_the_contract_order(bool ready, bool probeLoad, bool allowSetup, bool mutation, bool paused, bool running, bool? autosave, int players,
 +        string? expected)

@@ -1,7 +1,7 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "b052e78cdfb4151eebd24a60700853d229e08af3",
+  "fork_tip": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
@@ -25,9 +25,9 @@
     },
     {
       "file": "0004-scene-setup-adapter.patch",
-      "source_commit": "b052e78cdfb4151eebd24a60700853d229e08af3",
-      "sha256": "3aeea5f7484b0de7b8e85dd6942bae5fdcfd8f390301ffe18e28ca0b28126678",
-      "bytes": 63898
+      "source_commit": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
+      "sha256": "0632138778c0c1cd1294da61442f35905cd64cc3bd6faf68ee1ad765f0a9e711",
+      "bytes": 67753
     }
   ]
 }
