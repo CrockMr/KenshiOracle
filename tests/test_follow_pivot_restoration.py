@@ -418,3 +418,110 @@ def test_old_journal_without_a_pivot_stays_pending(tmp_path, monkeypatch):
     pending = json.loads(path.read_text(encoding='utf-8'))
     assert pending['restore_required'] is True
     assert 'follow pivot of the reference controls' in pending['recovery_attempt']['error']
+
+
+MEITOU_SCENE_KEYS = {'camera_center', 'camera_follow_id', 'camera_orientation', 'camera_position',
+                     'camera_restore_token', 'camera_zoom', 'free_camera', 'scene_camera_control_owned'}
+PIVOT_KEYS = {'camera_follow_offset', 'camera_follow_position', 'camera_follow_center_delta'}
+
+
+def without_pivot_fields(fake, monkeypatch):
+    # MeitouClient 0.11.0 shape: a follow identity, no pivot diagnostic at all.
+    monkeypatch.setattr(fake, '_camera_follow_diagnostics', lambda: {})
+    fake.camera_follow_id = fake.state['characters'][0]['id']
+    fake._camera_tracking_active = True
+    scene = asyncio.run(fake.call('get_scene_state'))
+    assert MEITOU_SCENE_KEYS <= set(scene) and not PIVOT_KEYS & set(scene)
+    assert scene['camera_follow_id'] is not None
+    return scene
+
+
+def meitou_followed(tmp_path, monkeypatch):
+    from test_meitou_targets import meitou
+    fake, cfg, *_ = meitou(tmp_path)
+    assert cfg['target'] == 'meitou'
+    return fake, cfg, without_pivot_fields(fake, monkeypatch)
+
+
+def test_meitou_scene_without_pivot_fields_captures_and_restores_through_a_scenario(tmp_path, monkeypatch):
+    stability_clock(monkeypatch)
+    fake, cfg, original = meitou_followed(tmp_path, monkeypatch)
+    result = asyncio.run(execute_scenario(scenario(), cfg, client=fake))
+    assert result['restored'] is True
+    report = json.loads(Path(result['report']).read_text(encoding='utf-8'))
+    assert report['target'] == 'meitou'
+    capture = report['control_capture_observations']
+    assert not any('pivot' in row.get('error', '') for row in capture)
+    accepted = [row for row in capture if row['accepted']]
+    assert accepted[-1]['distinct_frames'] >= 3 and accepted[-1]['stable_seconds'] >= .5
+    assert all(row['scene']['camera_follow_id'] == original['camera_follow_id'] for row in accepted)
+    restoration = report['restoration']
+    assert restoration['verified'] is True and 'reference_follow_pivot' not in restoration
+    assert restoration['baseline']['camera_follow_id'] == original['camera_follow_id']
+    assert restoration['scene']['camera_center'] == pytest.approx(original['camera_center'])
+    for rows in (restoration['baseline_observations'], restoration['observations']):
+        assert rows[-1]['distinct_frames'] >= 3 and rows[-1]['stable_seconds'] >= .5
+        assert not any('pivot' in row.get('error', '') for row in rows)
+    guard = json.loads((Path(cfg['runtime']) / 'oracle-restoration.json').read_text(encoding='utf-8'))
+    assert guard['target'] == 'meitou' and guard['restore_required'] is False
+    assert not PIVOT_KEYS & set(guard['controls'])
+    assert fake.calls.count('commit_scene_control') == 1
+
+
+def test_meitou_scene_without_pivot_fields_restores_an_interrupted_scenario(tmp_path, monkeypatch):
+    stability_clock(monkeypatch)
+    fake, cfg, original = meitou_followed(tmp_path, monkeypatch)
+    Path(cfg['runtime']).mkdir()
+    path = Path(cfg['runtime']) / 'oracle-restoration.json'
+    from test_oracle_origin_integration import SAVE_NAME
+    path.write_text(json.dumps(dict(restore_required=True, save=SAVE_NAME, controls=original,
+                                    instance_id='old-instance', target='meitou', original_seed='77')),
+                    encoding='utf-8')
+    result = asyncio.run(restore_interrupted_scenario(cfg, client=fake))
+    assert result['restored'] is True and fake.load_seeds == ['77']
+    assert result['scene']['camera_center'] == pytest.approx(original['camera_center'])
+    recovered = json.loads(path.read_text(encoding='utf-8'))
+    assert recovered['restore_required'] is False
+    attempt = recovered['recovery_attempt']
+    assert 'reference_follow_pivot' not in attempt
+    assert attempt['baseline']['camera_follow_id'] == original['camera_follow_id']
+    assert not any('pivot' in row.get('error', '') for row in attempt['baseline_observations'])
+    assert fake.calls.count('commit_scene_control') == 1
+
+
+@pytest.mark.parametrize('target', ['original', None])
+def test_original_scene_without_pivot_fields_is_still_refused_at_capture(tmp_path, monkeypatch, target):
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    if target is not None:
+        cfg['target'] = target
+    fake, _ = followed(cfg, None)
+    without_pivot_fields(fake, monkeypatch)
+    with pytest.raises(ScenarioError, match='did not stabilize.*follow pivot of the captured controls'):
+        asyncio.run(execute_scenario(scenario(), cfg, client=fake))
+    assert not (Path(cfg['runtime']) / 'oracle-restoration.json').exists()
+    assert fake.loads == []
+    assert not {'pause', 'prepare_scene_control', 'commit_scene_control'} & set(fake.calls)
+
+
+@pytest.mark.parametrize('target', ['original', None])
+def test_original_journal_without_pivot_fields_is_still_refused_at_restoration(tmp_path, monkeypatch, target):
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    if target is not None:
+        cfg['target'] = target
+    fake, _ = followed(cfg, None)
+    original = without_pivot_fields(fake, monkeypatch)
+    path = write_guard(cfg, original)
+    with pytest.raises(ScenarioError, match='follow pivot of the reference controls'):
+        asyncio.run(restore_interrupted_scenario(cfg, client=fake))
+    assert not {'prepare_scene_control', 'commit_scene_control'} & set(fake.calls)
+    assert json.loads(path.read_text(encoding='utf-8'))['restore_required'] is True
+
+
+def test_follow_pivot_gate_follows_the_configured_target_only(tmp_path):
+    for target, gated in ((None, True), ('original', True), ('meitou', False)):
+        cfg = config(tmp_path)
+        if target is not None:
+            cfg['target'] = target
+        assert OracleSession(cfg, FakeProbe(cfg['oracle_output'])).follow_pivot_gate is gated

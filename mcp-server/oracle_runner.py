@@ -110,6 +110,17 @@ class OracleSession:
         # Optional callable(command, params) -> record dict; each reply is stored in record['reply'].
         self.recorder = None
 
+    @property
+    def follow_pivot_gate(self):
+        """Whether captured follow pivots are required: on the original only.
+
+        Decided by the configured target, which ping verifies against the probe,
+        never by the presence of pivot fields. The MeitouClient adapter reports
+        no pivot diagnostics and no provisional-pivot race was observed on it;
+        an unconfigured target keeps the original's fail-closed procedure.
+        """
+        return self.requested_target != 'meitou'
+
     def check_deadline(self):
         if self.deadline is not None and time.monotonic() >= self.deadline:
             raise ScenarioError('Scenario exceeded scenario_timeout')
@@ -329,7 +340,8 @@ class OracleSession:
         baseline window shows the reference's own follow pivot: the engine's
         pivot is provisional for an unpredictable number of frames after the
         follow is attached, and calibrating against it would leave a constant
-        center error.
+        center error. That pivot procedure applies to the original only
+        (follow_pivot_gate); a configured Meitou target keeps the other checks.
         """
         if (original is None) == (params is None):
             raise ValueError('Provide exactly one original scene or control params')
@@ -339,7 +351,8 @@ class OracleSession:
         # Measured before any mutation: a reference without its pivot cannot be
         # restored to a settled pivot.
         reference_pivot = (follow_pivot(original, 'reference controls')
-                           if original is not None and desired.get('camera_follow_id') is not None
+                           if (original is not None and desired.get('camera_follow_id') is not None
+                               and self.follow_pivot_gate)
                            else None)
         prepare_params = dict(requested, paused=True)
         status = await self.ping()
@@ -589,13 +602,15 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
     a provisional pivot restarts the window like any other mismatch. A capture
     that follows a character records a pivot only once it is reported, constant
     across the window, and not the provisional one: the reference must be
-    settled, or no later restoration could match it.
+    settled, or no later restoration could match it. That capture gate applies
+    only when the session's follow_pivot_gate is set (the original target).
     """
     timeout = min(10.0, positive_timeout(timeout, 'control stability timeout'))
     stable_seconds = max(.5, positive_timeout(stable_seconds, 'control stability window'))
     if type(held) is not bool or (held and (type(hold_token) is not str or not hold_token)):
         raise ValueError('A held control observation requires its restoration token')
     observations = [] if observations is None else observations
+    capture_pivot = expected is None and not held and getattr(session, 'follow_pivot_gate', True)
     started = time.monotonic()
     deadline = started + timeout
     anchor = None
@@ -654,7 +669,7 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
                 if delta > .05:
                     raise ScenarioError('Restoration mismatch: camera follow pivot (max difference '
                                         + str(delta) + ')')
-            if expected is None and not held and scene.get('camera_follow_id') is not None:
+            if capture_pivot and scene.get('camera_follow_id') is not None:
                 captured = follow_pivot(scene, 'captured controls')
                 if pivot_difference(PROVISIONAL_FOLLOW_PIVOT, scene) <= .05:
                     raise ScenarioError('Restoration mismatch: provisional camera follow pivot '
