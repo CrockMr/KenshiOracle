@@ -5,6 +5,9 @@ server lifecycle, while making unsupported oracle commands fail explicitly.
 Time advances only when a pending run_until operation is polled to completion.
 The initial fixture has already been prepared with an explicit x1 selection.
 Loading invalidates that tracked selection, as in the native 0.9.1 protocol.
+The scene-setup commands follow docs/scene-setup.md (gate order, refusal codes
+and texts); the fake models the native side: no rng_key, no squad_size, at_war
+null, no player-save blocking. Its heal leaves the unconscious flag unchanged.
 """
 import asyncio
 from copy import deepcopy
@@ -12,6 +15,7 @@ import json
 import math
 from pathlib import Path
 import re
+import struct
 import time
 
 from fake_plugin import FakePlugin
@@ -35,6 +39,29 @@ def sample_state():
                     for index, (identity, name) in enumerate(((first, 'Alpha'), (second, 'Beta')))],
         squads=[dict(id=squad, faction_id='fixture-faction', members=[first, second], leader_id=first)],
         factions=[dict(id='fixture-faction', name='Fixture faction')], relations=[])
+
+
+SETUP_COMMANDS = ('setup_info', 'setup_area_census', 'setup_spawn_squad', 'setup_set_relation', 'setup_heal')
+SETUP_MUTATIONS = ('setup_spawn_squad', 'setup_set_relation', 'setup_heal')
+G1 = ('world_not_ready', 'world is unavailable or a save is loading')
+G2 = ('not_allowed', "scene setup requires a world loaded by the probe's load_save")
+G3 = ('not_allowed', 'scene setup was not enabled: load the save with allow_setup:true')
+M1 = ('invalid_request', 'scene setup mutations require a paused world and no run_until')
+M2 = ('not_allowed', 'scene setup mutations are refused while autosave is enabled')
+G4 = ('state_unavailable', 'player unavailable')
+G5 = ('origin_context_required', 'scene setup requires prepared saved origins')
+ISSUE_ORDER_KEYS = {'type', 'character_id', 'squad_id', 'position', 'target_id'}
+
+
+class SetupRefusal(ProbeError):
+    """A refusal carrying the contract's exact code and message."""
+    def __init__(self, code, message):
+        super().__init__(f'{code}: {message}')
+        self.code, self.message = code, message
+
+
+def float32(value):
+    return struct.unpack('<f', struct.pack('<f', value))[0]
 
 
 class FakeProbe(FakePlugin):
@@ -88,6 +115,39 @@ class FakeProbe(FakePlugin):
         self._origin_sequence = 0
         self._loaded_save = None
         self._clear_origins()
+        # Scene setup (docs/scene-setup.md). Tests may change these attributes.
+        self.capabilities = ['scene_setup']
+        self.build_commit = '0123456789abcdef0123456789abcdef01234567'
+        # The contract's ping value. The fake's own schema_version and dump_state
+        # stay 0.1; tests that need another answer set this attribute.
+        self.state_schema_version = '0.2'
+        self.autosave_enabled = False
+        self.autosave_configured = False
+        self.player_faction_id = 'fixture-faction'
+        self.extra_factions = {'fixture-rival': 'Fixture rival'}
+        self.squad_templates = {'fixture-squad': ['fixture-leader'] + ['fixture-member'] * 3}
+        self.other_templates = {'fixture-character', 'fixture-leader', 'fixture-member'}
+        self.hostility_threshold = -30
+        self.mirror_relations = False
+        self.relations_available = True
+        self.squad_size = None
+        self.world_mutated = False
+        self._current_save = None
+        self._setup_epoch = 0
+        self._setup_load = None
+        self._setup_serial = 0
+        self._templates = {}
+        self._blood = {}
+
+    def simulate_ui_load(self, name='ui-load'):
+        """A load the probe did not request: new epoch, opt-in cleared, world_mutated kept."""
+        self._setup_epoch += 1
+        self._setup_load = None
+        self._current_save = name
+        self._loaded_save = None
+        self._clear_origins()
+        self.state = deepcopy(self.initial_state)
+        self.state['clock']['paused'] = True
 
     def _clear_origins(self):
         self._origin_committed = None
@@ -309,7 +369,8 @@ class FakeProbe(FakePlugin):
             self._camera_pending = self._camera_transition = None
             self._camera_tracking_active = False
             if self.instance_id != self._origin_instance:
-                self._loaded_save = None
+                self._loaded_save = self._current_save = self._setup_load = None
+                self.world_mutated = False
             self._origin_instance = self.instance_id
         self.frame += 1
         if command in ('ping', 'heartbeat'):
@@ -323,7 +384,9 @@ class FakeProbe(FakePlugin):
                         test_save_pause_on_ready_available=True, load_pause_pending=False, save_signal=0,
                         save_root=self.save_root, saved_origins_required=self.require_saved_origins,
                         saved_origins_prepared=self._origin_committed is not None,
-                        saved_origins=self._origin_state())
+                        saved_origins=self._origin_state(), capabilities=list(self.capabilities),
+                        world_readiness=self._world_readiness(), world_mutated=self.world_mutated,
+                        build_commit=self.build_commit, state_schema_version=self.state_schema_version)
         if command == 'resolve_saved_handles':
             self._origin_keys(params, ('ids',))
             ids = self._origin_ids(params['ids'])
@@ -405,8 +468,15 @@ class FakeProbe(FakePlugin):
             name = params.get('name')
             if not isinstance(name, str) or not name or any(x in name for x in '/\\:\r\n\0') or name in ('.', '..'):
                 raise ProbeError('invalid_params')
+            allow_setup = params.get('allow_setup', False)
+            if type(allow_setup) is not bool:
+                raise ProbeError('invalid_params')
             self.loads.append(name)
-            self._loaded_save = name
+            self._loaded_save = self._current_save = name
+            # The fake load completes at once, so the opt-in takes effect now.
+            self._setup_epoch += 1
+            self._setup_load = dict(save=name, allow_setup=allow_setup, epoch=self._setup_epoch)
+            self.world_mutated = False
             self._clear_origins()
             self._camera_pending = self._camera_transition = None
             self._camera_tracking_active = False
@@ -422,7 +492,7 @@ class FakeProbe(FakePlugin):
                 self._lock_camera()
             return dict(accepted=True, name=name, pause_on_ready=self.state['clock']['paused'],
                         camera_edge_locked=self.camera_owned, battle_tracking_restored=False,
-                        save_root=self.save_root)
+                        save_root=self.save_root, allow_setup=allow_setup)
         if command == 'run_until':
             target = params.get('target_seconds')
             timeout = params.get('timeout_seconds', 120)
@@ -484,6 +554,8 @@ class FakeProbe(FakePlugin):
             kind = params.get('type')
             if not self.state['clock']['paused']:
                 raise ProbeError('invalid_request: issue_order requires pause')
+            if set(params) - ISSUE_ORDER_KEYS:
+                raise ProbeError('invalid_params')  # Id-only: aliases never reach a probe.
             if kind not in ('move', 'attack') or ('character_id' in params) == ('squad_id' in params):
                 raise ProbeError('invalid_params')
             actor_id = self._input_id(params['character_id'], 'characters') if 'character_id' in params else None
@@ -592,10 +664,265 @@ class FakeProbe(FakePlugin):
             self.state['clock']['paused'] = params['paused']
             self._clock()
             return dict(restored=True, paused=self.state['clock']['paused'])
+        if command in SETUP_COMMANDS:
+            return self._setup(command, params)
+        if command == 'save_scene_snapshot':
+            if self.world_mutated:
+                raise SetupRefusal('not_allowed', 'the world was changed by scene setup; reload it before saving')
+            raise ProbeError('not_implemented: ' + command)
         if command == 'get_frame_stats':
             return dict(count=params.get('n', 300), mean_ms=16,
                         statistics_detail=dict(mode=params.get('detail', 'aggregates')))
         raise ProbeError('not_implemented: ' + command)
+
+    def _world_readiness(self):
+        return dict(world_present=self.world_ready, initialized=self.world_ready, game_resetting=False,
+                    loading_from_save=False, load_pending=False, load_pause_pending=False,
+                    world_ready=self.world_ready, paused=self.state['clock']['paused'],
+                    loading_from_save_unavailable_reason=None, paused_unavailable_reason=None,
+                    zone_manager_unavailable_reason=None, zone_manager_is_loading=0, frame=self.frame)
+
+    def _setup_world(self):
+        clock = self._clock()
+        return dict(elapsed_seconds=clock['elapsed_seconds'], paused=clock['paused'])
+
+    def _setup_loaded(self):
+        load = self._setup_load
+        return load if load is not None and load['epoch'] == self._setup_epoch else None
+
+    def _players(self):
+        return [row for row in self.state['characters'] if row['faction_id'] == self.player_faction_id]
+
+    def _gate_refusal(self, command):
+        """First failing gate row in contract order, or None."""
+        load = self._setup_loaded()
+        rows = [(G1, not self.world_ready)]
+        if command != 'setup_info':
+            rows += [(G2, load is None), (G3, load is not None and not load['allow_setup'])]
+        if command in SETUP_MUTATIONS:
+            running = any(o['status'] == 'running' for o in self.operations.values())
+            rows += [(M1, not self.state['clock']['paused'] or running),
+                     (M2, self.autosave_enabled is not False)]
+        if command != 'setup_info':
+            rows += [(G4, not self._players()),
+                     (G5, command != 'setup_set_relation' and self.require_saved_origins
+                          and self._origin_committed is None)]
+        return next((row for row, failed in rows if failed), None)
+
+    def _gate(self):
+        load = self._setup_loaded()
+        refusal, mutation = self._gate_refusal('setup_area_census'), self._gate_refusal('setup_heal')
+        return dict(open=self.world_ready and load is not None and load['allow_setup'],
+                    probe_loaded_save=load['save'] if load else None,
+                    allow_setup=bool(load and load['allow_setup']), epoch=self._setup_epoch,
+                    refusal=dict(code=refusal[0], message=refusal[1]) if refusal else None,
+                    mutation_refusal=dict(code=mutation[0], message=mutation[1]) if mutation else None)
+
+    @staticmethod
+    def _bad(message):
+        return SetupRefusal('invalid_request', message)
+
+    def _string(self, params, key, limit):
+        if key not in params:
+            raise self._bad('missing field: ' + key)
+        value = params[key]
+        if type(value) is not str or not value or len(value.encode('utf-8')) > limit or '\0' in value:
+            raise self._bad('invalid string: ' + key)
+        return value
+
+    def _number(self, params, key, low, high, integer=False):
+        if key not in params:
+            raise self._bad('missing field: ' + key)
+        value = params[key]
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise self._bad('invalid number: ' + key)
+        if integer and value != int(value):
+            raise self._bad(key + ' must be an integer')
+        if not low <= value <= high:
+            raise self._bad('invalid number: ' + key)
+        return int(value) if integer else value
+
+    def _position(self, params, key):
+        if key not in params:
+            raise self._bad('missing field: ' + key)
+        value = params[key]
+        if type(value) is not list or len(value) != 3 or any(type(v) not in (int, float) for v in value):
+            raise self._bad(key + ' must have three numbers')
+        if any(not math.isfinite(v) or abs(v) > 1e7 for v in value):
+            raise self._bad('invalid position coordinate')
+        return [float32(v) for v in value]
+
+    def _factions(self):
+        return dict(self.extra_factions, **{row['id']: row['name'] for row in self.state['factions']})
+
+    def _relation_cell(self, source, target):
+        row = next((r for r in self.state['relations']
+                    if r['source_id'] == source and r['target_id'] == target), None)
+        value = 0 if row is None or row['value'] is None else row['value']
+        return dict(relation=value, is_enemy=value <= self.hostility_threshold, at_war=None)
+
+    def _write_relation(self, source, target, value):
+        rows = [r for r in self.state['relations'] if (r['source_id'], r['target_id']) != (source, target)]
+        rows.append(dict(source_id=source, target_id=target, value=value))
+        self.state['relations'] = sorted(rows, key=lambda r: (r['source_id'], r['target_id']))
+
+    def _medical(self, row):
+        parts = row.get('health') or []
+        if not parts or any(type(p.get('maximum')) not in (int, float) or not math.isfinite(p['maximum'])
+                            or p['maximum'] < 0 for p in parts):
+            raise SetupRefusal('state_unavailable', 'medical system unavailable')
+        return dict(parts=[dict(id=p['id'], flesh=p['current'], stun=p['stun'], max=p['maximum']) for p in parts],
+                    blood=self._blood.get(row['id'], 100.0),
+                    dead=row['state'] == 'dead', unconscious=row['state'] == 'unconscious')
+
+    def _setup_bindings(self):
+        """Current to canonical ids, as dump_state reports them after a saved-origin refresh."""
+        if not self.require_saved_origins or self._origin_committed is None:
+            return {}
+        _, self._origin_bindings = self._build_origin_snapshot(self._origin_committed, self._origin_bindings)
+        return self._origin_bindings
+
+    def _setup_row(self, row, bindings):
+        return dict(id=bindings.get(row['id'], row['id']),
+                    template_id=self._templates.get(row['id'], 'fixture-character'),
+                    faction_id=row['faction_id'], squad_id=bindings.get(row['squad_id'], row['squad_id']),
+                    position=[float32(v) for v in row['position']])
+
+    def _setup(self, command, params):
+        names = dict(setup_info=(), setup_area_census=('center', 'radius', 'limit'),
+                     setup_spawn_squad=('template_id', 'faction_id', 'position', 'max_count', 'permanent'),
+                     setup_set_relation=('source_id', 'target_id', 'value'),
+                     setup_heal=('character_id',))[command]
+        unknown = next((key for key in params if key not in names), None)
+        if unknown is not None:
+            raise self._bad('unknown parameter: ' + unknown)
+        refusal = self._gate_refusal(command)
+        if refusal is not None:
+            raise SetupRefusal(*refusal)
+        if command == 'setup_info':
+            gate = self._gate()
+            return dict(gate=gate, current_save=self._current_save, probe_loaded_save=gate['probe_loaded_save'],
+                        world_mutated=self.world_mutated, autosave_enabled=self.autosave_enabled,
+                        autosave_configured=self.autosave_configured, player_save_requests_blocked=False,
+                        squad_size=deepcopy(self.squad_size))
+        if command == 'setup_area_census':
+            center = self._position(params, 'center')
+            radius = float32(self._number(params, 'radius', 0.1, 20000))
+            limit = self._number(params, 'limit', 1, 100, integer=True)
+            rows, bindings = [], self._setup_bindings()
+            for row in self.state['characters']:
+                distance = math.hypot(row['position'][0]-center[0], row['position'][2]-center[2])
+                if distance <= radius:
+                    rows.append(dict(self._setup_row(row, bindings), is_player=row['faction_id'] == self.player_faction_id,
+                                     dead=row['state'] == 'dead', unconscious=row['state'] == 'unconscious',
+                                     distance_xz=distance))
+            rows.sort(key=lambda row: (row['distance_xz'], row['id'].encode('utf-8')))
+            dead = sum(row['dead'] for row in rows)
+            unconscious = sum(row['unconscious'] and not row['dead'] for row in rows)
+            return dict(center=center, radius=radius, characters=rows[:limit], count=len(rows),
+                        truncated=len(rows) > limit, alive_count=len(rows)-dead-unconscious,
+                        dead_count=dead, unconscious_count=unconscious,
+                        player_count=sum(row['is_player'] for row in rows),
+                        gate=self._gate(), world=self._setup_world())
+        if command == 'setup_spawn_squad':
+            template = self._string(params, 'template_id', 128)
+            faction = self._string(params, 'faction_id', 128)
+            position = self._position(params, 'position')
+            count = self._number(params, 'max_count', 1, 16, integer=True)
+            permanent = params.get('permanent', False)
+            if type(permanent) is not bool:
+                raise self._bad('invalid boolean: permanent')
+            if template not in self.squad_templates and template not in self.other_templates:
+                raise SetupRefusal('not_found', 'template not found')
+            if template not in self.squad_templates:
+                raise self._bad('template is not a SQUAD_TEMPLATE record')
+            factions = self._factions()
+            if faction not in factions:
+                raise SetupRefusal('not_found', 'faction not found')
+            if faction == self.player_faction_id:
+                raise self._bad('spawning into the player faction is refused')
+            if not any(math.hypot(row['position'][0]-position[0], row['position'][2]-position[2]) <= 2000
+                       for row in self._players() if row['state'] != 'dead'):
+                raise self._bad('spawn position must be within 2000 units (horizontal) of a player character')
+            bindings = self._setup_bindings()
+            world_before = self._setup_world()
+            self.world_mutated = True
+            self._setup_serial += 1
+            squad = f'local:fake-squad:{self._setup_serial}'
+            members = []
+            for index, member_template in enumerate(self.squad_templates[template][:count]):
+                identity = f'local:fake-spawn:{self._setup_serial}:{index + 1}'
+                self._templates[identity] = member_template
+                self._blood[identity] = 80.0
+                members.append(dict(id=identity, name=f'Spawn {index + 1}', race_id='fixture-race',
+                                    faction_id=faction, squad_id=squad,
+                                    position=[position[0] + index, position[1], position[2]], state='alive',
+                                    health=[dict(id='fixture-head:neither', current=75, stun=10, maximum=100)],
+                                    order=None))
+            self.state['characters'].extend(members)
+            if members:
+                self.state['squads'].append(dict(id=squad, faction_id=faction, leader_id=members[0]['id'],
+                                                 members=[row['id'] for row in members]))
+            if faction not in {row['id'] for row in self.state['factions']}:
+                self.state['factions'].append(dict(id=faction, name=factions[faction]))
+            return dict(template_id=template, faction_id=faction, position=position, max_count=count,
+                        permanent=permanent, size_multiplier=1.0, squad_type='roaming',
+                        returned_squad_id=squad if members else None,
+                        returned_members=[dict(self._setup_row(row, bindings), dead=False, unconscious=False,
+                                               medical=self._medical(row)) for row in members],
+                        new_loaded_count=len(members), new_loaded_truncated=len(members) > 32, rng_key=None,
+                        saved=False, world_mutated=True, gate=self._gate(),
+                        world_before=world_before, world_after=self._setup_world())
+        if command == 'setup_set_relation':
+            source = self._string(params, 'source_id', 128)
+            target = self._string(params, 'target_id', 128)
+            value = float32(self._number(params, 'value', -100, 100))
+            factions = sorted(self._factions())
+            if source not in factions or target not in factions:
+                raise SetupRefusal('not_found', 'faction not found')
+            if source == target:
+                raise self._bad('source and target must differ')
+            if not self.relations_available:
+                raise SetupRefusal('state_unavailable', 'faction relations unavailable')
+            pairs = [(a, b) for a in factions for b in factions if a != b]
+            matrix = {pair: self._relation_cell(*pair) for pair in pairs}
+            world_before = self._setup_world()
+            self.world_mutated = True
+            self._write_relation(source, target, value)
+            if self.mirror_relations:
+                self._write_relation(target, source, value)
+            changes = []
+            for pair in pairs:
+                old, new = matrix[pair], self._relation_cell(*pair)
+                if old != new:
+                    changes.append(dict(source_id=pair[0], target_id=pair[1],
+                                        relation_before=old['relation'], relation_after=new['relation'],
+                                        is_enemy_before=old['is_enemy'], is_enemy_after=new['is_enemy'],
+                                        at_war_before=None, at_war_after=None))
+            return dict(source_id=source, target_id=target, value=value,
+                        source_to_target=dict(before=matrix[(source, target)],
+                                              after=self._relation_cell(source, target)),
+                        target_to_source=dict(before=matrix[(target, source)],
+                                              after=self._relation_cell(target, source)),
+                        changes=changes[:100], changed_cells=len(changes), changes_truncated=len(changes) > 100,
+                        faction_count=len(factions), saved=False, world_mutated=True, gate=self._gate(),
+                        world_before=world_before, world_after=self._setup_world())
+        identity = self._string(params, 'character_id', 200)
+        current = self._input_id(identity, 'characters')
+        row = next((r for r in self.state['characters'] if r['id'] == current), None)
+        if row is None:
+            raise SetupRefusal('not_found', 'character is not loaded')
+        if row['state'] == 'dead':
+            raise self._bad('character is dead')
+        before = self._medical(row)
+        world_before = self._setup_world()
+        self.world_mutated = True
+        for part in row['health']:
+            part.update(current=part['maximum'], stun=0)
+        self._blood[row['id']] = 100.0
+        return dict(character_id=identity, before=before, after=self._medical(row), saved=False,
+                    world_mutated=True, gate=self._gate(), world_before=world_before,
+                    world_after=self._setup_world())
 
     def _lock_camera(self):
         if not self.camera_owned:
@@ -619,6 +946,8 @@ class FakeProbe(FakePlugin):
                         return
                     result = await self.call(request['command'], **request.get('params', {}))
                     reply = dict(id=request_id, result=result)
+                except SetupRefusal as exc:
+                    reply = dict(id=request_id, error=dict(code=exc.code, message=exc.message))
                 except (ValueError, TypeError, KeyError, ProbeError) as exc:
                     reply = dict(id=request_id, error=dict(code='invalid_request' if request_id is None else str(exc).split(':')[0], message=str(exc)))
                 if self.mode == 'wrong_id':
