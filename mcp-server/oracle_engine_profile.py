@@ -49,8 +49,6 @@ def _reject_constant(value):
 
 
 def _seed_text(value):
-    if type(value) is int and 0 <= value < 2**64:
-        return str(value)
     if type(value) is str and value.isascii() and value.isdecimal() and len(value) <= 20 \
             and (value == '0' or value[0] != '0') and int(value) < 2**64:
         return value
@@ -150,15 +148,28 @@ def check_pin(observed, pin, decimals, label='value'):
     return dict(pin=pin, observed=observed, delta=delta)
 
 
-def check_player(entry, position, phase):
-    """Check a player [x,y,z] against an entry; phase is before_settle or after_settle."""
+def _position(position, label):
+    if type(position) not in (list, tuple) or len(position) != 3:
+        raise EngineProfileError(f'{label} position must have three numbers')
+
+
+def check_player(entry, position, phase, before=None):
+    """Check a player [x,y,z] against an entry; phase is before_settle or after_settle.
+
+    After the settle, X/Z must also be unchanged from the S0 reading given as before.
+    """
     if phase not in ('before_settle', 'after_settle'):
         raise ValueError('phase must be before_settle or after_settle')
-    if type(position) not in (list, tuple) or len(position) != 3:
-        raise EngineProfileError('Player position must have three numbers')
+    _position(position, 'Player')
     player = entry['player']
     pin = [player['xz'][0], player['y_' + phase], player['xz'][1]]
     checks = [check_pin(value, expected, player['decimals'], axis)
               for value, expected, axis in zip(position, pin, 'xyz')]
+    if phase == 'after_settle':
+        if before is None:
+            raise EngineProfileError('The after-settle check needs the S0 player position')
+        _position(before, 'S0 player')
+        for index, axis in ((0, 'x'), (2, 'z')):
+            check_pin(position[index], before[index], player['decimals'], axis + ' unchanged from S0')
     return dict(pin=pin, observed=[check['observed'] for check in checks],
                 delta=[check['delta'] for check in checks], decimals=player['decimals'])

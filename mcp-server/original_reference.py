@@ -7,6 +7,7 @@ import asyncio
 import base64
 from copy import deepcopy
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -103,12 +104,17 @@ def squad_size_facts(raw):
     multiplier = float(value) if _DECIMAL.fullmatch(value) else None
     if multiplier is None or not math.isfinite(multiplier):
         raise RuntimeError('Preserved "Squad size multiplier=" line has no finite decimal value')
-    try:
-        text = line.decode('utf-8')
-    except UnicodeError as exc:
-        raise RuntimeError('Preserved "Squad size multiplier=" line is not UTF-8') from exc
-    return dict(source='settings.cfg', multiplier=multiplier, line=text,
+    # The key and the decimal value are ASCII, so the matched line always decodes.
+    # source names the receipt channel (docs/scene-setup.md, receipt squad_size).
+    return dict(source='engine_facts', multiplier=multiplier, line=line.decode('utf-8'),
                 sha256=hashlib.sha256(line).hexdigest(), path='settings.cfg')
+
+
+def accepts_engine_facts(function):
+    """True when the scenario runner can receive the original's engine facts."""
+    parameters = inspect.signature(function).parameters.values()
+    return any(parameter.name == 'engine_facts' or parameter.kind is parameter.VAR_KEYWORD
+               for parameter in parameters)
 
 
 def restore_game_settings(path, journal, process_state):
@@ -297,6 +303,8 @@ async def run_original_reference(scenario, cfg, repeat=None):
             if scenario.get('setup') is not None:
                 # Scene setup needs the multiplier line the original reads; fail before launch.
                 engine_facts = dict(squad_size=squad_size_facts(preserved))
+                if not accepts_engine_facts(execute_scenario):
+                    raise RuntimeError('The scenario runner cannot apply scene setup yet')
                 lifecycle['engine_facts'] = engine_facts
             profile.capture()
             captured = True

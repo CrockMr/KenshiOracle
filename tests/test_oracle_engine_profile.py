@@ -50,7 +50,8 @@ def test_original_lookup_by_target_save_and_fingerprint(tmp_path):
 def test_meitou_null_seed_applies_to_every_seed_and_exact_seed_takes_precedence():
     loaded = engine.validate_profile(profile(entry('meitou', None, (5, 6)), entry('meitou', '1', (7, 8))))
     assert engine.lookup(loaded, 'meitou', SAVE, FINGERPRINT, '0')['player']['y_after_settle'] == 6
-    assert engine.lookup(loaded, 'meitou', SAVE, FINGERPRINT, 0)['player']['y_after_settle'] == 6
+    with pytest.raises(EngineProfileError, match='decimal string'):
+        engine.lookup(loaded, 'meitou', SAVE, FINGERPRINT, 0)
     assert engine.lookup(loaded, 'meitou', SAVE, FINGERPRINT, '1')['player']['y_after_settle'] == 8
     assert [row['seed'] for row in engine.resolve_repetitions(
         loaded, 'meitou', SAVE, FINGERPRINT, ['0', '1', '2'])] == [None, '1', None]
@@ -177,9 +178,10 @@ def test_player_check_compares_xz_and_the_phase_height():
     row = entry()
     before = engine.check_player(row, [100.0002, 10.25, -200.0], 'before_settle')
     assert before['pin'] == [100.0, 10.25, -200.0] and before['decimals'] == 3
-    assert engine.check_player(row, [100.0, 9.5, -200.0], 'after_settle')['observed'] == [100.0, 9.5, -200.0]
+    s0 = [100.0002, 10.25, -200.0]
+    assert engine.check_player(row, [100.0, 9.5, -200.0], 'after_settle', s0)['observed'] == [100.0, 9.5, -200.0]
     with pytest.raises(EngineProfileError, match='y'):
-        engine.check_player(row, [100.0, 10.25, -200.0], 'after_settle')
+        engine.check_player(row, [100.0, 10.25, -200.0], 'after_settle', s0)
     with pytest.raises(EngineProfileError, match='z'):
         engine.check_player(row, [100.0, 10.25, -199.0], 'before_settle')
     with pytest.raises(EngineProfileError, match='three'):
@@ -198,3 +200,14 @@ def test_meitou_target_inherits_the_original_profile_path(tmp_path):
     meitou.write_text(json.dumps(dict(target='meitou', port=47901, runtime='meitou-runtime',
                                       engine_profile='mine.json')), encoding='utf-8')
     assert target_config(own, 'meitou')['engine_profile'] == str((tmp_path / 'mine.json').resolve())
+
+
+def test_after_settle_needs_xz_unchanged_from_s0_not_only_near_the_pin():
+    row = entry()
+    with pytest.raises(EngineProfileError, match='S0 player position'):
+        engine.check_player(row, [100.0, 9.5, -200.0], 'after_settle')
+    with pytest.raises(EngineProfileError, match='three'):
+        engine.check_player(row, [100.0, 9.5, -200.0], 'after_settle', [100.0, 10.25])
+    # Both readings are within half a unit of the pin, but X moved 0.0008 between S0 and S3.
+    with pytest.raises(EngineProfileError, match='x unchanged from S0'):
+        engine.check_player(row, [100.0004, 9.5, -200.0], 'after_settle', [99.9996, 10.25, -200.0])

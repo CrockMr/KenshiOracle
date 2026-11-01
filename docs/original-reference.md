@@ -30,6 +30,7 @@ from the terminal.
 | `rekenshi_config` | `RE_Kenshi.ini` JSON from that same installation; this path must correspond to `working_directory/RE_Kenshi.ini`. |
 | `rekenshi_module` | Expected `RE_Kenshi.dll` file. The controller checks the audited 0.3.5 build and compares its path with the one reported by the process. |
 | `reference_controls` | Optional, `null` by default. Local JSON with a `controls` object containing a camera/time reference for that same save. It is not a game save. |
+| `engine_profile` | Local engine profile used by scene-setup scenarios (`runtime/engine-profile.json` in the example). Never commit it; see [Engine profile](scene-setup.md#engine-profile). |
 
 The example assumes a neighboring `../Kenshi/` installation; the actual
 1.0.65 executable may be at `../Kenshi/RE_Kenshi/kenshi_x64.exe`.
@@ -41,6 +42,14 @@ pause, and optional follow target. Reuse only a reference whose provenance
 belongs to the scenario save. Do not invent coordinates or a HAND to
 satisfy validation. If this field is absent, the runner captures the
 prepared controls after loading and rejects an unstable camera.
+
+`engine_profile` holds pinned player positions per target, save, source
+fingerprint and seed. [engine-profile.example.json](../engine-profile.example.json)
+shows the shape only: its all-zero fingerprint never matches a real load and
+its values are placeholders, not evidence. Write your own entries from your
+own runs. A scene-setup scenario also needs exactly one
+`Squad size multiplier=` line in `settings.cfg`; the runner reads it from the
+preserved bytes and refuses before launch when it is missing or repeated.
 
 Also adjust `oracle_output`, `runs`, `runtime`, timeouts, and the port.
 The probe and this controller use the same native output directory and

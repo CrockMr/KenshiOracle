@@ -383,7 +383,7 @@ SQUAD_LINE = b'Squad size multiplier=1'
 ])
 def test_squad_size_line_and_hash_come_from_preserved_bytes(raw, line):
     facts = reference.squad_size_facts(raw)
-    assert facts == dict(source='settings.cfg', multiplier=float(line.partition(b'=')[2]),
+    assert facts == dict(source='engine_facts', multiplier=float(line.partition(b'=')[2]),
                          line=line.decode(), sha256=hashlib.sha256(line).hexdigest(), path='settings.cfg')
 
 
@@ -448,3 +448,31 @@ def test_setup_scenario_without_squad_size_line_fails_before_launch(lifecycle, m
     assert ctx.games[0].label is None and 'execute' not in ctx.events and received == {}
     assert ctx.ini.read_bytes() == ctx.original
     assert ctx.settings.read_bytes() == b'player settings\n'
+
+
+def test_setup_scenario_refuses_before_launch_when_the_runner_cannot_take_engine_facts(lifecycle, monkeypatch):
+    ctx = lifecycle
+    ctx.settings.write_bytes(b'Squad size multiplier=1\n')
+    scenario, received = setup_cycle(ctx, monkeypatch)
+
+    async def execute(scenario, cfg, *, repeat, client, reference_profile):
+        ctx.events.append('execute')
+
+    monkeypatch.setattr(reference, 'execute_scenario', execute)
+    with pytest.raises(RuntimeError, match='cannot apply scene setup'):
+        asyncio.run(reference.run_original_reference(scenario, ctx.cfg, repeat=1))
+    assert ctx.games[0].label is None and 'execute' not in ctx.events
+    assert ctx.ini.read_bytes() == ctx.original
+    assert ctx.settings.read_bytes() == b'Squad size multiplier=1\n'
+
+
+def test_scenario_without_setup_records_no_engine_facts(lifecycle):
+    ctx = lifecycle
+    result = asyncio.run(reference.run_original_reference(SCENARIO, ctx.cfg, repeat=1))
+    assert 'engine_facts' not in json.loads(Path(result['reference_report']).read_text())
+
+
+@pytest.mark.parametrize('name', ['config.example.json', 'config.meitou.example.json'])
+def test_example_configs_name_a_local_engine_profile(name):
+    cfg = json.loads((Path(__file__).resolve().parents[1] / name).read_text(encoding='utf-8'))
+    assert cfg['engine_profile'] == 'runtime/engine-profile.json'
