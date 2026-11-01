@@ -1,28 +1,34 @@
-From 899ba86ab9dc959d0df2ea2381181a00db258cef Mon Sep 17 00:00:00 2001
+From 5ab88d9a8960e75241965c1e48b3760544db264e Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Sun, 1 Nov 2026 17:10:10 +0100
 Subject: [PATCH] Expose calculated health maxima in the oracle state dump
 
 health[].maximum now carries Meitou's calculated HealthPart.MaxHp
-instead of null, null when negative or non-finite as the native probe
-does. It is documented as calculated, not the original's stored
-_maxHealth: agreement is Observed only for unworn organic humans at
-scale 1 in the setup heal receipts. The capture stays read-only; a
-test pins plain, scaled, worn, stump, worn-away and non-finite parts
-and checks that the state hash is unchanged. order stays null.
+instead of null, null when negative, non-finite or above 1e9, as the
+native probe does. It is documented as calculated, not the original's
+stored _maxHealth. In the 1 November setup heal receipts (unworn, full
+health) the saved player matched part by part on both engines,
+including a stump at 5 (Observed); spawned members of two races showed
+the same value set on both engines, but not the same characters, and
+the origin of their 125 per part is Unknown. Wear, prosthetics, robots
+and later multiplier or scale changes remain Unknown.
+
+The capture stays read-only; a test pins plain, scaled, worn, stump,
+worn-away, NaN, infinite and above-cap parts and checks that the state
+hash is unchanged. order stays null.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- docs/oracle.md                                | 13 +++++--
- src/Meitou.Game/Oracle/OracleState.cs         |  4 +--
- tests/Meitou.Tests/Oracle/OracleStateTests.cs | 35 ++++++++++++++++++-
- 3 files changed, 46 insertions(+), 6 deletions(-)
+ docs/oracle.md                                | 18 +++++++--
+ src/Meitou.Game/Oracle/OracleState.cs         |  4 +-
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs | 39 ++++++++++++++++++-
+ 3 files changed, 55 insertions(+), 6 deletions(-)
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index 64195121..32609181 100644
+index 64195121..6b44138d 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
-@@ -92,9 +92,16 @@ The additive 0.2 fields expose saved-origin evidence, broad melee/ranged combat
+@@ -92,9 +92,21 @@ The additive 0.2 fields expose saved-origin evidence, broad melee/ranged combat
  mode and squad templates. Town placement/current membership/origin remain null:
  equality of native `Town::instanceID.uid` and `TownSite.InstanceId` is unproven.
  Names, array indexes, town definition IDs and transient HANDs are not substitutes.
@@ -33,10 +39,15 @@ index 64195121..32609181 100644
 +running task. `health[].maximum` is Meitou's calculated `MaxHp` (base, or 5 for
 +a stump, or the fitted prosthetic's HP, times multiplier and scale, minus wear),
 +null when negative or non-finite as in the native probe. It is not the
-+original's stored `_maxHealth`: the two agreed in the setup heal receipts of
-+the 1 November 2026 campaign (**Observed**, unworn organic humans at scale 1,
-+full health), and agreement under wear, stumps, prosthetics, robots or other
-+scales is **Unknown**. Reading it changes no simulation state or state hash
++original's stored `_maxHealth`. In the setup heal receipts of the 1 November
++2026 campaign (unworn, full health, right after the setup heal) the saved
++player matched part by part on both engines in every repetition, including a
++stump at 5 (**Observed**). Spawned members of races `17-gamedata.quack` (100 per
++part) and `5276-chareditor.mod` (125 per part) showed the same set of values on
++both engines, but the race draw differs between engines, so this is not a
++same-character comparison; whether 125 comes from base HP, multiplier or scale
++is **Unknown**. Agreement under wear, prosthetics, robots, and multiplier or
++scale changes after load is **Unknown**. Reading it changes no simulation state or state hash
 +(**Verified**, `OracleStateTests`). Template fallbacks on newly created squads
 +also need their own semantic verification.
  
@@ -58,7 +69,7 @@ index 66d033a0..34d1b67f 100644
              }
              var row = new JsonObject
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-index aa8631e5..761210df 100644
+index aa8631e5..a550f091 100644
 --- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 @@ -64,7 +64,7 @@ public class OracleStateTests
@@ -70,7 +81,7 @@ index aa8631e5..761210df 100644
          Assert.Null(row["in_combat"]); Assert.Null(row["current_town_id"]); Assert.Null(row["town_assignment"]); Assert.Null(row["order"]);
          Assert.True(projection.TryResolveCharacter(row["id"]!.GetValue<string>(), out var resolved)); Assert.Equal(id, resolved);
          Assert.Equal(row["id"]!.GetValue<string>(), projection.CharacterIdentity(id));
-@@ -75,6 +75,39 @@ public class OracleStateTests
+@@ -75,6 +75,43 @@ public class OracleStateTests
          Assert.Equal("saved", projection.Capture(session, Data())["characters"]![0]!["identity_origin"]!.GetValue<string>());
      }
  
@@ -91,6 +102,8 @@ index aa8631e5..761210df 100644
 +            Part("fixture-d-stump", p => p.Limb = LimbState.Stump),
 +            Part("fixture-e-worn-away", p => p.Wear = 130),
 +            Part("fixture-f-nonfinite", p => p.BaseHp = float.NaN),
++            Part("fixture-g-infinite", p => p.BaseHp = float.PositiveInfinity),
++            Part("fixture-h-above-cap", p => p.BaseHp = 2e9f),
 +        ]);
 +        session.World.Characters.Spawn(new CharacterHot(), new CharacterCold { Medical = medical }, 0);
 +        ulong before = session.World.StateHash();
@@ -98,13 +111,15 @@ index aa8631e5..761210df 100644
 +        Assert.Equal(before, session.World.StateHash());
 +        double? Maximum(int index) => health[index]!["maximum"]?.GetValue<double>();
 +        Assert.Equal(["fixture-a-plain:neither", "fixture-b-scaled:neither", "fixture-c-worn:neither", "fixture-d-stump:neither",
-+            "fixture-e-worn-away:neither", "fixture-f-nonfinite:neither"], health.Select(p => p!["id"]!.GetValue<string>()));
++            "fixture-e-worn-away:neither", "fixture-f-nonfinite:neither", "fixture-g-infinite:neither", "fixture-h-above-cap:neither"], health.Select(p => p!["id"]!.GetValue<string>()));
 +        Assert.Equal(100, Maximum(0));
 +        Assert.Equal(187.5, Maximum(1));
 +        Assert.Equal(70, Maximum(2));
 +        Assert.Equal(5, Maximum(3));
 +        Assert.Null(Maximum(4));
 +        Assert.Null(Maximum(5));
++        Assert.Null(Maximum(6));
++        Assert.Null(Maximum(7));
 +    }
 +
      [Fact]

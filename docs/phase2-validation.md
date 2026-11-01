@@ -209,8 +209,10 @@ and review**; no issue has been published.
 - Prove equivalence between town-placement keys
   `Town::instanceID.uid`/`TownSite.InstanceId`; current assignment and origin
   remain null. Do not match by name, `TOWN` definition, index or current HAND.
-- Complete Meitou `health[].maximum` and `order` after proving their semantics;
-  unknown values remain null, never zero.
+- Complete Meitou `order` after proving its semantics; unknown values remain
+  null, never zero. `health[].maximum` is exposed since patch 0005 as the
+  calculated maximum; its agreement with the stored native value is proven only
+  for the cases listed in [state coverage](state-coverage.md).
 - Observed polylines are lower bounds. Net displacement, exact arrival, full
   trajectory and cumulative combat duration are not interchangeable. Arrival
   requires every member within the X/Z radius; its interval remains

@@ -4,7 +4,7 @@ This directory makes the Meitou adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the five patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `899ba86ab9dc959d0df2ea2381181a00db258cef`;
+correspond to the local fork tip `5ab88d9a8960e75241965c1e48b3760544db264e`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -17,7 +17,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `2b10478095651fdfbb5fd7ea38c8a20ef9e75750` |
 | 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `8b255b96d877094e184edce14b212afbd893ada4` |
 | 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `893114dec3a8543ade4147fb8f2f4040ac4cf365` |
-| 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `899ba86ab9dc959d0df2ea2381181a00db258cef` |
+| 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `5ab88d9a8960e75241965c1e48b3760544db264e` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -31,11 +31,16 @@ identify one build; from this series on, a build is identified by
 
 Patch 5 changes no protocol version. It fills `health[].maximum` with
 MeitouClient's calculated `HealthPart.MaxHp` instead of `null` (still `null`
-when negative or non-finite, as on the native probe); `order` stays `null`.
-The value is calculated, not the original's stored `_maxHealth`: the two agreed
-only in the 1 November 2026 setup heal receipts (**Observed**: unworn organic
-humans at scale 1, full health). Wear, stumps, prosthetics, robots and other
-scales are **Unknown**. See [state coverage](../../docs/state-coverage.md).
+when negative, non-finite or above 1e9, as on the native probe); `order` stays
+`null`. The value is calculated, not the original's stored `_maxHealth`. In the
+1 November 2026 setup heal receipts (unworn, full health) the saved player
+matched part by part on both engines in every repetition, including a stump at
+5 (**Observed**). Spawned members of races `17-gamedata.quack` (100 per part)
+and `5276-chareditor.mod` (125 per part) showed the same set of values on both
+engines, but the race draw differs between engines, so this is not a
+same-character comparison; whether 125 comes from base HP, multiplier or scale
+is **Unknown**. Wear, prosthetics, robots, and multiplier or scale changes
+after load are **Unknown**. See [state coverage](../../docs/state-coverage.md).
 
 ## Apply and build
 
@@ -79,7 +84,7 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `899ba86a` on `88ae71a1`, in the fork's own checkout
+**Verified** at fork tip `5ab88d9a` on `88ae71a1`, in the fork's own checkout
 (whose tree equals the `git am` result above), with SDK 10.0.403:
 - The Release build had 0 warnings and 0 errors.
 - The quick suite (`Category!=Slow&Category!=Bench`) had 920 passes and 0
@@ -89,7 +94,7 @@ process ownership, scenario execution and restoration.
   that the capture leaves `World.StateHash()` unchanged.
 - At the previous tip `893114de` (patches 1-4), the focused Oracle/camera tests
   (the filter above) passed 145 of 145; they were not rerun as a separate
-  filter on `899ba86a`, whose quick suite includes them.
+  filter on `5ab88d9a`, whose quick suite includes them.
 - The complete suite, the run with `KENSHI_ORACLE_VECTORS`, the start without
   `--oracle` and a quick city run were not repeated on this base; the last such
   evidence is for the `100c6cae` series (see the
@@ -107,7 +112,7 @@ reproduce every environmental result. See the
 
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
 (fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
-**Unknown:** patch 5 in game; no live campaign has run on `899ba86a`.
+**Unknown:** patch 5 in game; no live campaign has run on `5ab88d9a`.
 
 ## Scope and maintenance
 
