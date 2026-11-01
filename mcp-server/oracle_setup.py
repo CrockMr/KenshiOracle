@@ -32,6 +32,7 @@ _COMMIT = re.compile(r'[0-9a-f]{40}')
 _SQUAD_SIZE_KEY = b'squad size multiplier'
 _DECIMAL = re.compile(rb'[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?')
 _HOSTILE_AT = -60
+_RNG_KEY = re.compile(r'[0-9]+')
 
 
 class SetupFailure(ScenarioError):
@@ -331,6 +332,10 @@ class _Block:
                           f'{reply.get("new_loaded_count")!r} new, expected {spawn["count"]}')
             if reply.get('new_loaded_truncated') is not False:
                 self.fail('spawn new_loaded list is truncated')
+            rng_key = reply.get('rng_key')
+            if (rng_key is not None if self.target == 'original'
+                    else type(rng_key) is not str or not _RNG_KEY.fullmatch(rng_key)):
+                self.fail(f'spawn rng_key {rng_key!r} does not match the {self.target} shape')
             for member in members:
                 if (not isinstance(member, dict) or type(member.get('id')) is not str
                         or member.get('squad_id') != squad or member.get('faction_id') != spawn['faction_id']
@@ -359,7 +364,7 @@ class _Block:
                 alias = f'{spawn["alias"]}/{member["template_id"]}/{seen[member["template_id"]]}'
                 self.alias_map[alias] = member['id']
                 self.members.append(dict(alias=alias, id=member['id'], template_id=member['template_id'],
-                                         faction_id=member['faction_id'], rng_key=reply.get('rng_key')))
+                                         faction_id=member['faction_id'], rng_key=rng_key))
             self.passed(after, new=sorted(new))
         if len(set(self.alias_map.values())) != len(self.alias_map):
             self.fail('two aliases bind the same id')

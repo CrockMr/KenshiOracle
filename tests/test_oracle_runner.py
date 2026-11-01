@@ -1253,6 +1253,7 @@ def _restart(fake, params, result):
     ('S2', 'count mismatch', 'returned 3 members'),
     ('S2', 'template mismatch', 'template plan differs'),
     ('S2', 'instance restart', 'restarted'),
+    ('S2', 'native rng_key', 'rng_key'),
     ('S3', 'Y mismatch', 'pin after settle'),
     ('S3', 'X/Z mismatch', 'pin after settle'),
     ('S3b', 'unconscious', 'unconscious before heal'),
@@ -1281,6 +1282,8 @@ def test_each_setup_step_failure_restores_without_retry(tmp_path, step, case, ma
         fake.squad_templates['fixture-squad'] = ['fixture-leader'] * 2 + ['fixture-member'] * 2
     elif case == 'instance restart':
         fake.hooks['setup_spawn_squad'] = _restart
+    elif case == 'native rng_key':
+        fake.hooks['setup_spawn_squad'] = lambda probe, params, result: dict(result, rng_key='7')
     elif case == 'X/Z mismatch':
         fake.advance_hook = _move_player
     elif case == 'unconscious':
@@ -1321,6 +1324,29 @@ def test_each_setup_step_failure_restores_without_retry(tmp_path, step, case, ma
         assert fake.loads == [SETUP_SAVE] * 3  # Preload, the repetition, then cleanup.
         cleanup = [row['params'] for row in fake.requests if row['command'] == 'load_save'][-1]
         assert 'allow_setup' not in cleanup and fake.world_mutated is False
+
+
+def test_meitou_squad_size_and_rng_key_follow_the_target_shape():
+    from oracle_setup import SetupFailure, _Block
+    block = _Block(None, setup_scenario(), '.', None, None)
+    block.target = 'meitou'
+    line = 'Squad size multiplier=1'
+    reported = dict(source='settings.cfg', multiplier=1.0, line=line,
+                    sha256=hashlib.sha256(line.encode('utf-8')).hexdigest(), path='settings.cfg')
+    assert block.squad_size_facts(dict(squad_size=reported)) == dict(reported, source='setup_info')
+    for wrong in (dict(reported, source='default'), dict(reported, source='user_config'), None,
+                  dict(reported, sha256='0' * 64), dict(reported, line=None, sha256=None),
+                  dict(reported, multiplier=2.0)):
+        with pytest.raises(SetupFailure):
+            block.squad_size_facts(dict(squad_size=wrong))
+    two = 'Squad size multiplier=2'
+    with pytest.raises(SetupFailure, match='multiplier'):
+        block.squad_size_facts(dict(squad_size=dict(reported, line=two, multiplier=2.0,
+                                                    sha256=hashlib.sha256(two.encode('utf-8')).hexdigest())))
+    # The original never reads setup_info for the multiplier: engine facts are the only source.
+    block.target = 'original'
+    with pytest.raises(SetupFailure, match='missing'):
+        block.squad_size_facts(dict(squad_size=reported))
 
 
 def test_meitou_setup_pins_resolve_from_the_save_source_for_every_seed(tmp_path):
