@@ -97,7 +97,10 @@ def test_stdio_mcp(tmp_path):
                             'focus_town', 'prepare_town_scene', 'prepare_battle_scene',
                             'save_scene_snapshot', 'load_save', 'game_status', 'restart_game',
                             'read_log', 'get_clock', 'dump_state', 'run_until', 'run_until_status',
-                            'cancel_run_until', 'issue_order', 'restore_scene_control', 'run_scenario'} <= names
+                            'cancel_run_until', 'issue_order', 'restore_scene_control', 'run_scenario',
+                            'setup_info', 'setup_area_census', 'setup_spawn_squad', 'setup_set_relation',
+                            'setup_heal'} <= names
+                    assert 'setup_teleport_character' not in names
                     response = await session.call_tool('ping', {})
                     assert not response.isError
                     assert 'fake' in response.content[0].text
@@ -659,3 +662,258 @@ def test_load_lock_and_explicit_release_are_forwarded(monkeypatch):
     assert asyncio.run(server.load_save('Oracle_city',True,wait=False))==dict(name='Oracle_city',lock_edge=True,pause_on_ready=True)
     assert asyncio.run(server.set_camera_free(False,release_edge=True))==dict(enabled=False,lock_edge=False,release_edge=True)
     with pytest.raises(ValueError):asyncio.run(server.set_camera_free(False,True,True))
+
+
+def test_setup_tools_validate_before_transport_and_forward(monkeypatch):
+    calls = []
+    async def fake(command, **params):
+        calls.append((command, params))
+        return params
+    monkeypatch.setattr(server, 'call', fake)
+    assert asyncio.run(server.setup_info()) == {}
+    asyncio.run(server.setup_area_census([1, 2, 3], 1500, 100))
+    asyncio.run(server.setup_spawn_squad('squad', 'faction', [1, 2, 3], 4))
+    asyncio.run(server.setup_spawn_squad('squad', 'faction', [1, 2, 3], 4, permanent=True))
+    asyncio.run(server.setup_set_relation('a', 'b', -60))
+    asyncio.run(server.setup_heal('hand:1:7:101:1:1001'))
+    assert calls == [
+        ('setup_info', {}),
+        ('setup_area_census', dict(center=[1, 2, 3], radius=1500, limit=100)),
+        ('setup_spawn_squad', dict(template_id='squad', faction_id='faction', position=[1, 2, 3], max_count=4)),
+        ('setup_spawn_squad', dict(template_id='squad', faction_id='faction', position=[1, 2, 3], max_count=4,
+                                   permanent=True)),
+        ('setup_set_relation', dict(source_id='a', target_id='b', value=-60)),
+        ('setup_heal', dict(character_id='hand:1:7:101:1:1001'))]
+    for invalid, match in [
+            (lambda: server.setup_area_census([1, 2], 10), 'center must have three numbers'),
+            (lambda: server.setup_area_census([1, 2, float('inf')], 10), 'invalid position coordinate'),
+            (lambda: server.setup_area_census([1, 2, 3], 0.01), 'invalid number: radius'),
+            (lambda: server.setup_area_census([1, 2, 3], 10, 101), 'invalid number: limit'),
+            (lambda: server.setup_area_census([1, 2, 3], 10, 1.5), 'limit must be an integer'),
+            (lambda: server.setup_spawn_squad('', 'f', [0, 0, 0], 1), 'invalid string: template_id'),
+            (lambda: server.setup_spawn_squad('s', 'f'*129, [0, 0, 0], 1), 'invalid string: faction_id'),
+            (lambda: server.setup_spawn_squad('s', 'f', [0, 0, 0], 17), 'invalid number: max_count'),
+            (lambda: server.setup_spawn_squad('s', 'f', [0, 0, 0], True), 'invalid number: max_count'),
+            (lambda: server.setup_spawn_squad('s', 'f', [0, 0, 0], 1, 'yes'), 'invalid boolean: permanent'),
+            (lambda: server.setup_set_relation('a', 'b', -101), 'invalid number: value'),
+            (lambda: server.setup_heal('a\0b'), 'invalid string: character_id')]:
+        with pytest.raises(ValueError, match=match):
+            asyncio.run(invalid())
+    assert len(calls) == 6
+
+
+def test_load_sends_allow_setup_only_when_true(monkeypatch):
+    calls = []
+    async def fake(command, **params):
+        calls.append((command, params))
+        return params
+    monkeypatch.setattr(server, 'call', fake)
+    asyncio.run(server.load_save('Synthetic save', wait=False))
+    asyncio.run(server.load_save('Synthetic save', wait=False, allow_setup=True))
+    assert calls == [('load_save', dict(name='Synthetic save', lock_edge=False, pause_on_ready=True)),
+                     ('load_save', dict(name='Synthetic save', lock_edge=False, pause_on_ready=True,
+                                        allow_setup=True))]
+    with pytest.raises(ValueError):
+        asyncio.run(server.load_save('Synthetic save', allow_setup='true'))
+    async def ignored(command, **params):
+        return dict(accepted=True, name=params['name'])
+    monkeypatch.setattr(server, 'call', ignored)
+    with pytest.raises(ProbeError, match='allow_setup'):
+        asyncio.run(server.load_save('Synthetic save', wait=False, allow_setup=True))
+
+
+def test_waited_load_with_allow_setup_opens_the_setup_gate(tmp_path, monkeypatch):
+    from fake_probe import FakeProbe
+    async def run():
+        async with FakeProbe(tmp_path/'snapshots') as fake:
+            cfg = tmp_path/'config.json'
+            cfg.write_text(json.dumps(dict(port=fake.port)))
+            monkeypatch.setenv('KENSHI_PROBE_CONFIG', str(cfg))
+            loaded = await server.load_save('Synthetic save', allow_setup=True)
+            assert loaded['allow_setup'] is True and loaded['ready']['world_mutated'] is False
+            gate = (await server.setup_info())['gate']
+            assert gate['open'] and gate['allow_setup'] and gate['probe_loaded_save'] == 'Synthetic save'
+            assert gate['refusal'] is None and gate['mutation_refusal'] is None
+            assert (await server.load_save('Synthetic save'))['allow_setup'] is False
+            gate = (await server.setup_info())['gate']
+            assert not gate['open'] and gate['refusal']['message'] == (
+                'scene setup was not enabled: load the save with allow_setup:true')
+            with pytest.raises(ProbeError, match='scene setup was not enabled'):
+                await server.setup_area_census([0, 0, 0], 10)
+    asyncio.run(run())
+
+
+G2_TEXT = "scene setup requires a world loaded by the probe's load_save"
+G3_TEXT = 'scene setup was not enabled: load the save with allow_setup:true'
+M1_TEXT = 'scene setup mutations require a paused world and no run_until'
+M2_TEXT = 'scene setup mutations are refused while autosave is enabled'
+SPAWN = dict(template_id='fixture-squad', faction_id='fixture-rival', position=[30, 0, 0], max_count=4)
+RELATION = dict(source_id='fixture-rival', target_id='fixture-faction', value=-60)
+HEAL = dict(character_id='hand:1:7:101:1:1001')
+MUTATIONS = [('setup_spawn_squad', SPAWN), ('setup_set_relation', RELATION), ('setup_heal', HEAL)]
+
+
+def setup_fake(tmp_path, allow_setup=True):
+    from fake_probe import FakeProbe
+    fake = FakeProbe(tmp_path/'snapshots')
+    asyncio.run(fake.call('load_save', name='Synthetic save', pause_on_ready=True, allow_setup=allow_setup))
+    return fake
+
+
+def refusal(fake, command, params, code, message):
+    from fake_probe import SetupRefusal
+    with pytest.raises(SetupRefusal) as raised:
+        asyncio.run(fake.call(command, **params))
+    assert (raised.value.code, raised.value.message) == (code, message)
+
+
+def test_fake_setup_ping_reports_capability_and_mutation_state(tmp_path):
+    fake = setup_fake(tmp_path)
+    status = asyncio.run(fake.call('ping'))
+    assert status['capabilities'] == ['scene_setup'] and status['world_mutated'] is False
+    assert status['state_schema_version'] == '0.2' and len(status['build_commit']) == 40
+    assert status['world_readiness']['world_ready'] is True and 'window' not in status['world_readiness']
+    asyncio.run(fake.call('setup_heal', **HEAL))
+    assert asyncio.run(fake.call('ping'))['world_mutated'] is True
+    asyncio.run(fake.call('load_save', name='Synthetic save', pause_on_ready=True))
+    assert asyncio.run(fake.call('ping'))['world_mutated'] is False
+
+
+@pytest.mark.parametrize('command,params', MUTATIONS)
+def test_fake_setup_refuses_a_mutation_when_not_paused(tmp_path, command, params):
+    fake = setup_fake(tmp_path)
+    asyncio.run(fake.call('pause', paused=False))
+    refusal(fake, command, params, 'invalid_request', M1_TEXT)
+    assert asyncio.run(fake.call('setup_area_census', center=[0, 0, 0], radius=10, limit=10))['count'] == 2
+    assert fake.world_mutated is False
+
+
+@pytest.mark.parametrize('command,params', MUTATIONS)
+def test_fake_setup_refuses_a_mutation_during_run_until(tmp_path, command, params):
+    fake = setup_fake(tmp_path)
+    asyncio.run(fake.call('set_game_speed', speed=1, preserve_pause=True))
+    asyncio.run(fake.call('run_until', target_seconds=216033))
+    fake.state['clock']['paused'] = True  # Still refused while the operation runs.
+    refusal(fake, command, params, 'invalid_request', M1_TEXT)
+
+
+@pytest.mark.parametrize('command,params', MUTATIONS + [
+    ('setup_area_census', dict(center=[0, 0, 0], radius=10, limit=10))])
+def test_fake_setup_refuses_outside_the_probe_load_epoch(tmp_path, command, params):
+    from fake_probe import FakeProbe
+    refusal(FakeProbe(tmp_path/'unloaded'), command, params, 'not_allowed', G2_TEXT)
+    fake = setup_fake(tmp_path)
+    fake.simulate_ui_load()
+    refusal(fake, command, params, 'not_allowed', G2_TEXT)
+    refusal(setup_fake(tmp_path, allow_setup=False), command, params, 'not_allowed', G3_TEXT)
+    fake = setup_fake(tmp_path)
+    fake.world_ready = False
+    refusal(fake, command, params, 'world_not_ready', 'world is unavailable or a save is loading')
+
+
+def test_fake_setup_ui_load_clears_the_opt_in_but_keeps_world_mutated(tmp_path):
+    fake = setup_fake(tmp_path)
+    asyncio.run(fake.call('setup_heal', **HEAL))
+    fake.simulate_ui_load()
+    info = asyncio.run(fake.call('setup_info'))
+    assert info['world_mutated'] is True and info['probe_loaded_save'] is None
+    assert info['gate']['allow_setup'] is False and info['gate']['refusal']['message'] == G2_TEXT
+
+
+@pytest.mark.parametrize('enabled', [True, None])
+@pytest.mark.parametrize('command,params', MUTATIONS)
+def test_fake_setup_refuses_a_mutation_when_autosave_is_on(tmp_path, command, params, enabled):
+    fake = setup_fake(tmp_path)
+    fake.autosave_enabled = enabled
+    refusal(fake, command, params, 'not_allowed', M2_TEXT)
+    assert asyncio.run(fake.call('setup_info'))['gate']['mutation_refusal'] == dict(
+        code='not_allowed', message=M2_TEXT)
+
+
+@pytest.mark.parametrize('change,code,message', [
+    (dict(faction_id='fixture-faction'), 'invalid_request', 'spawning into the player faction is refused'),
+    (dict(position=[2001.5, 0, 0]), 'invalid_request',
+     'spawn position must be within 2000 units (horizontal) of a player character'),
+    (dict(max_count=17), 'invalid_request', 'invalid number: max_count'),
+    (dict(max_count=1.5), 'invalid_request', 'max_count must be an integer'),
+    (dict(position=[0, 0]), 'invalid_request', 'position must have three numbers'),
+    (dict(template_id='absent'), 'not_found', 'template not found'),
+    (dict(template_id='fixture-member'), 'invalid_request', 'template is not a SQUAD_TEMPLATE record'),
+    (dict(faction_id='absent'), 'not_found', 'faction not found'),
+    (dict(permanent='yes'), 'invalid_request', 'invalid boolean: permanent'),
+    (dict(name_prefix='x'), 'invalid_request', 'unknown parameter: name_prefix')])
+def test_fake_spawn_refusals_leave_the_world_unmutated(tmp_path, change, code, message):
+    fake = setup_fake(tmp_path)
+    refusal(fake, 'setup_spawn_squad', dict(SPAWN, **change), code, message)
+    assert fake.world_mutated is False and len(fake.state['characters']) == 2
+
+
+def test_fake_setup_checks_unknown_keys_before_the_gate_and_the_gate_before_values(tmp_path):
+    from fake_probe import FakeProbe
+    unloaded = FakeProbe(tmp_path/'unloaded')
+    refusal(unloaded, 'setup_info', dict(extra=1), 'invalid_request', 'unknown parameter: extra')
+    refusal(unloaded, 'setup_spawn_squad', dict(SPAWN, max_count=17), 'not_allowed', G2_TEXT)
+    fake = setup_fake(tmp_path)
+    fake.player_faction_id = 'nobody'
+    refusal(fake, 'setup_area_census', dict(center=[0, 0, 0], radius=10, limit=10),
+            'state_unavailable', 'player unavailable')
+
+
+def test_fake_setup_commands_reply_with_contract_keys(tmp_path):
+    fake = setup_fake(tmp_path)
+    common = {'saved', 'world_mutated', 'gate', 'world_before', 'world_after'}
+    spawned = asyncio.run(fake.call('setup_spawn_squad', **SPAWN))
+    assert set(spawned) == common | {'template_id', 'faction_id', 'position', 'max_count', 'permanent',
+                                     'size_multiplier', 'squad_type', 'returned_squad_id', 'returned_members',
+                                     'new_loaded_count', 'new_loaded_truncated', 'rng_key'}
+    assert spawned['saved'] is False and spawned['world_mutated'] is True and spawned['gate']['open']
+    assert spawned['new_loaded_count'] == len(spawned['returned_members']) == 4
+    assert [row['template_id'] for row in spawned['returned_members']] == ['fixture-leader'] + ['fixture-member']*3
+    assert {row['squad_id'] for row in spawned['returned_members']} == {spawned['returned_squad_id']}
+    assert set(spawned['returned_members'][0]) == {'id', 'template_id', 'faction_id', 'squad_id', 'position',
+                                                   'dead', 'unconscious', 'medical'}
+    census = asyncio.run(fake.call('setup_area_census', center=[0, 0, 0], radius=1500, limit=3))
+    assert census['count'] == 6 and census['truncated'] and len(census['characters']) == 3
+    assert census['player_count'] == 2 and census['alive_count'] == 6
+    assert [row['distance_xz'] for row in census['characters']] == [0, 1, 30]
+    member = spawned['returned_members'][1]['id']
+    healed = asyncio.run(fake.call('setup_heal', character_id=member))
+    assert set(healed) == common | {'character_id', 'before', 'after'}
+    assert healed['before']['parts'][0] == dict(id='fixture-head:neither', flesh=75, stun=10, max=100)
+    assert healed['after']['parts'][0] == dict(id='fixture-head:neither', flesh=100, stun=0, max=100)
+    relation = asyncio.run(fake.call('setup_set_relation', **RELATION))
+    assert relation['source_to_target']['after'] == dict(relation=-60, is_enemy=True, at_war=None)
+    assert relation['target_to_source']['after']['relation'] == 0
+    assert relation['changed_cells'] == 1 and relation['faction_count'] == 2
+    assert relation['changes'][0]['source_id'] == 'fixture-rival'
+    refusal(fake, 'setup_set_relation', dict(RELATION, target_id='fixture-rival'),
+            'invalid_request', 'source and target must differ')
+    fake.state['characters'][0]['state'] = 'dead'
+    refusal(fake, 'setup_heal', HEAL, 'invalid_request', 'character is dead')
+    refusal(fake, 'setup_heal', dict(character_id='absent'), 'not_found', 'character is not loaded')
+    with pytest.raises(ProbeError, match='not_implemented'):
+        asyncio.run(fake.call('setup_teleport_character'))
+
+
+def test_fake_snapshot_is_refused_while_mutated_and_orders_stay_id_only(tmp_path):
+    fake = setup_fake(tmp_path)
+    with pytest.raises(ProbeError, match='not_implemented'):
+        asyncio.run(fake.call('save_scene_snapshot', name='KenshiProbe_test_scene_a'))
+    asyncio.run(fake.call('setup_set_relation', **RELATION))
+    refusal(fake, 'save_scene_snapshot', dict(name='KenshiProbe_test_scene_a'),
+            'not_allowed', 'the world was changed by scene setup; reload it before saving')
+    for alias in (dict(squad_alias='bandits'), dict(target_alias='player')):
+        with pytest.raises(ProbeError, match='invalid_params'):
+            asyncio.run(fake.call('issue_order', type='attack', character_id='hand:1:7:101:1:1001',
+                                  target_id='hand:1:7:101:2:1002', **alias))
+
+
+def test_fake_setup_refusal_crosses_the_wire_with_the_contract_code_and_message(tmp_path):
+    from fake_probe import FakeProbe
+    async def run():
+        async with FakeProbe(tmp_path/'snapshots') as fake:
+            client = Client(fake.port, 1)
+            with pytest.raises(ProbeError) as raised:
+                await client.call('setup_heal', **HEAL)
+            assert str(raised.value) == str(dict(code='not_allowed', message=G2_TEXT))
+    asyncio.run(run())

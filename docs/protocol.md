@@ -221,7 +221,7 @@ Every request requires `id` (1-to 64-byte string), `command` (string), `params` 
 
 | Command | Parameters | Result |
 | --- | --- | --- |
-| ping | {} | Plugin/game versions, frame, timestamp_ms |
+| ping | {} | Plugin/game versions, frame, timestamp_ms. From 0.11.0 also `capabilities` (`["scene_setup"]`), `world_readiness`, `world_mutated`, `build_commit` and `state_schema_version` ([scene setup](scene-setup.md#changes-to-existing-commands)) |
 | heartbeat | {} | Last frame and timestamp_ms published by the hook, accessible in the menu |
 | get_frame_stats | Integer n1..3600 | count, mean_ms, median_ms, p95_ms, p99_ms, max_ms, systems, per_frame |
 | pause | Boolean paused | Observed paused |
@@ -231,10 +231,15 @@ Every request requires `id` (1-to 64-byte string), `command` (string), `params` 
 | list_towns | Integer limit 1..500, name_filter string 0..128 UTF-8 bytes | towns:name,faction,position; total_town_count, active_town_count |
 | focus_town | name string 1..128 UTF-8 bytes, exact unique name | before, after, town, target_position; requires pause |
 | set_camera_free | Boolean enabled, optional boolean lock_edge | before, free_camera, scene_camera_control_owned; requires pause. lock_edge=true restricted to the copy or a managed snapshot |
-| save_scene_snapshot | name string KenshiProbe_test_scene_ +1..40 safe ASCII characters | accepted, name, save_root, battle_before; requires battle on paused copy, rejects every existing target. End of writing must be checked separately |
+| save_scene_snapshot | name string KenshiProbe_test_scene_ +1..40 safe ASCII characters | accepted, name, save_root, battle_before; requires battle on paused copy, rejects every existing target. End of writing must be checked separately. From 0.11.0, refused with `not_allowed` while `world_mutated` is true |
 | prepare_battle_scene | template_id string 1..128 bytes, integer pairs 1..20; optional faction_name, opponent_template_id, opponent_faction_name strings≤128 bytes | On loaded paused KenshiProbe_test, creates2×pairs NPCs near the first player. Already loaded non-player CHARACTER templates; ambiguous faction rejected. Distinct opponent accepted only with already mutually hostile factions. prepared, prefix, faction, mutual_enemies_verified, relations if opponent, requested_entities, spawned_entities, setup_ms, members with templates/factions/ages. Reload after every test, including partial |
+| setup_info | {} | gate, current_save, probe_loaded_save, world_mutated, autosave_enabled, autosave_configured, player_save_requests_blocked, squad_size; needs a ready world only. See [scene setup](scene-setup.md#setup_info) |
+| setup_area_census | center [x,y,z], number radius 0.1..20000, integer limit 1..100 | characters sorted by distance_xz then id, count, truncated, alive/dead/unconscious/player counts, gate, world. Read-only, paused or running, after a probe `load_save` with allow_setup=true |
+| setup_spawn_squad | template_id and faction_id strings 1..128 bytes, position [x,y,z], integer max_count 1..16, optional boolean permanent | returned_squad_id, returned_members, new_loaded_count, new_loaded_truncated, rng_key and the common mutation keys. Refuses the player faction and a position more than 2000 units (X/Z) from every living player character |
+| setup_set_relation | source_id and target_id strings 1..128 bytes, number value -100..100 | One direction; source_to_target and target_to_source before/after, changes (at most 100), changed_cells, changes_truncated, faction_count. Never writes the war flag |
+| setup_heal | character_id string 1..200 bytes | before and after: parts (id, flesh, stun, max), blood, dead, unconscious. Refuses a dead or unloaded character |
 | prepare_town_scene | name string 1..128 UTF-8 bytes, exact unique name | town, target_position, players(before/destination/after), scene before/after |
-| load_save | name string,1..128 UTF-8 bytes, simple name | accepted and name after scheduling; error if absent or operation pending |
+| load_save | name string,1..128 UTF-8 bytes, simple name; from 0.11.0 optional boolean allow_setup (default false) | accepted and name after scheduling, allow_setup echoed; error if absent or operation pending |
 
 Scene commands require a ready world and execute on the GameWorld thread. Town filter is a case-sensitive substring. focus_town rejects ambiguous names. This command stops camera following, enables free mode, and calls teleport at the town's actual position; it moves no character. To restore the view, restore initial free mode with set_camera_free **before** reloading KenshiProbe_test: loading does not restore this boolean, and changing it after load changes the view. tests/live_restore.py applies the in-game-verified order and leaves the copy paused. Immediately returned position may precede subsequent-frame adjustments: reread get_scene_state. loaded_character_count counts the update list without guaranteeing completeness of loaded entities; town inventory does not prove residents loaded.
 

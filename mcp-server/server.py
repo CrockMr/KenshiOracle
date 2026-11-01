@@ -3,6 +3,7 @@ from research_support import enable_research
 enable_research()
 import asyncio
 import json
+import math
 import os
 import re
 import time
@@ -159,19 +160,113 @@ async def save_scene_snapshot(name: str) -> dict:
     return await call('save_scene_snapshot', name=name)
 
 
+def setup_string(value, key, limit=128):
+    if type(value) is not str or not value or len(value.encode('utf-8')) > limit or '\0' in value:
+        raise ValueError('invalid string: ' + key)
+    return value
+
+
+def setup_number(value, key, low, high, integer=False):
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ValueError('invalid number: ' + key)
+    if integer and value != int(value):
+        raise ValueError(key + ' must be an integer')
+    if not low <= value <= high:
+        raise ValueError('invalid number: ' + key)
+    return value
+
+
+def setup_position(value, key):
+    if type(value) is not list or len(value) != 3 or any(type(v) not in (int, float) for v in value):
+        raise ValueError(key + ' must have three numbers')
+    if any(not math.isfinite(v) or abs(v) > 1e7 for v in value):
+        raise ValueError('invalid position coordinate')
+    return value
+
+
+@mcp.tool()
+async def setup_info(target: str = 'original') -> dict:
+    """Read the scene-setup gate (docs/scene-setup.md), current and probe-loaded save, world_mutated, autosave state and squad-size facts. Needs only a ready world; changes nothing."""
+    return await target_call('setup_info', target)
+
+
+@mcp.tool()
+async def setup_area_census(center: list[float], radius: float, limit: int = 100,
+                            target: str = 'original') -> dict:
+    """List loaded characters within radius 0.1..20000 (horizontal X/Z) of center [x,y,z], nearest first, at most limit 1..100, with counts over every match. Read-only; requires a probe load_save with allow_setup=True."""
+    setup_position(center, 'center')
+    setup_number(radius, 'radius', 0.1, 20000)
+    setup_number(limit, 'limit', 1, 100, integer=True)
+    return await target_call('setup_area_census', target, center=center, radius=radius, limit=limit)
+
+
+@mcp.tool()
+async def setup_spawn_squad(template_id: str, faction_id: str, position: list[float], max_count: int,
+                            permanent: bool = False, target: str = 'original') -> dict:
+    """Spawn one squad from a SQUAD_TEMPLATE record into an exact non-player faction, within 2000 units (X/Z) of a player character, 1..16 members. Paused world, autosave off and a probe load_save with allow_setup=True required; never saves. Reload the save afterward."""
+    setup_string(template_id, 'template_id')
+    setup_string(faction_id, 'faction_id')
+    setup_position(position, 'position')
+    setup_number(max_count, 'max_count', 1, 16, integer=True)
+    if type(permanent) is not bool:
+        raise ValueError('invalid boolean: permanent')
+    params = dict(template_id=template_id, faction_id=faction_id, position=position, max_count=max_count)
+    if permanent:
+        params['permanent'] = True
+    return await target_call('setup_spawn_squad', target, **params)
+
+
+@mcp.tool()
+async def setup_set_relation(source_id: str, target_id: str, value: float, target: str = 'original') -> dict:
+    """Set one direction of a faction relation (-100..100) and return both directions before/after plus the matrix diff. The war flag is never written. Same gate as setup_spawn_squad."""
+    setup_string(source_id, 'source_id')
+    setup_string(target_id, 'target_id')
+    setup_number(value, 'value', -100, 100)
+    return await target_call('setup_set_relation', target, source_id=source_id, target_id=target_id, value=value)
+
+
+@mcp.tool()
+async def setup_heal(character_id: str, target: str = 'original') -> dict:
+    """Fully heal one loaded, living character by its dump_state identity and return its medical state before and after. Same gate as setup_spawn_squad."""
+    setup_string(character_id, 'character_id', 200)
+    return await target_call('setup_heal', target, character_id=character_id)
+
+
+def with_setup_opt_in(send):
+    """Add allow_setup to the load request only; other session calls are unchanged."""
+    async def call_with_opt_in(command, **params):
+        if command == 'load_save':
+            params['allow_setup'] = True
+        return await send(command, **params)
+    return call_with_opt_in
+
+
 @mcp.tool()
 async def load_save(name: str, lock_edge: bool = False, wait: bool = True,
-                    target: str = 'original', seed: str | None = None) -> dict:
-    """Reload a save by name and wait until it is ready and paused (load_timeout, default 120 s). wait=False returns acceptance only; an uncertain mutation is never retried."""
+                    target: str = 'original', seed: str | None = None, allow_setup: bool = False) -> dict:
+    """Reload a save by name and wait until it is ready and paused (load_timeout, default 120 s). wait=False returns acceptance only; an uncertain mutation is never retried. allow_setup=True enables the setup_* commands for this load only."""
     if not name or len(name.encode('utf-8')) > 128 or name in ('.', '..') or any(c in name for c in '/\\:\r\n\0'):
         raise ValueError('Nom de sauvegarde invalide')
     if type(lock_edge) is not bool or type(wait) is not bool:
         raise ValueError('lock_edge et wait doivent être booléens')
+    if type(allow_setup) is not bool:
+        raise ValueError('allow_setup must be boolean')
     if not wait:
         if seed is not None:
             raise ValueError('A seeded load requires wait=True for effective-seed verification')
-        return await target_call('load_save', target, name=name, lock_edge=lock_edge, pause_on_ready=True)
-    loaded = await OracleSession(target_settings(target)).load(name, lock_edge=lock_edge, seed=seed)
+        params = dict(name=name, lock_edge=lock_edge, pause_on_ready=True)
+        if allow_setup:
+            params['allow_setup'] = True
+        accepted = await target_call('load_save', target, **params)
+        if allow_setup and accepted.get('allow_setup') is not True:
+            raise ProbeError('Probe did not accept allow_setup; update the probe')
+        return accepted
+    session = OracleSession(target_settings(target))
+    if allow_setup:
+        session.call = with_setup_opt_in(session.call)
+    loaded = await session.load(name, lock_edge=lock_edge, seed=seed)
+    if allow_setup and loaded['accepted'].get('allow_setup') is not True:
+        raise ProbeError('Probe did not accept allow_setup; update the probe')
     return dict(loaded['accepted'], ready=loaded['ready'])
 
 
