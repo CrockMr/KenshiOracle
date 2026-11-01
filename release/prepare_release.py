@@ -263,7 +263,8 @@ def write_checksums() -> None:
              'build-info.json', 'source-manifest.json', 'binary-audit.json',
              'installation-verification.json', 'release-notes.md']
     (OUTPUT / 'SHA256SUMS').write_text(''.join(digest((OUTPUT / name).read_bytes()) + '  ' + name + '\n'
-                                             for name in sorted(names)), encoding='ascii')
+                                             for name in sorted(names)), encoding='ascii',
+                                     newline='\n')
 
 
 def prepare() -> None:
