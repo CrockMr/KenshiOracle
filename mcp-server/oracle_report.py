@@ -133,6 +133,39 @@ def _plan(findings):
     return plan
 
 
+def _repetition_values(rows):
+    return '; '.join(str(row['repetition']) + ': ' + _json(row['value']) for row in rows)
+
+
+def _scene_rows(report):
+    """Unclassified scene facts of a scene-scope report (none without a setup)."""
+    if 'scene_scope' not in report:
+        return []
+    outcome, background = report['scene_outcome'], report['background_metrics']
+    cohorts = [row for row in outcome if row['metric'].startswith('/scene/outcome/cohort/')]
+    rows = ['', '## Scene outcome and setup facts', '',
+        f"{len(outcome)} outcome metrics and {len(background)} background metrics are recorded in the "
+        '[complete JSON report](report.json) and never classified. '
+        'Values are listed per repetition; there is no verdict on the fight outcome.', '',
+        f'Cohort outcome (preview limited to {PAGE_SIZE} rows):', '',
+        '| Checkpoint | Metric | Original | MeitouClient |', '| --- | --- | --- | --- |']
+    rows += ['| ' + _cell(row['checkpoint']) + ' | ' + _cell(row['metric']) + ' | '
+             + _repetition_values(row['original']) + ' | ' + _repetition_values(row['meitou']) + ' |'
+             for row in cohorts[:PAGE_SIZE]]
+    rows += ['', 'Health maxima per repetition (sum of the part maxima in the setup receipt):', '',
+        '| Engine | Repetition | Alias | Part maxima total |', '| --- | ---: | --- | ---: |']
+    facts = [(target, fact['repetition'], member) for target in ('original', 'meitou')
+             for fact in report['setup_members'][target] for member in fact['members']]
+    for target, repetition, member in facts[:PAGE_SIZE]:
+        maxima = list((member.get('part_max') or {}).values())
+        total = sum(maxima) if maxima and all(type(value) in (int, float) for value in maxima) else None
+        rows.append('| ' + target + ' | ' + str(repetition) + ' | ' + _cell(member.get('alias')) + ' | '
+                    + _json(total) + ' |')
+    if len(facts) > PAGE_SIZE:
+        rows += ['', f'{len(facts) - PAGE_SIZE} further member rows are in the complete JSON report.']
+    return rows
+
+
 def render_reports(report, output, *, rewrite=False):
     """Render computed findings; rewrite changes only named local artifact files.
 
@@ -185,6 +218,7 @@ def render_reports(report, output, *, rewrite=False):
         'Preview limited to 20 strong discrepancies; the detail pages retain all other discrepancies and unknown coverage.', '',
         *_table_header()]
     rows += [_finding_row(finding) for finding in strong[:PREVIEW_SIZE]]
+    rows += _scene_rows(report)
     rows += ['', '## Limitations', '', *['- ' + text for text in report['limitations']], '',
         '## RE_Kenshi context', '',
         'The recorded permanent deviations provide context. None automatically reclassifies the differences above.', '']

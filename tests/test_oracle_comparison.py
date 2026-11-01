@@ -452,6 +452,24 @@ def alias_map(target, index):
             'raiders/grunt.base/1': members[1], 'raiders/grunt.base/2': members[2]}
 
 
+def receipt_steps(aliases):
+    """One synthetic step per S0..S6 command, in order, in the receipt step shape."""
+    census = ('setup_area_census', dict(center=[0, 0, 0], radius=1500, limit=100))
+    commands = [('S0', 'get_clock', {}), ('S0', 'setup_info', {}), ('S0', *census),
+                ('S2', 'setup_spawn_squad', dict(template_id='squad-template.base', faction_id='enemy-faction',
+                                                 position=[30, 0, 0], max_count=3)),
+                ('S2', *census), ('S3', 'set_game_speed', dict(speed=1, preserve_pause=True)),
+                ('S3', 'get_clock', {}), ('S3', 'run_until', dict(elapsed_seconds=216033)),
+                ('S3b', 'dump_state', dict(path='setup/S3b.json'))]
+    commands += [('S5', 'setup_heal', dict(character_id=aliases[alias])) for alias in aliases if alias != 'raiders']
+    commands += [('S5', 'dump_state', dict(path='setup/S5.json')),
+                 ('S4', 'setup_set_relation', dict(source_id=PAIR[0], target_id=PAIR[1], value=-60)),
+                 ('S4', 'setup_set_relation', dict(source_id=PAIR[1], target_id=PAIR[0], value=-60)),
+                 ('S6', 'dump_state', dict(path='setup/S6.json')), ('S6', *census)]
+    return [dict(step=step, request=dict(command=command, params=params), reply={}, read_back={},
+                 verdict='passed') for step, command, params in commands]
+
+
 def receipt(target, index, scenario):
     aliases = alias_map(target, index)
     members = [dict(alias=alias, id=aliases[alias], template_id=alias.split('/')[1] if '/' in alias else None,
@@ -460,11 +478,17 @@ def receipt(target, index, scenario):
                     blood_before=80, blood_after=100, rng_key=None if target == 'original' else str(index))
                for alias in aliases if alias != 'raiders']
     return dict(receipt_format='scene-setup-0.1', target=target, setup_hash=contract_hash(scenario['setup']),
-                build_commit=COMMITS[target], build_commit_known=True, alias_map=aliases, steps=[],
+                build_commit=COMMITS[target], build_commit_known=True, alias_map=aliases, steps=receipt_steps(aliases),
                 dumps={name: dict(path=f'setup/{name}.json', sha256='0'*64) for name in ('S3b', 'S5', 'S6')},
                 members=members, squad_size=dict(source='setup_info', multiplier=1,
                     line='Squad size multiplier=1', sha256='1'*64, path='settings.cfg'),
-                settle=dict(sim_seconds=1, calendar_seconds_requested=33), limitations=[],
+                settle=dict(sim_seconds=1, calendar_seconds_requested=33, start_seconds=216000,
+                            end_seconds=216033, calendar_seconds_run=33, player_before=[0, 0, 0],
+                            player_after=[0, 0, 0], pin=dict(xz=[0, 0], y_before_settle=0, y_after_settle=0,
+                                                              decimals=3),
+                            observed=dict(xz=[0, 0], y_before_settle=0, y_after_settle=0),
+                            delta=dict(xz=[0, 0], y_before_settle=0, y_after_settle=0)),
+                limitations=[],
                 verdict='passed', failure=None)
 
 
@@ -556,8 +580,91 @@ def test_scene_scope_classifies_only_scene_metrics_and_records_the_rest(tmp_path
             assert not any(identity in metric for identity in [*members, squad] for metric in metrics)
     assert all(PLAYER not in metric for metric in metrics)
     assert '/scene/outcome/characters/alias:player/position/0' in rows_by_metric(report['scene_outcome'])
+    for checkpoint in ('initial', 'later'):
+        squad = rows_by_metric(findings, checkpoint)['/scene/squads/raiders/present']
+        assert squad['classification'] == 'stable_identical' and squad['original']['values'] == [True]*5
+    summary = (output/'report.md').read_text(encoding='utf-8')
+    assert '## Scene outcome and setup facts' in summary
+    assert '| initial | /scene/outcome/cohort/player/dead | 1: 0; 2: 0; 3: 0; 4: 0; 5: 0 |' in summary
+    assert '| original | 3 | player | 103 |' in summary and '| meitou | 3 | player | 100 |' in summary
     drafts = list((output/'issues').glob('*.md'))
     assert not drafts
+
+
+def test_spawn_squad_absence_is_a_classified_presence_difference(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            squad = alias_map(target, index)['raiders']
+            value['squads'] = [row for row in value['squads'] if row['id'] != squad]
+            for row in value['characters']:
+                if row['squad_id'] == squad:
+                    row['squad_id'] = None
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    finding = rows_by_metric(report['findings'])['/scene/squads/raiders/present']
+    assert finding['classification'] == 'stable_divergent'
+    assert finding['original']['values'] == [True]*5 and finding['meitou']['values'] == [False]*5
+    initial = rows_by_metric(report['findings'], 'initial')['/scene/squads/raiders/present']
+    assert initial['classification'] == 'stable_identical'
+
+
+def test_aliased_ids_in_values_are_replaced_by_their_alias_label(tmp_path):
+    def tweak(target, index, point, value):
+        leader = alias_map(target, index)['raiders/leader.base/1']
+        by_alias(value, target, index, 'player')['order'] = dict(type='attack', target_id=leader, position=None)
+        bystander = next(row for row in value['characters'] if row['id'] == BYSTANDER)
+        bystander['order'] = dict(type='attack', target_id=PLAYER, position=None)
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    for checkpoint in ('initial', 'later'):
+        target = rows_by_metric(report['scene_outcome'], checkpoint)[
+            '/scene/outcome/characters/alias:player/order/target_id']
+        assert values(target, 'original') == values(target, 'meitou') == ['alias:raiders/leader.base']*5
+        other = rows_by_metric(report['background_metrics'], checkpoint)[
+            '/background/characters/' + BYSTANDER.replace('/', '~1') + '/order/target_id']
+        assert values(other, 'original') == values(other, 'meitou') == ['alias:player']*5
+    text = (output/'report.json').read_text(encoding='utf-8')
+    for target in ('original', 'meitou'):
+        for index in range(1, 6):
+            members, squad = spawned(target, index)
+            assert not any(json.dumps(identity) in text for identity in [*members, squad])
+
+
+def test_unknown_position_outside_the_cohorts_makes_the_intruder_count_not_comparable(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            next(row for row in value['characters'] if row['id'] == BYSTANDER)['position'] = None
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    intruders = rows_by_metric(report['findings'])['/scene/intruders/count']
+    assert intruders['classification'] == 'not_comparable'
+    assert intruders['original']['values'] == [0]*5 and intruders['meitou']['values'] == [None]*5
+
+
+def test_setup_hash_rule_matches_the_contract_on_the_shipped_scenario():
+    from oracle_scope import setup_hash
+    scenario = json.loads((Path(__file__).resolve().parents[1]/'scenarios'/'nature-bandit-ambush.json')
+                          .read_text(encoding='utf-8'))
+    assert setup_hash(scenario['setup']) == contract_hash(scenario['setup'])
+    assert setup_hash(SETUP_SCENARIO['setup']) == contract_hash(SETUP_SCENARIO['setup'])
+
+
+@pytest.mark.parametrize('mutation', ['unbound_alias', 'missing_alias', 'duplicate_alias', 'spawn_alias'])
+def test_receipt_members_must_cover_every_bound_character_alias_once(tmp_path, mutation):
+    original, meitou, _, report, output = scene_campaigns(tmp_path)
+    members = report['executions'][2]['setup']['members']
+    if mutation == 'unbound_alias':
+        members[0]['alias'] = 'raiders/grunt.base/9'
+    elif mutation == 'missing_alias':
+        members.pop()
+    elif mutation == 'duplicate_alias':
+        members.append(deepcopy(members[0]))
+    else:
+        members[-1]['alias'] = 'raiders'
+    save_report(meitou, report)
+    with pytest.raises(ValueError, match='member facts'):
+        compare_campaigns(original, meitou, output)
+    assert not output.exists()
 
 
 def test_only_the_declared_relation_pair_is_classified(tmp_path):
@@ -749,6 +856,8 @@ def test_alias_set_must_be_the_same_in_every_repetition(tmp_path):
     for member in execution['setup']['members']:
         if member['alias'] == 'player':
             member['alias'] = 'player/1'
+            second = dict(member, alias='player/2', id=BYSTANDER)
+    execution['setup']['members'].append(second)  # A complete receipt: one row per character alias.
     for capture in execution['checkpoints']:
         capture['setup']['alias_map'] = deepcopy(aliases)
     save_report(original, report)
@@ -792,13 +901,16 @@ def test_unknown_build_commit_is_rejected(tmp_path, scenario):
     assert not (tmp_path/'output').exists()
 
 
-@pytest.mark.parametrize('mutation', ['receipt_commit', 'receipt_known', 'inconsistent', 'malformed'])
+@pytest.mark.parametrize('mutation', ['receipt_commit', 'receipt_known', 'receipt_missing', 'inconsistent',
+                                    'malformed'])
 def test_build_commit_must_be_known_and_unchanged_between_repetitions(tmp_path, mutation):
     original, meitou, _, report, output = scene_campaigns(tmp_path)
     if mutation == 'receipt_commit':
         report['executions'][3]['setup']['build_commit'] = 'c'*40
     elif mutation == 'receipt_known':
         report['executions'][3]['setup'].update(build_commit='unknown', build_commit_known=False)
+    elif mutation == 'receipt_missing':
+        del report['executions'][3]['setup']['build_commit']
     elif mutation == 'inconsistent':
         report['build_commit_known'] = False
     else:
@@ -835,6 +947,8 @@ def test_scenario_01_campaigns_still_compare_with_or_without_a_recorded_commit(t
     assert reports['new']['meitou']['build_commit'] == 'd'*40
     for report in reports.values():
         assert 'background_metrics' not in report and 'scene_outcome' not in report
+    for folder in (old, new):
+        assert '## Scene outcome' not in (folder/'output'/'report.md').read_text(encoding='utf-8')
         metric = next(row for row in report['findings'] if row['metric'] == f'/characters/{FIRST}/position/0')
         assert metric['classification'] == 'stable_divergent'
     strip = lambda report: [(row['checkpoint'], row['metric'], row['classification']) for row in report['findings']]

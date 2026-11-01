@@ -58,7 +58,7 @@ Loader requires:
 - Verified control restoration for both campaigns.
 - Build commit: a campaign with `build_commit_known:false` (`"unknown"`) is
   refused, and so is a commit that changes between the report and any
-  repetition's setup receipt. A report without `build_commit` (written before
+  repetition's setup receipt; every setup receipt must carry `build_commit`. A report without `build_commit` (written before
   0.11) is refused for `scenario-0.2` and stays comparable for scenario 0.1,
   with the limitation `build commit not recorded`.
 - Scene setup (a `scenario-0.2` with a `setup` block): every repetition's
@@ -68,7 +68,10 @@ Loader requires:
   [scene setup](scene-setup.md#receipt-report-and-comparator)); its
   `alias_map` holds exactly the declared spawn and member aliases plus
   `player` or `player/1..n`, binds no character twice, has the same key set
-  in every repetition, and equals every capture's `setup.alias_map`.
+  in every repetition, and equals every capture's `setup.alias_map`; its
+  `members` hold exactly one row per bound character alias (not the spawn
+  squad aliases). The receipt's `steps` and `dumps` are not re-verified: the
+  comparator relies on `verdict:"passed"`.
 
 `completed` status alone is insufficient. Fingerprint does not cover assets,
 mods, their order or builds: retain these preconditions and build evidence
@@ -177,7 +180,15 @@ aliased character or squad reads `alias:<alias>` (members:
 `blood_after`, `rng_key`, without the engine id). The maxima are facts: there
 is no verdict on the fight outcome. `scene_scope` records the centre, radius,
 declared pairs and alias keys. The report's limitations state that outcome and
-background metrics are not classified.
+background metrics are not classified. `report.md` adds a short section with
+the outcome and background counts, the cohort outcome per repetition and the
+part maxima total per alias and repetition (at most 100 rows each; the full
+data stays in `report.json`).
+
+The two campaigns need not bind the same player alias form: one may bind
+`player` and the other `player/1..n`. The `player` cohort aggregates either
+form, so a different player count shows as a `/scene/cohort/player/size`
+finding and as outcome rows present on one side only.
 
 <a id="écarts-re_kenshi-et-sorties"></a>
 

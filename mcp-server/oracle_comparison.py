@@ -108,7 +108,7 @@ def campaign_build_commit(report, scenario):
     return commit
 
 
-def setup_receipt(execution, target, scope, expected_hash):
+def setup_receipt(execution, target, scope, expected_hash, commit):
     """Certify one execution's scene-setup receipt; return (alias map, member facts)."""
     receipt = execution.get('setup')
     if type(receipt) is not dict or receipt.get('receipt_format') != RECEIPT_FORMAT or receipt.get('target') != target:
@@ -119,11 +119,16 @@ def setup_receipt(execution, target, scope, expected_hash):
         raise ValueError('Scene setup hash differs from the hash of the scenario setup')
     if receipt.get('build_commit_known') is not True:
         raise ValueError('Comparison refuses a campaign whose build commit is unknown')
+    if receipt.get('build_commit') != commit:
+        raise ValueError('The scene-setup receipt build commit differs from the campaign build commit')
     alias_map = receipt.get('alias_map')
     validate_alias_map(alias_map, scope)
     members = receipt.get('members')
-    if type(members) is not list or any(type(row) is not dict or row.get('alias') not in alias_map for row in members):
-        raise ValueError('Scene-setup member facts must name bound aliases')
+    character_aliases = set(alias_map) - set(scope['spawns'])
+    if (type(members) is not list or any(type(row) is not dict for row in members)
+            or sorted(row.get('alias') for row in members if type(row.get('alias')) is str) != sorted(character_aliases)
+            or len(members) != len(character_aliases)):
+        raise ValueError('Scene-setup member facts must name every bound character alias exactly once')
     # Facts per alias; spawned engine ids stay out of the comparison report.
     facts = [{key: deepcopy(value) for key, value in row.items() if key != 'id'} for row in members]
     return alias_map, facts
@@ -183,7 +188,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
             seeds.append(seed)
         alias_map = None
         if scope is not None:
-            alias_map, facts = setup_receipt(execution, target, scope, expected_hash)
+            alias_map, facts = setup_receipt(execution, target, scope, expected_hash, commit)
             if alias_keys is None:
                 alias_keys = set(alias_map)
             elif set(alias_map) != alias_keys:
