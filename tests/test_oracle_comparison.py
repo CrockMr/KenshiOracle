@@ -953,3 +953,46 @@ def test_scenario_01_campaigns_still_compare_with_or_without_a_recorded_commit(t
         assert metric['classification'] == 'stable_divergent'
     strip = lambda report: [(row['checkpoint'], row['metric'], row['classification']) for row in report['findings']]
     assert strip(reports['old']) == strip(reports['new'])
+
+
+def runner_shape_without_commit(folder, target, scenario=None):
+    """A report as the 0.11 runner writes it when the probe reports no build_commit."""
+    report = campaign(folder, target, scenario=scenario)
+    report.update(report_format='0.1', scenario_schema=report['scenario']['schema_version'], state_schema='0.2',
+                  build_commit=None, build_commit_known=False, limitations=['build commit not recorded'])
+    for execution in report['executions']:
+        execution['load']['ready']['build_commit'] = None
+    save_report(folder, report)
+    return report
+
+
+def test_scenario_01_report_written_by_the_runner_without_a_commit_stays_comparable(tmp_path):
+    runner_shape_without_commit(tmp_path/'original', 'original')
+    runner_shape_without_commit(tmp_path/'meitou', 'meitou')
+    compare_campaigns(tmp_path/'original', tmp_path/'meitou', tmp_path/'output')
+    report = json.loads((tmp_path/'output'/'report.json').read_text(encoding='utf-8'))
+    assert 'build commit not recorded' in report['limitations']
+    assert report['original']['build_commit'] is None and report['meitou']['build_commit'] is None
+
+
+@pytest.mark.parametrize('mutation', ['known_true', 'no_limitation', 'execution_commit'])
+def test_scenario_01_null_commit_needs_consistent_evidence(tmp_path, mutation):
+    report = runner_shape_without_commit(tmp_path/'original', 'original')
+    campaign(tmp_path/'meitou', 'meitou', commit='d'*40)
+    if mutation == 'known_true':
+        report['build_commit_known'] = True
+    elif mutation == 'no_limitation':
+        report['limitations'] = []
+    else:
+        report['executions'][2]['load']['ready']['build_commit'] = 'e'*40
+    save_report(tmp_path/'original', report)
+    with pytest.raises(ValueError, match='build commit'):
+        compare_campaigns(tmp_path/'original', tmp_path/'meitou', tmp_path/'output')
+
+
+def test_null_commit_is_refused_for_scenario_02(tmp_path):
+    original, meitou, report, _, output = scene_campaigns(tmp_path)
+    report.update(build_commit=None, build_commit_known=False, limitations=['build commit not recorded'])
+    save_report(original, report)
+    with pytest.raises(ValueError, match='build_commit'):
+        compare_campaigns(original, meitou, output)

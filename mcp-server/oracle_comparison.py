@@ -79,10 +79,13 @@ def reference_proof(provenance, *, restored=False):
 
 
 def campaign_build_commit(report, scenario):
-    """The campaign's build commit, or None for a 0.1 report written before 0.11.
+    """The campaign's build commit, or None for a 0.1 campaign without a recorded commit.
 
-    The comparator refuses an unknown commit, a commit that changes between
-    repetitions, and a scenario-0.2 report without build commit evidence.
+    A 0.1 report without a commit is either written before 0.11 (no key) or
+    written by the 0.11 runner against a probe that reports none (null, known
+    false, limitation "build commit not recorded"). The comparator refuses an
+    unknown commit, a commit that changes between repetitions, and a
+    scenario-0.2 report without build commit evidence.
     """
     executions = report.get('executions') or []
     if 'build_commit' not in report:
@@ -90,6 +93,17 @@ def campaign_build_commit(report, scenario):
             raise ValueError('A scenario-0.2 campaign requires a report with build_commit (probe 0.11 or later)')
         return None
     commit, known = report['build_commit'], report.get('build_commit_known')
+    if commit is None:
+        limitations = report.get('limitations')
+        if scenario['schema_version'] != '0.1':
+            raise ValueError('A scenario-0.2 campaign requires a report with build_commit (probe 0.11 or later)')
+        if known is not False or type(limitations) is not list or COMMIT_NOT_RECORDED not in limitations:
+            raise ValueError('Campaign build commit evidence is inconsistent')
+        for execution in executions:
+            ready = ((execution.get('load') or {}).get('ready') or {}) if type(execution) is dict else {}
+            if type(ready) is dict and ready.get('build_commit') is not None:
+                raise ValueError('The build commit changed between repetitions')
+        return None
     if (type(commit) is not str or type(known) is not bool or known != (commit != 'unknown')
             or (known and not COMMIT.fullmatch(commit))):
         raise ValueError('Campaign build commit evidence is inconsistent')
