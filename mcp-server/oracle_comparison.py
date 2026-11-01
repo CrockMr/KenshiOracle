@@ -11,8 +11,8 @@ import re
 from oracle_compare import classify_metric, saved_metrics, saved_observations
 from oracle_identity import validate_origin_fingerprint
 from oracle_schema import canonical_bytes, validate_scenario
-from oracle_scope import (BACKGROUND_PREFIX, RECEIPT_FORMAT, background_baseline, cohorts,
-                          is_pair_relation_metric, labels, metric_scope, scene_metrics, scene_scope,
+from oracle_scope import (BACKGROUND_PREFIX, COMMIT_NOT_RECORDED, RECEIPT_FORMAT, background_baseline,
+                          cohorts, is_pair_relation_metric, labels, metric_scope, scene_metrics, scene_scope,
                           setup_hash, validate_alias_map)
 from oracle_scope import limitations as scope_limitations
 from oracle_traces import trace_metrics
@@ -23,7 +23,6 @@ from rekenshi_profile import REQUESTED_SETTINGS, validate_runtime_evidence
 CLASSES = ('stable_divergent', 'stable_identical', 'variable_outside_range',
            'known_deviation', 'variable_compatible', 'not_comparable')
 COMMIT = re.compile(r'[0-9a-f]{40}')
-COMMIT_NOT_RECORDED = 'build commit not recorded'
 
 
 def read_json(path, maximum=256 * 1024 * 1024):

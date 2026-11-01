@@ -1093,6 +1093,25 @@ def test_setup_block_runs_between_speed_and_origin_and_records_the_receipt(tmp_p
     assert guard_for(cfg)['restore_required'] is False
 
 
+# The setup_hash of scenarios/nature-bandit-ambush.json; a change to the block or to the rule moves it.
+NATURE_SETUP_HASH = 'fa89565ed70bc7a3c49c3bc424aa59e6ba9d15b12dda66c56095f27320d0b3e2'
+
+
+def test_runner_and_comparator_share_one_setup_hash_rule():
+    import oracle_scope
+    import oracle_setup
+    assert oracle_setup.setup_hash is oracle_scope.setup_hash
+    assert oracle_setup.RECEIPT_FORMAT == oracle_scope.RECEIPT_FORMAT == 'scene-setup-0.1'
+    scenario = json.loads((Path(__file__).resolve().parents[1] / 'scenarios' / 'nature-bandit-ambush.json')
+                          .read_text(encoding='utf-8'))
+    assert oracle_scope.setup_hash(scenario['setup']) == NATURE_SETUP_HASH
+    # Key order does not matter; any value change does.
+    assert oracle_scope.setup_hash(dict(reversed(list(scenario['setup'].items())))) == NATURE_SETUP_HASH
+    changed = json.loads(json.dumps(scenario['setup']))
+    changed['relations'][0]['a_to_b'] = -61
+    assert oracle_scope.setup_hash(changed) != NATURE_SETUP_HASH
+
+
 def test_setup_actions_resolve_aliases_and_record_resolved_params(tmp_path):
     fake, cfg, saved = setup_fixture(tmp_path)
     run_setup(fake, cfg)

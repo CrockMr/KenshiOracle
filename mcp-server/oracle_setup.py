@@ -19,15 +19,14 @@ from oracle_engine_profile import EngineProfileError, check_player, configured_p
 from oracle_identity import validate_origin_fingerprint
 from oracle_origins import SavedOriginError, read_saved_origins
 from oracle_runner import ScenarioError, write_json
+from oracle_scope import COMMIT_NOT_RECORDED, RECEIPT_FORMAT, setup_hash
 from probe import ProbeError
 
 
-RECEIPT_FORMAT = 'scene-setup-0.1'
 CAPABILITY = 'scene_setup'
 SETTLE_CALENDAR_SECONDS = 33
 CENSUS_LIMIT = 100
 COMMIT_UNKNOWN = 'commit unknown'
-COMMIT_NOT_RECORDED = 'build commit not recorded'
 _COMMIT = re.compile(r'[0-9a-f]{40}')
 _SQUAD_SIZE_KEY = b'squad size multiplier'
 _DECIMAL = re.compile(rb'[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?')
@@ -37,12 +36,6 @@ _RNG_KEY = re.compile(r'[0-9]+')
 
 class SetupFailure(ScenarioError):
     """A scene-setup check failed; the receipt names the step."""
-
-
-def setup_hash(setup):
-    """Lowercase SHA-256 of the canonical setup block, as the comparator recomputes it."""
-    text = json.dumps(setup, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
-    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
 def build_commit(ping, limitations, *, required=False):

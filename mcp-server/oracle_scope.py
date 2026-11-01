@@ -23,7 +23,9 @@ import re
 from oracle_compare import character_fields
 
 
+# Shared by the runner (oracle_setup) and the comparator, so both lanes apply one rule.
 RECEIPT_FORMAT = 'scene-setup-0.1'
+COMMIT_NOT_RECORDED = 'build commit not recorded'
 SCENE_PREFIX = '/scene/'
 OUTCOME_PREFIX = '/scene/outcome/'
 BACKGROUND_PREFIX = '/background'
@@ -38,7 +40,7 @@ def escaped(value):
 
 
 def setup_hash(setup):
-    """The receipt's ``setup_hash`` rule, recomputed from ``scenario['setup']``."""
+    """The receipt's ``setup_hash`` rule: the runner writes it and the comparator recomputes it."""
     text = json.dumps(setup, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
