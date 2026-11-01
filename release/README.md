@@ -1,9 +1,11 @@
 # Preparing KenshiProbe v0.11.0
 
 This is the scene-setup probe release. Do not publish the older v0.9.5 or
-v0.10.0 packages for the current `main`. Live validation of scene setup is
-pending, and no reviewed 0.11.0 DLL hash is recorded yet: the packager refuses
-to package until one is. The native version comes from
+v0.10.0 packages for the current `main`. The reviewed 0.11.0 DLL hashes are
+recorded in the packager, which refuses any other binary. The reviewed
+`KenshiProbe.dll` reports, through `ping`, the commit it was built from; the
+release commit can be a later commit whose native inputs are identical, as
+`source-manifest.json` and the source binding verify. The native version comes from
 [`plugin/Version.h`](../plugin/Version.h); both shared-state 0.1 and 0.2 remain
 supported. The [release notes](v0.11.0-notes.md) describe the validation scope.
 

@@ -26,10 +26,11 @@ ROOT = Path(__file__).resolve().parent.parent
 VERSION = '0.11.0'
 TAG = 'v' + VERSION
 OUTPUT = ROOT / 'dist' / TAG
-# No 0.11.0 binary has been reviewed yet: packaging refuses until these are set.
+# Reviewed 0.11.0 binaries. KenshiProbe.dll was built from a clean tree and
+# reports its build commit through ping; the bootstrap embeds no commit.
 DLL_HASHES = {
-    'KenshiProbe.dll': None,
-    'KenshiProbeBootstrap.dll': None,
+    'KenshiProbe.dll': '18910490b028e6b84ec1c9556e4a7839df84ed8a71119d2f88f9fe923f130e7e',
+    'KenshiProbeBootstrap.dll': '60087b2c4579047f29e3403803b4e0de4fd47abc3b2ee46ddba0c1502a016e98',
 }
 MAIN_ZIP = 'KenshiProbe-' + TAG + '-win-x64.zip'
 
@@ -246,7 +247,8 @@ def bind_source(repository: str, revision: str) -> None:
             raise ValueError('Release input differs from corresponding source commit: ' + name)
     source_url = 'https://github.com/' + repository + '/tree/' + commit
     template = (ROOT / 'release' / (TAG + '-notes.md')).read_text(encoding='utf-8')
-    notes = template.replace('{{SOURCE_URL}}', source_url).replace('](../docs/', '](' + source_url + '/docs/')
+    # Every repository-relative link must point into the bound source revision.
+    notes = template.replace('{{SOURCE_URL}}', source_url).replace('](../', '](' + source_url + '/')
     (OUTPUT / 'release-notes.md').write_text(notes,
                                            encoding='utf-8', newline='\n')
     info = json.loads((OUTPUT / 'build-info.json').read_text(encoding='utf-8'))
