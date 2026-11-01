@@ -23,12 +23,13 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = '0.10.0'
+VERSION = '0.11.0'
 TAG = 'v' + VERSION
 OUTPUT = ROOT / 'dist' / TAG
+# No 0.11.0 binary has been reviewed yet: packaging refuses until these are set.
 DLL_HASHES = {
-    'KenshiProbe.dll': 'ecdd5b2c40bf4f4aed710bced08f2e1f3656bb7189804e7dd0a77bad6af382ae',
-    'KenshiProbeBootstrap.dll': '4ebad2758da1b8db29bae0adf67fefd22b075d3dc9c467292fc15953a230c1e7',
+    'KenshiProbe.dll': None,
+    'KenshiProbeBootstrap.dll': None,
 }
 MAIN_ZIP = 'KenshiProbe-' + TAG + '-win-x64.zip'
 
@@ -276,6 +277,8 @@ def prepare() -> None:
     binary_audit = {}
     for name, expected_hash in DLL_HASHES.items():
         data = (ROOT / 'plugin' / 'build' / 'Release' / name).read_bytes()
+        if expected_hash is None:
+            raise ValueError('No reviewed ' + TAG + ' hash is recorded for ' + name)
         if digest(data) != expected_hash:
             raise ValueError(name + ' does not match the reviewed ' + TAG + ' binary')
         binary_audit[name] = check_pe(data, name)
@@ -294,7 +297,7 @@ def prepare() -> None:
     manifest = dict(hash_algorithm='sha256', text_normalization='CRLF to LF', files=source_inputs())
     write_json(OUTPUT / 'source-manifest.json', manifest)
     write_json(OUTPUT / 'build-info.json', dict(version=TAG, configuration='Release', platform='x64',
-               toolset='v100', binary_origin='reviewed phase 2 release build; not rebuilt by packaging',
+               toolset='v100', binary_origin='reviewed release build; not rebuilt by packaging',
                source_commit=None, source_url=None, source_binding='pending_publication_commit',
                symbols_published=False, symbols_reason='raw PDBs may contain source-machine paths',
                sha256=checksums, mod_descriptor=inspect_mod(empty_mod())))

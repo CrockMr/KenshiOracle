@@ -21,6 +21,9 @@ passed again from the clean public checkout: **1,975 passed, 25 skipped** in
 **106.70 seconds**. Six portable native scripts passed from another working
 directory, with 344 counted assertions plus the JSON parser checks. These
 build, unit and packaging checks add no new real-game loading claim.
+The current probe release is [0.11.0](../release/v0.11.0-notes.md); it adds
+scene setup, whose live validation is pending, and changes none of the
+results below.
 
 **Time note.** The "two minutes" and "ten minutes" checkpoints below
 (scenario `at` 120 and 600) are game **calendar** time, not simulated or real

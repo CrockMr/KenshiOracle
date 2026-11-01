@@ -1,6 +1,7 @@
-KenshiProbe 0.10.0 - Windows x64 / Visual C++ 2010 (v100)
+KenshiProbe 0.11.0 - Windows x64 / Visual C++ 2010 (v100)
 
-Validated with Kenshi 1.0.65 Steam, RE_Kenshi 0.3.5 and KenshiLib 0.5.0.
+Earlier releases were validated with Kenshi 1.0.65 Steam, RE_Kenshi 0.3.5 and
+KenshiLib 0.5.0; the 0.11.0 scene setup is not yet validated in the game.
 Install RE_Kenshi and its matching KenshiLib from their official distribution
 first. This archive does not contain the game, SDK libraries or saved games.
 
@@ -12,7 +13,7 @@ first. This archive does not contain the game, SDK libraries or saved games.
    mods/KenshiProbe/KenshiProbeBootstrap.dll
 3. Enable KenshiProbe in the launcher's Mods tab. The included .mod is newly
    generated metadata with zero records; it contains no original game data.
-4. Start through RE_Kenshi. Confirm plugin_version 0.10.0 with ping and the
+4. Start through RE_Kenshi. Confirm plugin_version 0.11.0 with ping and the
    [KenshiOracle] startup line in RE_Kenshi's log.
 5. Follow docs/first-run.md in the corresponding source for Python 3.11+,
    configuration, the watchdog, snapshots and scenario commands.

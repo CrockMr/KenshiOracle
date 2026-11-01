@@ -1,9 +1,11 @@
-# Preparing KenshiProbe v0.10.0
+# Preparing KenshiProbe v0.11.0
 
-This is the phase 2 probe release. Do not publish the old v0.9.5 package for
-the current `main`. The native version comes from
+This is the scene-setup probe release. Do not publish the older v0.9.5 or
+v0.10.0 packages for the current `main`. Live validation of scene setup is
+pending, and no reviewed 0.11.0 DLL hash is recorded yet: the packager refuses
+to package until one is. The native version comes from
 [`plugin/Version.h`](../plugin/Version.h); both shared-state 0.1 and 0.2 remain
-supported. The [release notes](v0.10.0-notes.md) describe the validation scope.
+supported. The [release notes](v0.11.0-notes.md) describe the validation scope.
 
 ## Build and package locally
 
@@ -27,11 +29,11 @@ file. A synthetic installation verifies extraction, manifest targets and exact
 restoration of a previous synthetic mod folder. This is a layout check, not a
 real-game loading test.
 
-Generated files stay under ignored `dist/v0.10.0/`:
+Generated files stay under ignored `dist/v0.11.0/`:
 
 | File | Purpose |
 | --- | --- |
-| `KenshiProbe-v0.10.0-win-x64.zip` | Two DLLs, manifest, zero-record descriptor, installation notice and GPLv3 |
+| `KenshiProbe-v0.11.0-win-x64.zip` | Two DLLs, manifest, zero-record descriptor, installation notice and GPLv3 |
 | `SHA256SUMS` | Archive, extracted DLL and companion-record SHA-256 hashes |
 | `source-manifest.json` | Exact native/packaging inputs, with CRLF normalized to LF |
 | `build-info.json` | Version, toolset, binary hashes and corresponding source commit |
@@ -67,9 +69,9 @@ the clean public repository, whose `origin` is already configured:
 ```powershell
 $SourceCommit = (git rev-parse HEAD).Trim()
 git push origin main
-git tag -a v0.10.0 $SourceCommit -m "KenshiProbe v0.10.0"
-git push origin refs/tags/v0.10.0
-gh release create v0.10.0 --verify-tag --title "KenshiProbe v0.10.0" --notes-file dist/v0.10.0/release-notes.md dist/v0.10.0/KenshiProbe-v0.10.0-win-x64.zip dist/v0.10.0/SHA256SUMS dist/v0.10.0/source-manifest.json dist/v0.10.0/build-info.json dist/v0.10.0/binary-audit.json dist/v0.10.0/installation-verification.json dist/v0.10.0/release-notes.md
+git tag -a v0.11.0 $SourceCommit -m "KenshiProbe v0.11.0"
+git push origin refs/tags/v0.11.0
+gh release create v0.11.0 --verify-tag --title "KenshiProbe v0.11.0" --notes-file dist/v0.11.0/release-notes.md dist/v0.11.0/KenshiProbe-v0.11.0-win-x64.zip dist/v0.11.0/SHA256SUMS dist/v0.11.0/source-manifest.json dist/v0.11.0/build-info.json dist/v0.11.0/binary-audit.json dist/v0.11.0/installation-verification.json dist/v0.11.0/release-notes.md
 ```
 
 GitHub CLI must be installed and authenticated for the final command. The tag
