@@ -8,8 +8,10 @@ import base64
 from copy import deepcopy
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import stat
 import time
@@ -25,6 +27,8 @@ from rekenshi_profile import ReKenshiProfile
 
 
 SUPPORTED_REK_HASH = '58900f1678e4eef407fb19d12527fd8c1d3dbc5bc09903c088dc52a9134a04ee'
+SQUAD_SIZE_KEY = b'squad size multiplier'
+_DECIMAL = re.compile(rb'^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$')
 
 
 def file_hash(path):
@@ -74,6 +78,37 @@ def preserve_game_settings(path, journal):
         handle.flush()
         os.fsync(handle.fileno())
     temporary.replace(journal)
+    return raw
+
+
+def squad_size_facts(raw):
+    """Select the squad-size line from preserved settings bytes (docs/scene-setup.md).
+
+    Exactly one matching line is required; none, several or an unparsable value raise.
+    """
+    lines = (raw or b'').split(b'\n')
+    if lines[0].startswith(b'\xef\xbb\xbf'):
+        lines[0] = lines[0][3:]
+    matches = []
+    for line in lines:
+        if line.endswith(b'\r'):
+            line = line[:-1]
+        key, separator, value = line.partition(b'=')
+        if separator and key.strip().lower() == SQUAD_SIZE_KEY:
+            matches.append((line, value.strip()))
+    if len(matches) != 1:
+        raise RuntimeError('Preserved game settings need exactly one "Squad size multiplier=" line, found '
+                           + str(len(matches)))
+    line, value = matches[0]
+    multiplier = float(value) if _DECIMAL.fullmatch(value) else None
+    if multiplier is None or not math.isfinite(multiplier):
+        raise RuntimeError('Preserved "Squad size multiplier=" line has no finite decimal value')
+    try:
+        text = line.decode('utf-8')
+    except UnicodeError as exc:
+        raise RuntimeError('Preserved "Squad size multiplier=" line is not UTF-8') from exc
+    return dict(source='settings.cfg', multiplier=multiplier, line=text,
+                sha256=hashlib.sha256(line).hexdigest(), path='settings.cfg')
 
 
 def restore_game_settings(path, journal, process_state):
@@ -244,6 +279,7 @@ async def run_original_reference(scenario, cfg, repeat=None):
     settings = Path(cfg['working_directory']) / 'settings.cfg'
     settings_journal = runtime / 'reference-game-settings.json'
     settings_captured = False
+    engine_facts = None
 
     def module_evidence(evidence, _expected):
         if Path(evidence.get('module_path', '')).resolve() != module or file_hash(module) != SUPPORTED_REK_HASH:
@@ -256,8 +292,12 @@ async def run_original_reference(scenario, cfg, repeat=None):
         if journal.exists() and json.loads(journal.read_text(encoding='utf-8')).get('restore_required'):
             raise RuntimeError('An interrupted reference run requires restore-reference first')
         try:
-            preserve_game_settings(settings, settings_journal)
+            preserved = preserve_game_settings(settings, settings_journal)
             settings_captured = True
+            if scenario.get('setup') is not None:
+                # Scene setup needs the multiplier line the original reads; fail before launch.
+                engine_facts = dict(squad_size=squad_size_facts(preserved))
+                lifecycle['engine_facts'] = engine_facts
             profile.capture()
             captured = True
             profile.prepare()
@@ -276,7 +316,8 @@ async def run_original_reference(scenario, cfg, repeat=None):
             if controls is not None:
                 lifecycle['camera_preparation'] = await setup.restore_controls(controls)
             result = await execute_scenario(scenario, cfg, repeat=repeat, client=game.client,
-                                            reference_profile=profile)
+                                            reference_profile=profile,
+                                            **({} if engine_facts is None else dict(engine_facts=engine_facts)))
         except BaseException as exc:
             lifecycle['error'] = type(exc).__name__ + ': ' + str(exc)
             raise
