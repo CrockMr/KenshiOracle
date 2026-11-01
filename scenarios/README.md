@@ -1,12 +1,14 @@
 # Original Kenshi scenarios
 
-These JSON files describe experiments using [scenario format 0.1](../schema/scenario.schema.json). They contain no saves, game data or game assets. JSON validation establishes contract compliance; it establishes neither the existence of the save nor successful execution in Kenshi.
+These JSON files describe experiments using [scenario format 0.1](../schema/scenario.schema.json) or [scenario-0.2](../schema/scenario-0.2.schema.json). They contain no saves, game data or game assets. JSON validation establishes contract compliance; it establishes neither the existence of the save nor successful execution in Kenshi.
 
 | Example | Required local save | Status |
 | --- | --- | --- |
 | [trajet-escouade.json](trajet-escouade.json) | `KenshiProbe_test`, the squad of player characters Ryers and Okada | Three final repetitions on 0.9.3, nine canonical dumps, verified restoration and three remapped identities retained in 9/9 captures. [Evidence and limits](../docs/oracle-phase1-delivery.md). |
 | [petite-bataille.json](petite-bataille.json) | `KenshiProbe_test_scene_20261028T022539600581Z`, the historical copy containing `KenshiProbeFight_1_0` and `KenshiProbeFight_1_1` | Three final repetitions on 0.9.3, nine canonical dumps and verified restoration. Populations, injuries and tasks vary. [Evidence and limits](../docs/oracle-phase1-delivery.md). |
 | [ville-calme.json](ville-calme.json) | `ville-calme`, provided by the user | Three successful repetitions with the delivered 0.9.5 DLL, nine dumps and verified two-stage camera restoration. The common saved cohort contains 80 characters initially and 92 at 600 s in the 0.9.3 series. [Summary and evidence](../docs/oracle-phase1-delivery.md). |
+
+Scenario-0.2 adds an optional `setup` block (spawn a squad, settle one simulated second, fully heal, then set faction relations both ways, without saving) and runner-resolved aliases in `issue_order`: `character_alias` and `target_alias` name `player`, `player/<n>` or `<spawn alias>/<template>/<k>`, `squad_alias` names a spawn alias, and the runner substitutes the ids before the call. Its version is the distinct name `scenario-0.2`, never a bare `0.2`, which is the state schema. The contract, refusals and runner steps are in [scene setup](../docs/scene-setup.md). The schema and its validator are **Verified** offline by tests; the runner does not execute the setup block yet, so a scenario-0.2 file with `setup` is not runnable in this version.
 
 Keep source saves outside Git, available to the local installation used by the watchdog. Copy an example before adapting it and replace `save` with the exact name of that local copy, without a path. The runner reloads this save before each repetition and after the experiment; it cannot reconstruct an initially unsaved game.
 
