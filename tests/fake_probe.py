@@ -118,6 +118,9 @@ class FakeProbe(FakePlugin):
         # Scene setup (docs/scene-setup.md). Tests may change these attributes.
         self.capabilities = ['scene_setup']
         self.build_commit = '0123456789abcdef0123456789abcdef01234567'
+        # The contract's ping value. The fake's own schema_version and dump_state
+        # stay 0.1; tests that need another answer set this attribute.
+        self.state_schema_version = '0.2'
         self.autosave_enabled = False
         self.autosave_configured = False
         self.player_faction_id = 'fixture-faction'
@@ -383,7 +386,7 @@ class FakeProbe(FakePlugin):
                         saved_origins_prepared=self._origin_committed is not None,
                         saved_origins=self._origin_state(), capabilities=list(self.capabilities),
                         world_readiness=self._world_readiness(), world_mutated=self.world_mutated,
-                        build_commit=self.build_commit, state_schema_version='0.2')
+                        build_commit=self.build_commit, state_schema_version=self.state_schema_version)
         if command == 'resolve_saved_handles':
             self._origin_keys(params, ('ids',))
             ids = self._origin_ids(params['ids'])
@@ -772,9 +775,17 @@ class FakeProbe(FakePlugin):
                     blood=self._blood.get(row['id'], 100.0),
                     dead=row['state'] == 'dead', unconscious=row['state'] == 'unconscious')
 
-    def _setup_row(self, row):
-        return dict(id=row['id'], template_id=self._templates.get(row['id'], 'fixture-character'),
-                    faction_id=row['faction_id'], squad_id=row['squad_id'],
+    def _setup_bindings(self):
+        """Current to canonical ids, as dump_state reports them after a saved-origin refresh."""
+        if not self.require_saved_origins or self._origin_committed is None:
+            return {}
+        _, self._origin_bindings = self._build_origin_snapshot(self._origin_committed, self._origin_bindings)
+        return self._origin_bindings
+
+    def _setup_row(self, row, bindings):
+        return dict(id=bindings.get(row['id'], row['id']),
+                    template_id=self._templates.get(row['id'], 'fixture-character'),
+                    faction_id=row['faction_id'], squad_id=bindings.get(row['squad_id'], row['squad_id']),
                     position=[float32(v) for v in row['position']])
 
     def _setup(self, command, params):
@@ -798,11 +809,11 @@ class FakeProbe(FakePlugin):
             center = self._position(params, 'center')
             radius = float32(self._number(params, 'radius', 0.1, 20000))
             limit = self._number(params, 'limit', 1, 100, integer=True)
-            rows = []
+            rows, bindings = [], self._setup_bindings()
             for row in self.state['characters']:
                 distance = math.hypot(row['position'][0]-center[0], row['position'][2]-center[2])
                 if distance <= radius:
-                    rows.append(dict(self._setup_row(row), is_player=row['faction_id'] == self.player_faction_id,
+                    rows.append(dict(self._setup_row(row, bindings), is_player=row['faction_id'] == self.player_faction_id,
                                      dead=row['state'] == 'dead', unconscious=row['state'] == 'unconscious',
                                      distance_xz=distance))
             rows.sort(key=lambda row: (row['distance_xz'], row['id'].encode('utf-8')))
@@ -833,6 +844,7 @@ class FakeProbe(FakePlugin):
             if not any(math.hypot(row['position'][0]-position[0], row['position'][2]-position[2]) <= 2000
                        for row in self._players() if row['state'] != 'dead'):
                 raise self._bad('spawn position must be within 2000 units (horizontal) of a player character')
+            bindings = self._setup_bindings()
             world_before = self._setup_world()
             self.world_mutated = True
             self._setup_serial += 1
@@ -856,7 +868,7 @@ class FakeProbe(FakePlugin):
             return dict(template_id=template, faction_id=faction, position=position, max_count=count,
                         permanent=permanent, size_multiplier=1.0, squad_type='roaming',
                         returned_squad_id=squad if members else None,
-                        returned_members=[dict(self._setup_row(row), dead=False, unconscious=False,
+                        returned_members=[dict(self._setup_row(row, bindings), dead=False, unconscious=False,
                                                medical=self._medical(row)) for row in members],
                         new_loaded_count=len(members), new_loaded_truncated=len(members) > 32, rng_key=None,
                         saved=False, world_mutated=True, gate=self._gate(),

@@ -233,7 +233,11 @@ async def setup_heal(character_id: str, target: str = 'original') -> dict:
 
 
 def with_setup_opt_in(send):
-    """Add allow_setup to the load request only; other session calls are unchanged."""
+    """Add allow_setup to the load request only; other session calls are unchanged.
+
+    Relies on OracleSession.load sending load_save through self.call; replace it with
+    an allow_setup argument once OracleSession.load accepts one.
+    """
     async def call_with_opt_in(command, **params):
         if command == 'load_save':
             params['allow_setup'] = True
@@ -265,6 +269,8 @@ async def load_save(name: str, lock_edge: bool = False, wait: bool = True,
     if allow_setup:
         session.call = with_setup_opt_in(session.call)
     loaded = await session.load(name, lock_edge=lock_edge, seed=seed)
+    # A missing echo is detected only after the load: the save is loaded, but the
+    # gate is not known to be open, so the tool raises instead of returning.
     if allow_setup and loaded['accepted'].get('allow_setup') is not True:
         raise ProbeError('Probe did not accept allow_setup; update the probe')
     return dict(loaded['accepted'], ready=loaded['ready'])

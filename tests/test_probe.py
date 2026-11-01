@@ -917,3 +917,100 @@ def test_fake_setup_refusal_crosses_the_wire_with_the_contract_code_and_message(
                 await client.call('setup_heal', **HEAL)
             assert str(raised.value) == str(dict(code='not_allowed', message=G2_TEXT))
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('params', [dict(name='bad/name'), dict(name='Synthetic save', allow_setup='yes')])
+def test_fake_load_refused_before_acceptance_changes_nothing(tmp_path, params):
+    fake = setup_fake(tmp_path)
+    asyncio.run(fake.call('setup_heal', **HEAL))
+    before = asyncio.run(fake.call('setup_info'))
+    with pytest.raises(ProbeError, match='invalid_params'):
+        asyncio.run(fake.call('load_save', pause_on_ready=True, **params))
+    after = asyncio.run(fake.call('setup_info'))
+    assert after['gate'] == before['gate'] and after['gate']['allow_setup'] is True
+    assert after['world_mutated'] is True and after['probe_loaded_save'] == 'Synthetic save'
+
+
+def test_fake_gate_epoch_changes_on_every_load(tmp_path):
+    fake = setup_fake(tmp_path)
+    epochs = [asyncio.run(fake.call('setup_info'))['gate']['epoch']]
+    asyncio.run(fake.call('load_save', name='Synthetic save', pause_on_ready=True, allow_setup=True))
+    epochs.append(asyncio.run(fake.call('setup_info'))['gate']['epoch'])
+    fake.simulate_ui_load()
+    epochs.append(asyncio.run(fake.call('setup_info'))['gate']['epoch'])
+    assert len(set(epochs)) == 3
+
+
+def test_fake_setup_info_and_census_reply_with_contract_keys(tmp_path):
+    fake = setup_fake(tmp_path)
+    info = asyncio.run(fake.call('setup_info'))
+    assert set(info) == {'gate', 'current_save', 'probe_loaded_save', 'world_mutated', 'autosave_enabled',
+                         'autosave_configured', 'player_save_requests_blocked', 'squad_size'}
+    assert set(info['gate']) == {'open', 'probe_loaded_save', 'allow_setup', 'epoch', 'refusal',
+                                 'mutation_refusal'}
+    census = asyncio.run(fake.call('setup_area_census', center=[0, 0, 0], radius=10, limit=10))
+    assert set(census) == {'center', 'radius', 'characters', 'count', 'truncated', 'alive_count', 'dead_count',
+                           'unconscious_count', 'player_count', 'gate', 'world'}
+    assert set(census['world']) == {'elapsed_seconds', 'paused'}
+    assert all(set(row) == {'id', 'template_id', 'faction_id', 'squad_id', 'position', 'is_player', 'dead',
+                            'unconscious', 'distance_xz'} for row in census['characters'])
+
+
+def test_fake_mirrored_relation_changes_only_the_pair_cells(tmp_path):
+    fake = setup_fake(tmp_path)
+    fake.mirror_relations = True
+    fake.extra_factions['fixture-third'] = 'Fixture third'
+    relation = asyncio.run(fake.call('setup_set_relation', **RELATION))
+    assert relation['changed_cells'] == 2 and relation['faction_count'] == 3
+    assert {(row['source_id'], row['target_id']) for row in relation['changes']} == {
+        ('fixture-rival', 'fixture-faction'), ('fixture-faction', 'fixture-rival')}
+    assert relation['target_to_source']['after']['relation'] == -60
+
+
+def remapped_origin_fake(tmp_path):
+    """Current handles differ from the saved origins that dump_state reports."""
+    from fake_probe import FakeProbe, sample_state
+    state = sample_state()
+    saved = [row['id'] for row in state['characters']] + [state['squads'][0]['id']]
+    current = ['char:A', 'char:B', 'squad:fixture']
+    for index, character in enumerate(state['characters']):
+        character.update(id=current[index], squad_id=current[2])
+    state['squads'][0].update(id=current[2], members=current[:2], leader_id=current[0])
+    fake = FakeProbe(tmp_path/'native', state, require_saved_origins=True,
+                     save_root=tmp_path/'synthetic-sources', origin_aliases=dict(zip(saved, current)))
+    asyncio.run(fake.call('load_save', name='Synthetic save', pause_on_ready=True, allow_setup=True))
+    return fake, saved
+
+
+def test_fake_setup_requires_prepared_origins_except_for_relations(tmp_path):
+    fake, _ = remapped_origin_fake(tmp_path)
+    for command, params in [('setup_area_census', dict(center=[0, 0, 0], radius=10, limit=10)),
+                            ('setup_spawn_squad', SPAWN), ('setup_heal', HEAL)]:
+        refusal(fake, command, params, 'origin_context_required', 'scene setup requires prepared saved origins')
+    assert fake.world_mutated is False
+    assert asyncio.run(fake.call('setup_set_relation', **RELATION))['changed_cells'] == 1
+
+
+def test_fake_census_reports_the_canonical_dump_state_ids(tmp_path):
+    fake, saved = remapped_origin_fake(tmp_path)
+    async def prepare():
+        pending = await fake.call('begin_saved_origins', save_name='Synthetic save',
+                                  source_fingerprint='sha256:' + 'a' * 64, count=len(saved))
+        await fake.call('add_saved_origins', token=pending['token'], ids=saved)
+        await fake.call('commit_saved_origins', token=pending['token'])
+        await fake.call('dump_state', filename='state.json')
+    asyncio.run(prepare())
+    dumped = json.loads((fake.output_directory/'state.json').read_text(encoding='utf-8'))
+    census = asyncio.run(fake.call('setup_area_census', center=[0, 0, 0], radius=10, limit=10))
+    assert {(row['id'], row['squad_id']) for row in census['characters']} == {
+        (row['id'], row['squad_id']) for row in dumped['characters']} == {(saved[0], saved[2]), (saved[1], saved[2])}
+    spawned = asyncio.run(fake.call('setup_spawn_squad', **SPAWN))
+    assert {row['squad_id'] for row in spawned['returned_members']} == {spawned['returned_squad_id']}
+    assert asyncio.run(fake.call('setup_heal', **HEAL))['character_id'] == HEAL['character_id']
+
+
+def test_fake_state_schema_version_can_be_chosen_by_a_test(tmp_path):
+    fake = setup_fake(tmp_path)
+    fake.state_schema_version = '0.1'
+    status = asyncio.run(fake.call('ping'))
+    assert status['state_schema_version'] == '0.1' and status['schema_version'] == '0.1'
