@@ -373,6 +373,9 @@ class OracleSession:
         # Validate the derived reference before publishing any correction.
         check_controls(paused_reference, paused_reference)
         require_control_world(await self.ping(), paused=True)
+        # The native commit calibrates from the live center, not from the
+        # accepted sample. Only reads separate them: nothing here may re-attach
+        # the follow, so the pivot cannot return to its provisional value.
         response = await self.call('commit_scene_control', token=token)
         if not isinstance(response, dict) or response.get('restored') is not True:
             raise ScenarioError('Probe did not commit prepared camera controls')
@@ -549,6 +552,15 @@ def check_controls(expected, actual, *, camera_lock=False):
             raise ScenarioError('Restoration mismatch: '+key+' (max difference '+str(delta)+')')
 
 
+# Observed engine pivot right after a follow is attached, before it settles to
+# the followed character's own pivot (settled Y 9.8 and 10.9 observed).
+PROVISIONAL_FOLLOW_PIVOT = (0, 10, 0)
+
+
+def pivot_difference(reference, scene):
+    return max(abs(a-b) for a, b in zip(reference, follow_pivot(scene)))
+
+
 def follow_pivot(scene, source='held sample'):
     """The engine's follow pivot: center - follow position - additional offset.
 
@@ -574,7 +586,10 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
     This reads controls after the native release, without retrying a mutation or
     claiming that future user input cannot move the camera. With a reference
     pivot, every accepted held sample must also show that settled follow pivot;
-    a provisional pivot restarts the window like any other mismatch.
+    a provisional pivot restarts the window like any other mismatch. A capture
+    that follows a character records a pivot only once it is reported, constant
+    across the window, and not the provisional one: the reference must be
+    settled, or no later restoration could match it.
     """
     timeout = min(10.0, positive_timeout(timeout, 'control stability timeout'))
     stable_seconds = max(.5, positive_timeout(stable_seconds, 'control stability window'))
@@ -635,10 +650,20 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
             if expected is not None and anchor is not None:
                 check_controls(anchor, scene, camera_lock=held)
             if pivot is not None:
-                delta = max(abs(a-b) for a, b in zip(pivot, follow_pivot(scene)))
+                delta = pivot_difference(pivot, scene)
                 if delta > .05:
                     raise ScenarioError('Restoration mismatch: camera follow pivot (max difference '
                                         + str(delta) + ')')
+            if expected is None and not held and scene.get('camera_follow_id') is not None:
+                captured = follow_pivot(scene, 'captured controls')
+                if pivot_difference(PROVISIONAL_FOLLOW_PIVOT, scene) <= .05:
+                    raise ScenarioError('Restoration mismatch: provisional camera follow pivot '
+                                        + str(captured))
+                if anchor is not None:
+                    delta = pivot_difference(follow_pivot(anchor), scene)
+                    if delta > .05:
+                        raise ScenarioError('Restoration mismatch: camera follow pivot (max difference '
+                                            + str(delta) + ')')
             frame = scene.get('frame')
             if type(frame) is not int or frame < 0:
                 raise ScenarioError('Control observation has no valid frame identity')

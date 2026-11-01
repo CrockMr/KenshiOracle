@@ -253,3 +253,168 @@ def test_restoration_limits_are_unchanged(tmp_path, monkeypatch):
                                          observations=rows, timeout=100,
                                          pivot=[0, 0, 0]))
     assert 10 <= clock.value < 10.2
+
+
+def scenario():
+    return dict(schema_version='0.1', name='synthetic-run', save='Synthetic save',
+                speed=1, repeat=1, actions=[], checkpoints=[dict(at=0, name='only')])
+
+
+def followed_without_settle(cfg, offset=(0, 0, 0), pivot=PIVOT, settle=None):
+    """Like followed(), with a chosen additional follow offset at capture."""
+    fake = FakeProbe(cfg['oracle_output'], camera_tracking_base_offset=pivot,
+                     camera_pivot_settle_frames=settle)
+    for state in (fake.state, fake.initial_state):
+        state['characters'][0]['position'] = list(ACTOR)
+    fake.camera_follow_id = fake.state['characters'][0]['id']
+    fake.camera_follow_offset = list(offset)
+    fake._camera_tracking_active = True
+    return fake, asyncio.run(fake.call('get_scene_state'))
+
+
+@pytest.mark.parametrize('settle', [12, LATE])
+def test_capture_waits_for_the_settled_pivot_before_arming(tmp_path, monkeypatch, settle):
+    # The load before the run has just attached the follow: the capture window
+    # must not record the provisional pivot, or no restoration could match it.
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    fake, original = followed(cfg, None)
+    fake._camera_pivot_settles_at = fake.frame + settle
+    result = asyncio.run(execute_scenario(scenario(), cfg, client=fake))
+    assert result['restored'] is True
+    report = json.loads(Path(result['report']).read_text(encoding='utf-8'))
+    capture = report['control_capture_observations']
+    provisional = [row for row in capture if 'scene' in row and follow_pivot(row['scene'])[1] == 10]
+    assert provisional and not any(row['accepted'] for row in provisional)
+    assert all('provisional camera follow pivot' in row['error'] for row in provisional)
+    accepted = [row for row in capture if row['accepted']]
+    assert accepted and all(follow_pivot(row['scene']) == pytest.approx(PIVOT) for row in accepted)
+    assert report['restoration']['reference_follow_pivot'] == pytest.approx(PIVOT)
+    assert fake.camera_follow_offset == pytest.approx([0, 0, 0])
+    assert report['restoration']['scene']['camera_center'] == pytest.approx(original['camera_center'])
+
+
+def test_capture_on_a_never_settling_pivot_is_refused_before_arming(tmp_path, monkeypatch):
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    fake, _ = followed(cfg, None)
+    fake._camera_pivot_settles_at = NEVER
+    with pytest.raises(ScenarioError, match='did not stabilize.*provisional camera follow pivot'):
+        asyncio.run(execute_scenario(scenario(), cfg, client=fake))
+    assert not (Path(cfg['runtime']) / 'oracle-restoration.json').exists()
+    assert fake.loads == []
+    assert not {'pause', 'prepare_scene_control', 'commit_scene_control'} & set(fake.calls)
+
+
+def test_capture_without_a_follow_pivot_is_refused_before_arming(tmp_path, monkeypatch):
+    # The native omits the pivot when the followed character is not loaded, and
+    # probes older than 0.9.5 never report it: no restorable reference exists.
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    fake, _ = followed(cfg, None)
+    monkeypatch.setattr(fake, '_camera_follow_diagnostics', lambda: dict(
+        camera_follow_offset=[0, 0, 0], camera_follow_position=None, camera_follow_center_delta=None))
+    with pytest.raises(ScenarioError, match='follow pivot of the captured controls'):
+        asyncio.run(execute_scenario(scenario(), cfg, client=fake))
+    assert not (Path(cfg['runtime']) / 'oracle-restoration.json').exists()
+    assert fake.loads == []
+    assert not {'pause', 'prepare_scene_control', 'commit_scene_control'} & set(fake.calls)
+
+
+@pytest.mark.parametrize('axis', [0, 2])
+def test_held_pivot_off_on_x_or_z_is_rejected(tmp_path, monkeypatch, axis):
+    for drift, accepted in ((.04, True), (.06, False)):
+        stability_clock(monkeypatch)
+        cfg = config(tmp_path / str(drift))
+        fake, original = followed(cfg, None)
+        fake.camera_tracking_base_offset[axis] += drift
+        if accepted:
+            result = asyncio.run(OracleSession(cfg, fake).restore_controls(original))
+            assert result['scene']['camera_center'] == pytest.approx(original['camera_center'])
+        else:
+            with pytest.raises(ScenarioError, match='camera follow pivot'):
+                asyncio.run(OracleSession(cfg, fake).restore_controls(original))
+            assert 'commit_scene_control' not in fake.calls
+
+
+@pytest.mark.parametrize('axis', [0, 1, 2])
+def test_pivot_limit_is_exactly_005(tmp_path, monkeypatch, axis):
+    # Engine pivot exactly zero; only the reference's recorded pivot differs, so
+    # the comparison sees exactly 0.05 (accepted) or 0.0501 (rejected).
+    for drift, accepted in ((.05, True), (.0501, False)):
+        stability_clock(monkeypatch)
+        cfg = config(tmp_path / str(drift))
+        fake, original = followed_without_settle(cfg, pivot=[0, 0, 0])
+        assert follow_pivot(original) == [0, 0, 0]
+        original['camera_follow_center_delta'][axis] = drift
+        if accepted:
+            result = asyncio.run(OracleSession(cfg, fake).restore_controls(original))
+            assert result['scene']['camera_center'] == pytest.approx(original['camera_center'])
+        else:
+            with pytest.raises(ScenarioError, match='camera follow pivot'):
+                asyncio.run(OracleSession(cfg, fake).restore_controls(original))
+            assert 'commit_scene_control' not in fake.calls
+
+
+def test_pivot_that_settles_then_goes_provisional_again_restarts_the_window(tmp_path, monkeypatch):
+    # Not monotonic: settled for 4 frames after the prepare, provisional for the
+    # next 6, then settled. No provisional sample may enter the accepted window.
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    fake, original = followed(cfg, None)
+    attached = {}
+
+    def attach(phase):
+        attached.setdefault(phase, fake.frame)
+
+    def pivot():
+        value = list(fake.camera_tracking_base_offset)
+        if 0 in attached and 1 not in attached and attached[0] + 4 <= fake.frame < attached[0] + 10:
+            value[1] = 10
+        return value
+
+    monkeypatch.setattr(fake, '_attach_camera_follow', attach)
+    monkeypatch.setattr(fake, '_camera_pivot', pivot)
+    baseline = []
+    asyncio.run(OracleSession(cfg, fake).restore_controls(original, baseline_observations=baseline))
+    provisional = [row for row in baseline if 'scene' in row and follow_pivot(row['scene'])[1] == 10]
+    assert provisional and not any(row['accepted'] for row in provisional)
+    assert all(row['error'].startswith('Restoration mismatch: camera') for row in provisional)
+    first = baseline.index(provisional[0])
+    assert any(row['accepted'] for row in baseline[:first])
+    assert fake.camera_follow_offset == pytest.approx([0, 0, 0])
+    assert fake.calls.count('commit_scene_control') == 1
+
+
+def test_reference_with_a_nonzero_follow_offset_gates_on_delta_minus_offset(tmp_path, monkeypatch):
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    fake, original = followed_without_settle(cfg, offset=[0, .4, 0], settle=(LATE, 0))
+    assert original['camera_follow_center_delta'] == pytest.approx([0, 11.3, 0])
+    assert follow_pivot(original) == pytest.approx(PIVOT)
+    baseline = []
+    result = asyncio.run(OracleSession(cfg, fake).restore_controls(original, baseline_observations=baseline))
+    accepted = [row for row in baseline if row['accepted']]
+    assert accepted and all(follow_pivot(row['scene']) == pytest.approx(PIVOT) for row in accepted)
+    assert any('camera follow pivot' in row.get('error', '') for row in baseline)
+    assert result['reference_follow_pivot'] == pytest.approx(PIVOT)
+    assert fake.camera_follow_offset == pytest.approx([0, .4, 0])
+    assert result['scene']['camera_center'] == pytest.approx(original['camera_center'])
+    assert fake.calls.count('commit_scene_control') == 1
+
+
+def test_old_journal_without_a_pivot_stays_pending(tmp_path, monkeypatch):
+    # A journal armed before probe 0.9.5 has no pivot: it is refused before any
+    # camera mutation and stays pending for a manual decision.
+    stability_clock(monkeypatch)
+    cfg = config(tmp_path)
+    fake, original = followed(cfg, None)
+    for key in ('camera_follow_offset', 'camera_follow_position', 'camera_follow_center_delta'):
+        del original[key]
+    path = write_guard(cfg, original)
+    with pytest.raises(ScenarioError, match='follow pivot of the reference controls'):
+        asyncio.run(restore_interrupted_scenario(cfg, client=fake))
+    assert not {'prepare_scene_control', 'commit_scene_control'} & set(fake.calls)
+    pending = json.loads(path.read_text(encoding='utf-8'))
+    assert pending['restore_required'] is True
+    assert 'follow pivot of the reference controls' in pending['recovery_attempt']['error']
