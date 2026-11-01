@@ -3,6 +3,7 @@ import asyncio
 from copy import deepcopy
 import hashlib
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -924,3 +925,444 @@ def test_failed_discrete_check_after_resume_preserves_recovery_guard(tmp_path, m
     assert attempt['baseline_observations'] and attempt['observations']
     assert 'camera_zoom' in attempt['error']
     assert fake.calls.count('prepare_scene_control') == fake.calls.count('commit_scene_control') == 1
+
+
+# Scene setup (docs/scene-setup.md, Runner steps) -------------------------------
+
+SETUP_SAVE = 'oracle-base-nature'  # Pins exist for this save name only (Q5).
+PLAYER_POSITION = [100, 7.25, 200]
+SETTINGS_LINE = 'Squad size multiplier=1'
+MEMBER_ALIASES = ['raiders/fixture-leader/1', 'raiders/fixture-member/1',
+                  'raiders/fixture-member/2', 'raiders/fixture-member/3']
+SETUP_MUTATIONS = ('setup_spawn_squad', 'setup_heal', 'setup_set_relation')
+
+
+class SetupProbe(FakeProbe):
+    """The W3 fake with per-command hooks that alter the synthetic world or a reply."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hooks = {}
+        self.advance_hook = None
+
+    async def call(self, command, **params):
+        result = await super().call(command, **params)
+        hook = self.hooks.get(command)
+        return result if hook is None else (hook(self, params, result) or result)
+
+    def _advance(self, seconds):
+        super()._advance(seconds)
+        if self.advance_hook is not None:
+            self.advance_hook(self)
+
+    def spawned(self):
+        return [row for row in self.state['characters'] if row['id'].startswith('local:fake-spawn:')]
+
+
+def squad_facts(line=SETTINGS_LINE):
+    raw = line.encode('utf-8')
+    return dict(squad_size=dict(source='engine_facts', multiplier=float(line.partition('=')[2]), line=line,
+                                sha256=hashlib.sha256(raw).hexdigest(), path='settings.cfg'))
+
+
+def setup_fixture(tmp_path, *, y_after=7.25, fingerprint=None, save=SETUP_SAVE):
+    from oracle_origins import read_saved_origins
+    from test_oracle_origins import handle, record, write_source
+    root = tmp_path / 'synthetic-saves'
+    root.mkdir()
+    records = [record(30, 'collection', instances=[(f'instance-{index}', [f'character-{index}'])
+                                                   for index in range(2)])]
+    records += [record(36, f'character-{index}', int=handle(slot=index + 1, object_serial=1000 + index))
+                for index in range(2)]
+    write_source(root, platoons={'synthetic.platoon': records}, name=save)
+    manifest = read_saved_origins(root, save)
+    saved = [row['saved_id'] for row in manifest['characters'][:2]] + [manifest['squads'][0]['saved_id']]
+    raw = ['char:player', 'char:bystander', 'squad:player']
+    state = sample_state()
+    for index, character in enumerate(state['characters']):
+        character.update(id=raw[index], squad_id=raw[2])
+    state['characters'][0]['position'] = list(PLAYER_POSITION)
+    state['characters'][1].update(faction_id='fixture-bystander', position=[110, 0, 200])
+    state['factions'].append(dict(id='fixture-bystander', name='Fixture bystander'))
+    state['squads'][0].update(id=raw[2], members=raw[:2], leader_id=raw[0])
+    fake = SetupProbe(tmp_path / 'native', state, require_saved_origins=True,
+                      save_root=root, origin_aliases=dict(zip(saved, raw)))
+    profile = tmp_path / 'engine-profile.json'
+    profile.write_text(json.dumps(dict(profile_format='engine-profile-0.1', entries=[dict(
+        target='original', save=SETUP_SAVE, source_fingerprint=fingerprint or manifest['fingerprint'],
+        seed=None, player=dict(xz=[100, 200], y_before_settle=7.25, y_after_settle=y_after, decimals=3),
+        evidence='synthetic')])), encoding='utf-8')
+    cfg = dict(runtime=str(tmp_path / 'runtime'), runs=str(tmp_path / 'runs'),
+               oracle_output=str(fake.output_directory), timeout=2, load_timeout=3,
+               run_until_timeout=2, scenario_timeout=20, engine_profile=str(profile))
+    return fake, cfg, saved
+
+
+def setup_scenario(repeat=1):
+    return dict(
+        schema_version='scenario-0.2', name='synthetic-setup', save=SETUP_SAVE, speed=1, repeat=repeat,
+        setup=dict(
+            preflight=dict(scene_center=[100, 200], scene_radius=1500, squad_size_multiplier=1,
+                           player_faction_id='fixture-faction', expect_absent_factions_in_scene=['fixture-rival']),
+            moves=[],
+            spawns=[dict(alias='raiders', squad_template='fixture-squad', count=4, faction_id='fixture-rival',
+                         at=dict(offset_from_player=[30, 0]),
+                         expected_templates={'fixture-leader': 1, 'fixture-member': 3})],
+            settle=dict(sim_seconds=1), heal='all_scene_characters',
+            relations=[dict(a='fixture-rival', b='fixture-faction', a_to_b=-60, b_to_a=-60)]),
+        actions=[dict(at=0, command='issue_order',
+                      params=dict(type='attack', squad_alias='raiders', target_alias='player')),
+                 dict(at=2, command='pause', params=dict(paused=True))],
+        checkpoints=[dict(at=0, name='initial'), dict(at=2, name='later')])
+
+
+def run_setup(fake, cfg, value=None, facts=None):
+    async def run():
+        scenario_value = setup_scenario() if value is None else value
+        await OracleSession(cfg, fake).load(scenario_value['save'], lock_edge=False)
+        await fake.call('set_game_speed', speed=1, preserve_pause=True)
+        fake.calls.clear()
+        fake.requests.clear()
+        return await execute_scenario(scenario_value, cfg, client=fake,
+                                      engine_facts=squad_facts() if facts is None else facts)
+    return asyncio.run(run())
+
+
+def test_setup_block_runs_between_speed_and_origin_and_records_the_receipt(tmp_path):
+    from oracle_setup import setup_hash
+    fake, cfg, saved = setup_fixture(tmp_path)
+    value = setup_scenario()
+    result = run_setup(fake, cfg, value)
+    report = report_for(cfg)
+    assert result['status'] == report['status'] == 'completed' and result['restored'] is True
+    assert report['build_commit'] == fake.build_commit and report['build_commit_known'] is True
+    assert report['limitations'] == ['war flag not observable on original']
+    execution = report['executions'][0]
+    receipt = execution['setup']
+    folder = Path(report['output']) / '1'
+    assert json.loads((folder / 'setup' / 'setup.json').read_text(encoding='utf-8')) == receipt
+    assert receipt['receipt_format'] == 'scene-setup-0.1' and receipt['verdict'] == 'passed'
+    assert receipt['failure'] is None and receipt['target'] == 'original'
+    assert receipt['setup_hash'] == setup_hash(value['setup'])
+    assert receipt['build_commit'] == fake.build_commit and receipt['build_commit_known'] is True
+    assert list(receipt['alias_map']) == ['player', 'raiders', *MEMBER_ALIASES]
+    assert receipt['alias_map']['player'] == saved[0]
+    assert receipt['alias_map']['raiders'].startswith('local:fake-squad:')
+    assert receipt['squad_size'] == squad_facts()['squad_size']
+    assert [row['alias'] for row in receipt['members']] == ['player', *MEMBER_ALIASES]
+    member = receipt['members'][1]
+    assert member['part_max'] == {'fixture-head:neither': 100}
+    assert (member['blood_before'], member['blood_after'], member['rng_key']) == (80.0, 100.0, None)
+    settle = receipt['settle']
+    assert (settle['start_seconds'], settle['end_seconds'], settle['calendar_seconds_run']) == (216000, 216033, 33)
+    assert settle['sim_seconds'] == 1 and settle['calendar_seconds_requested'] == 33
+    assert settle['player_before'] == settle['player_after'] == PLAYER_POSITION
+    assert settle['pin'] == settle['observed'] == PLAYER_POSITION
+    assert list(receipt['dumps']) == ['S3b', 'S5', 'S6']
+    for name, dump in receipt['dumps'].items():
+        assert dump['path'] == 'setup/' + name + '.json'
+        assert hashlib.sha256((folder / dump['path']).read_bytes()).hexdigest() == dump['sha256']
+    assert [step['step'] for step in receipt['steps']
+            if step['request']['command'] in SETUP_MUTATIONS] == ['S2'] + ['S5'] * 5 + ['S4'] * 2
+    assert all(step['verdict'] == 'passed' for step in receipt['steps'])
+    commands = [row['request']['command'] for row in receipt['steps']]
+    assert commands.count('ping') == commands.count('setup_info') - 1 >= 10  # S0 also reads setup_info.
+    # Call order: reload, speed preparation, S0..S6, then the origin clock.
+    calls = fake.calls[fake.calls.index('commit_saved_origins'):]
+    order = calls.index('issue_order')
+    origin = max(index for index, command in enumerate(calls[:order]) if command == 'get_clock')
+    assert set(calls[origin + 1:order]) == {'ping'}
+    assert calls.index('set_game_speed') < calls.index('setup_info')
+    assert max(index for index, command in enumerate(calls[:origin]) if command.startswith('setup_')) < origin
+    work = [command for command in calls[:origin] if command in SETUP_MUTATIONS + ('run_until', 'dump_state')]
+    assert work == (['setup_spawn_squad', 'run_until', 'dump_state'] + ['setup_heal'] * 5
+                    + ['dump_state', 'setup_set_relation', 'setup_set_relation', 'dump_state'])
+    # Checkpoint 0 is the post-setup world.
+    assert execution['initial_clock']['elapsed_seconds'] == 216033
+    assert [capture['actual_at'] for capture in execution['checkpoints']] == [0, 2]
+    for capture in execution['checkpoints']:
+        assert capture['setup']['setup_hash'] == receipt['setup_hash']
+        assert capture['setup']['alias_map'] == receipt['alias_map']
+        census = capture['setup']['census']
+        assert (census['count'], census['truncated'], census['player_count']) == (6, False, 1)
+    initial = load_state(execution['checkpoints'][0]['path'])
+    relations = {(row['source_id'], row['target_id']): row['value'] for row in initial['relations']}
+    assert relations == {('fixture-faction', 'fixture-rival'): -60, ('fixture-rival', 'fixture-faction'): -60}
+    # The save is loaded with the opt-in for the repetition only, never for cleanup.
+    loads = [row['params'] for row in fake.requests if row['command'] == 'load_save']
+    assert [params.get('allow_setup') for params in loads] == [True, None]
+    assert guard_for(cfg)['restore_required'] is False
+
+
+def test_setup_actions_resolve_aliases_and_record_resolved_params(tmp_path):
+    fake, cfg, saved = setup_fixture(tmp_path)
+    run_setup(fake, cfg)
+    execution = report_for(cfg)['executions'][0]
+    alias_map = execution['setup']['alias_map']
+    attack = execution['actions'][0]
+    assert attack['request'] == setup_scenario()['actions'][0]
+    assert attack['resolved_params'] == dict(type='attack', squad_id=alias_map['raiders'], target_id=saved[0])
+    assert attack['result']['affected_characters'] == 4
+    sent = next(row['params'] for row in fake.requests if row['command'] == 'issue_order')
+    assert sent == attack['resolved_params']
+    assert execution['actions'][1]['resolved_params'] == dict(paused=True)
+
+
+def test_alias_resolution_refuses_unbound_or_mismatched_aliases():
+    from oracle_setup import resolve_aliases
+    alias_map = {'player': 'p', 'raiders': 's', 'raiders/t/1': 'm'}
+    assert resolve_aliases(dict(type='attack', character_alias='raiders/t/1', target_alias='player'),
+                           alias_map) == dict(type='attack', character_id='m', target_id='p')
+    with pytest.raises(ScenarioError, match='not bound'):
+        resolve_aliases(dict(type='attack', squad_alias='raiders', target_alias='raiders/t/2'), alias_map)
+    with pytest.raises(ScenarioError, match='does not name'):
+        resolve_aliases(dict(type='attack', squad_alias='player', target_alias='raiders/t/1'), alias_map)
+    with pytest.raises(ScenarioError, match='does not name'):
+        resolve_aliases(dict(type='attack', squad_alias='raiders', target_alias='raiders'), alias_map)
+
+
+def test_setup_variability_keys_spawned_ids_by_alias(tmp_path):
+    from oracle_runner import flatten_state
+    from oracle_setup import alias_ids
+    fake, cfg, _ = setup_fixture(tmp_path)
+    run_setup(fake, cfg, setup_scenario(repeat=2))
+    report = report_for(cfg)
+    first, second = (execution['setup']['alias_map'] for execution in report['executions'])
+    assert first.keys() == second.keys() and first['raiders'] != second['raiders']
+    for name in ('initial', 'later'):
+        result = report['variability'][name]
+        assert result['repeatability_evaluated'] and result['variable_field_count'] == 0
+        paths = result['stable_paths']
+        assert '/characters/alias:raiders~1fixture-leader~11/state' in paths
+        assert '/squads/alias:raiders/leader_id' in paths
+        assert not any('local:fake' in path for path in paths)
+    later = load_state(report['executions'][0]['checkpoints'][1]['path'])
+    flat = flatten_state(later, aliases=alias_ids(first))
+    assert flat['/squads/alias:raiders/leader_id'] == 'alias:raiders/fixture-leader/1'
+    assert flat['/squads/alias:raiders/members/0'] == 'alias:raiders/fixture-leader/1'
+    assert flat['/characters/alias:raiders~1fixture-member~12/order/target_id'] == 'alias:player'
+    assert not any('local:fake' in str(item) for item in flat.values())
+
+
+def test_unknown_build_commit_is_accepted_with_its_limitation(tmp_path):
+    fake, cfg, _ = setup_fixture(tmp_path)
+    fake.build_commit = 'unknown'
+    assert run_setup(fake, cfg)['status'] == 'completed'
+    report = report_for(cfg)
+    assert report['build_commit'] == 'unknown' and report['build_commit_known'] is False
+    assert 'commit unknown' in report['limitations']
+    receipt = report['executions'][0]['setup']
+    assert receipt['build_commit_known'] is False and 'commit unknown' in receipt['limitations']
+
+
+def test_report_records_build_commit_without_setup_and_never_sends_allow_setup(tmp_path):
+    cfg = config(tmp_path)
+    fake = FakeProbe(cfg['oracle_output'])
+    value = scenario()
+    value['repeat'] = 1
+    asyncio.run(execute_scenario(value, cfg, client=fake))
+    report = report_for(cfg)
+    assert report['build_commit'] == fake.build_commit and report['build_commit_known'] is True
+    assert report['limitations'] == []
+    assert all('allow_setup' not in row['params'] for row in fake.requests if row['command'] == 'load_save')
+    assert 'setup_info' not in fake.calls and 'setup' not in report['executions'][0]
+
+
+def test_changed_build_commit_between_repetitions_fails_the_run(tmp_path):
+    cfg = config(tmp_path)
+
+    class CommitChangingProbe(FakeProbe):
+        async def call(self, command, **params):
+            if command == 'load_save':
+                self.build_commit = 'f' * 40
+            return await super().call(command, **params)
+    fake = CommitChangingProbe(cfg['oracle_output'])
+    value = scenario()
+    value['repeat'] = 1
+    with pytest.raises(ScenarioError, match='build_commit changed'):
+        asyncio.run(execute_scenario(value, cfg, client=fake))
+    assert report_for(cfg)['restoration']['verified'] is True
+
+
+@pytest.mark.parametrize('case,match', [
+    ('capability absent', 'capability scene_setup'),
+    ('missing pin', 'No engine profile entry'),
+    ('unpinned save', 'No engine profile pins exist'),
+    ('no engine facts', 'engine_facts'),
+    ('no build commit', 'build_commit'),
+])
+def test_setup_refusals_before_the_guard_is_armed(tmp_path, case, match):
+    fake, cfg, _ = setup_fixture(tmp_path, fingerprint='sha256:' + 'b' * 64 if case == 'missing pin' else None,
+                                 save='another-save' if case == 'unpinned save' else SETUP_SAVE)
+    facts = None
+    value = setup_scenario()
+    if case == 'capability absent':
+        fake.capabilities = []
+    elif case == 'unpinned save':
+        value['save'] = 'another-save'
+    elif case == 'no engine facts':
+        facts = {}
+    elif case == 'no build commit':
+        fake.build_commit = None
+    with pytest.raises(ScenarioError, match=match):
+        run_setup(fake, cfg, value, facts=facts)
+    assert set(fake.calls) <= {'ping'}
+    assert fake.loads == [value['save']]  # The preload only.
+    assert not (Path(cfg['runtime']) / 'oracle-restoration.json').exists()
+    assert report_for(cfg)['status'] == 'failed'
+
+
+def _unconscious_member(fake):
+    fake.spawned()[0]['state'] = 'unconscious'
+
+
+def _move_player(fake):
+    fake.state['characters'][0]['position'][0] += 1
+
+
+def _partial_heal(fake, params, result):
+    result['after']['parts'][0]['stun'] = 5
+
+
+def _heal_moves_relation(fake, params, result):
+    fake._write_relation('fixture-bystander', 'fixture-faction', -10)
+
+
+def _extra_relation_cell(fake, params, result):
+    fake._write_relation('fixture-bystander', 'fixture-rival', -5)
+    result['changes'].append(dict(source_id='fixture-bystander', target_id='fixture-rival',
+                                  relation_before=0, relation_after=-5, is_enemy_before=False,
+                                  is_enemy_after=False, at_war_before=None, at_war_after=None))
+    result['changed_cells'] += 1
+
+
+def _kill_member(fake, params, result):
+    if params['source_id'] == 'fixture-faction':
+        fake.spawned()[1]['state'] = 'dead'
+
+
+def _restart(fake, params, result):
+    fake.instance_id = 'replacement-instance'
+
+
+@pytest.mark.parametrize('step,case,match', [
+    ('S0', 'autosave enabled', 'autosave'),
+    ('S0', 'autosave configured', 'autosave'),
+    ('S0', 'multiplier mismatch', 'multiplier'),
+    ('S0', 'intruder', 'expected-absent faction'),
+    ('S0', 'Y mismatch before settle', 'pin before settle'),
+    ('S2', 'count mismatch', 'returned 3 members'),
+    ('S2', 'template mismatch', 'template plan differs'),
+    ('S2', 'instance restart', 'restarted'),
+    ('S2', 'native rng_key', 'rng_key'),
+    ('S3', 'Y mismatch', 'pin after settle'),
+    ('S3', 'X/Z mismatch', 'pin after settle'),
+    ('S3b', 'unconscious', 'unconscious before heal'),
+    ('S5', 'heal not full', 'heal not full'),
+    ('S5', 'heal moved a relation', 'heal moved a relation'),
+    ('S4', 'extra relation cell', 'outside the pair'),
+    ('S4', 'not hostile', 'does not read hostile'),
+    ('S6', 'alias dead', 'dead or unconscious after setup'),
+])
+def test_each_setup_step_failure_restores_without_retry(tmp_path, step, case, match):
+    fake, cfg, _ = setup_fixture(tmp_path, y_after=7.5 if case == 'Y mismatch' else 7.25)
+    facts = None
+    if case == 'autosave enabled':
+        fake.autosave_enabled = True
+    elif case == 'autosave configured':
+        fake.autosave_configured = True
+    elif case == 'multiplier mismatch':
+        facts = squad_facts('Squad size multiplier=2')
+    elif case == 'intruder':
+        fake.initial_state['characters'][1]['faction_id'] = 'fixture-rival'
+    elif case == 'Y mismatch before settle':
+        fake.initial_state['characters'][0]['position'][1] = 7.5
+    elif case == 'count mismatch':
+        fake.squad_templates['fixture-squad'] = ['fixture-leader'] + ['fixture-member'] * 2
+    elif case == 'template mismatch':
+        fake.squad_templates['fixture-squad'] = ['fixture-leader'] * 2 + ['fixture-member'] * 2
+    elif case == 'instance restart':
+        fake.hooks['setup_spawn_squad'] = _restart
+    elif case == 'native rng_key':
+        fake.hooks['setup_spawn_squad'] = lambda probe, params, result: dict(result, rng_key='7')
+    elif case == 'X/Z mismatch':
+        fake.advance_hook = _move_player
+    elif case == 'unconscious':
+        fake.advance_hook = _unconscious_member
+    elif case == 'heal not full':
+        fake.hooks['setup_heal'] = _partial_heal
+    elif case == 'heal moved a relation':
+        fake.hooks['setup_heal'] = _heal_moves_relation
+    elif case == 'extra relation cell':
+        fake.hooks['setup_set_relation'] = _extra_relation_cell
+    elif case == 'not hostile':
+        fake.hostility_threshold = -70
+    elif case == 'alias dead':
+        fake.hooks['setup_set_relation'] = _kill_member
+    with pytest.raises(ScenarioError, match=match) as caught:
+        run_setup(fake, cfg, facts=facts)
+    assert 'Scene setup ' + step + ' failed' in str(caught.value)
+    report = report_for(cfg)
+    execution = report['executions'][0]
+    receipt = execution['setup']
+    assert report['status'] == execution['status'] == 'failed'
+    assert receipt['verdict'] == 'failed' and receipt['failure']['step'] == step
+    assert re.search(match, receipt['failure']['message'])
+    folder = Path(report['output']) / '1'
+    assert json.loads((folder / 'setup' / 'setup.json').read_text(encoding='utf-8')) == receipt
+    assert execution['checkpoints'] == [] and 'issue_order' not in fake.calls
+    # No retry: each mutation went at most once per planned use, and nothing followed the failure.
+    assert fake.calls.count('setup_spawn_squad') <= 1 and fake.calls.count('setup_heal') <= 5
+    assert fake.calls.count('setup_set_relation') <= 2 and fake.calls.count('run_until') <= 1
+    failed = [row for row in receipt['steps'] if row['verdict'] == 'failed']
+    assert len(failed) <= 1 and (not failed or failed[0] == receipt['steps'][-1])
+    assert all(row['step'] == step for row in failed)
+    if case == 'instance restart':
+        assert 'restarted' in report['restoration_error'] and guard_for(cfg)['restore_required'] is True
+        assert fake.loads == [SETUP_SAVE, SETUP_SAVE]
+    else:
+        assert report['restoration']['verified'] is True and guard_for(cfg)['restore_required'] is False
+        assert fake.loads == [SETUP_SAVE] * 3  # Preload, the repetition, then cleanup.
+        cleanup = [row['params'] for row in fake.requests if row['command'] == 'load_save'][-1]
+        assert 'allow_setup' not in cleanup and fake.world_mutated is False
+
+
+def test_meitou_squad_size_and_rng_key_follow_the_target_shape():
+    from oracle_setup import SetupFailure, _Block
+    block = _Block(None, setup_scenario(), '.', None, None)
+    block.target = 'meitou'
+    line = 'Squad size multiplier=1'
+    reported = dict(source='settings.cfg', multiplier=1.0, line=line,
+                    sha256=hashlib.sha256(line.encode('utf-8')).hexdigest(), path='settings.cfg')
+    assert block.squad_size_facts(dict(squad_size=reported)) == dict(reported, source='setup_info')
+    for wrong in (dict(reported, source='default'), dict(reported, source='user_config'), None,
+                  dict(reported, sha256='0' * 64), dict(reported, line=None, sha256=None),
+                  dict(reported, multiplier=2.0)):
+        with pytest.raises(SetupFailure):
+            block.squad_size_facts(dict(squad_size=wrong))
+    two = 'Squad size multiplier=2'
+    with pytest.raises(SetupFailure, match='multiplier'):
+        block.squad_size_facts(dict(squad_size=dict(reported, line=two, multiplier=2.0,
+                                                    sha256=hashlib.sha256(two.encode('utf-8')).hexdigest())))
+    # The original never reads setup_info for the multiplier: engine facts are the only source.
+    block.target = 'original'
+    with pytest.raises(SetupFailure, match='missing'):
+        block.squad_size_facts(dict(squad_size=reported))
+
+
+def test_meitou_setup_pins_resolve_from_the_save_source_for_every_seed(tmp_path):
+    from oracle_setup import prepare_setup
+    fake, cfg, _ = setup_fixture(tmp_path)
+    profile = json.loads(Path(cfg['engine_profile']).read_text(encoding='utf-8'))
+    entry = profile['entries'][0]
+    meitou = dict(entry, target='meitou', seed=None)
+    profile['entries'] = [meitou, dict(meitou, seed='1', evidence='seed one')]
+    Path(cfg['engine_profile']).write_text(json.dumps(profile), encoding='utf-8')
+    ping = dict(target='meitou', capabilities=['scene_setup'], save_root=fake.save_root)
+    fingerprint, entries = asyncio.run(prepare_setup(OracleSession(cfg, fake), setup_scenario(), cfg, ping,
+                                                     None, ['0', '1'], None))
+    assert fingerprint == entry['source_fingerprint']
+    assert [row['evidence'] for row in entries] == ['synthetic', 'seed one']
+    assert fake.calls == []
+    with pytest.raises(ScenarioError, match='No engine profile entry'):
+        asyncio.run(prepare_setup(OracleSession(cfg, fake), setup_scenario(), cfg, dict(ping, target='original'),
+                                  'sha256:' + 'c' * 64, [None], squad_facts()))

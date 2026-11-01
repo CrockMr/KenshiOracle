@@ -148,8 +148,28 @@ class OracleSession:
         self.schema_parameter = '0.2' in supported
         return result
 
-    async def load(self, name, lock_edge=True, seed=None):
+    def source_root(self, status):
+        """The save folder root that the probe reports, resolved like the game resolves it."""
+        native_root = status.get('save_root')
+        if type(native_root) is not str or not native_root:
+            raise ScenarioError('Probe has no authoritative save_root for saved identities')
+        source_root = Path(native_root)
+        if not source_root.is_absolute():
+            working = self.cfg.get('working_directory')
+            if working is None and self.cfg.get('executable'):
+                working = str(Path(self.cfg['executable']).parent)
+            if working is None:
+                raise ScenarioError('Relative SDK save_root requires the game working_directory')
+            source_root = Path(working)/source_root
+        configured = self.cfg.get('save_root')
+        if configured is not None and Path(configured).resolve() != source_root.resolve():
+            raise ScenarioError('Configured save_root differs from the public SDK save_root')
+        return source_root
+
+    async def load(self, name, lock_edge=True, seed=None, allow_setup=False):
         save_name(name)
+        if type(allow_setup) is not bool:
+            raise ValueError('allow_setup must be boolean')
         deadline = time.monotonic() + positive_timeout(self.cfg.get('load_timeout', 120), 'load_timeout')
 
         async def bounded(factory, label):
@@ -172,20 +192,7 @@ class OracleSession:
         manifest = None
         source_root = None
         if before.get('saved_origins_required') is True or meitou:
-            native_root = before.get('save_root')
-            if type(native_root) is not str or not native_root:
-                raise ScenarioError('Probe has no authoritative save_root for saved identities')
-            source_root = Path(native_root)
-            if not source_root.is_absolute():
-                working = self.cfg.get('working_directory')
-                if working is None and self.cfg.get('executable'):
-                    working = str(Path(self.cfg['executable']).parent)
-                if working is None:
-                    raise ScenarioError('Relative SDK save_root requires the game working_directory')
-                source_root = Path(working)/source_root
-            configured = self.cfg.get('save_root')
-            if configured is not None and Path(configured).resolve() != source_root.resolve():
-                raise ScenarioError('Configured save_root differs from the public SDK save_root')
+            source_root = self.source_root(before)
             try:
                 manifest = await bounded(lambda: asyncio.to_thread(read_saved_origins, source_root, name),
                                          'reading saved identities')
@@ -196,10 +203,14 @@ class OracleSession:
         load_params = dict(name=name, lock_edge=lock_edge, pause_on_ready=True)
         if seed is not None:
             load_params['seed'] = str(seed)
+        if allow_setup:
+            load_params['allow_setup'] = True  # Sent only when true (docs/scene-setup.md).
         accepted = await bounded(lambda: self.call('load_save', **load_params),
                                  'requesting save load')
         if accepted.get('accepted') is not True or accepted.get('pause_on_ready') is not True:
             raise ScenarioError('Probe did not accept a protected, paused save load')
+        if allow_setup and accepted.get('allow_setup') is not True:
+            raise ScenarioError('Probe did not accept allow_setup; update the probe')
         while time.monotonic() < deadline:
             state = await bounded(self.ping, 'waiting for loaded world')
             if (state.get('world_ready') is True and state.get('paused') is True
@@ -622,27 +633,35 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
     raise ScenarioError('Camera/time controls did not stabilize before control stability timeout: ' + last_error)
 
 
-def flatten_state(value, prefix=''):
-    """Stable field paths use entity IDs instead of incidental list positions."""
+def flatten_state(value, prefix='', aliases=None):
+    """Stable field paths use entity IDs instead of incidental list positions.
+
+    aliases maps scene-setup ids to "alias:<name>" keys, which replace those ids
+    in paths and values, so a spawned id never appears raw (docs/scene-setup.md).
+    """
+    aliases = aliases or {}
     out = {}
     if isinstance(value, dict):
         for key, item in value.items():
             escaped = key.replace('~', '~0').replace('/', '~1')
-            out.update(flatten_state(item, prefix + '/' + escaped))
+            out.update(flatten_state(item, prefix + '/' + escaped, aliases))
     elif isinstance(value, list):
         if not value:
             out[prefix] = []
+        if aliases and all(type(item) is str for item in value) and any(item in aliases for item in value):
+            # An aliased id list (squad members) is ordered by raw id; order it by alias.
+            value = sorted(aliases.get(item, item) for item in value)
         for index, item in enumerate(value):
             identity = str(index)
             if isinstance(item, dict):
                 if 'id' in item:
-                    identity = item['id']
+                    identity = aliases.get(item['id'], item['id'])
                 elif 'source_id' in item and 'target_id' in item:
                     identity = json.dumps([item['source_id'], item['target_id']],
                                           ensure_ascii=False, separators=(',', ':'))
-            out.update(flatten_state(item, prefix + '/' + identity.replace('~', '~0').replace('/', '~1')))
+            out.update(flatten_state(item, prefix + '/' + identity.replace('~', '~0').replace('/', '~1'), aliases))
     else:
-        out[prefix] = value
+        out[prefix] = aliases.get(value, value) if type(value) is str else value
     return out
 
 
@@ -651,8 +670,11 @@ def variability(executions):
     for execution in executions:
         if execution.get('status') != 'completed':
             continue
+        from oracle_setup import alias_ids
+        aliases = alias_ids((execution.get('setup') or {}).get('alias_map'))
         for capture in execution['checkpoints']:
-            by_checkpoint[capture['name']].append((execution['execution'], flatten_state(load_state(capture['path']))))
+            by_checkpoint[capture['name']].append((execution['execution'],
+                                                   flatten_state(load_state(capture['path']), aliases=aliases)))
     report = {}
     for name, states in by_checkpoint.items():
         paths = sorted(set().union(*(state.keys() for _, state in states)))
@@ -692,6 +714,22 @@ def markdown_report(report):
     return '\n'.join(rows) + '\n'
 
 
+CAPABILITY = 'scene_setup'
+
+
+async def scene_capture(session, setup, receipt):
+    """Checkpoint record of a setup scenario: hash, alias map and scene census (not compared)."""
+    preflight = setup['preflight']
+    census = await session.call('setup_area_census', center=[preflight['scene_center'][0], 0,
+                                                             preflight['scene_center'][1]],
+                                radius=preflight['scene_radius'], limit=100)
+    counts = ('count', 'truncated', 'alive_count', 'dead_count', 'unconscious_count', 'player_count')
+    if not isinstance(census, dict) or any(key not in census for key in counts):
+        raise ScenarioError('Checkpoint scene census is incomplete')
+    return dict(setup_hash=receipt['setup_hash'], alias_map=dict(receipt['alias_map']),
+                census={key: census[key] for key in counts})
+
+
 async def verify_reference_profile(session, reference_profile):
     """Certify live settings through the profile's independent GUI/CRT validator."""
     await session.ping()
@@ -705,13 +743,18 @@ async def verify_reference_profile(session, reference_profile):
     return provenance
 
 
-async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_profile=None):
+async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_profile=None,
+                           engine_facts=None):
     """Execute after preloading this scenario's save and establishing paused controls.
 
     The captured controls must belong to that same save; the probe cannot infer
-    their source save. Failures leave a report and a restoration guard.
+    their source save. Failures leave a report and a restoration guard. A
+    scenario-0.2 setup block runs after each reload (oracle_setup); on the
+    original it needs engine_facts from the reference launcher.
     """
+    import oracle_setup  # Imports this module; kept local to avoid an import cycle.
     validate_scenario(scenario)
+    setup = scenario.get('setup')
     repetitions = scenario.get('repeat', 1) if repeat is None else repeat
     if type(repetitions) is not int or not 1 <= repetitions <= 100:
         raise ValueError('repeat must be an integer from 1 to 100')
@@ -723,6 +766,7 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
         root = Path(cfg['runs']) / scenario['name'] / (timestamp() + '-' + uuid.uuid4().hex[:8])
         root.mkdir(parents=True, exist_ok=False)
         report = dict(report_format='0.1', scenario_schema=scenario['schema_version'], state_schema=None,
+                      build_commit=None, build_commit_known=False, limitations=[],
                       scenario=scenario, repeat=repetitions,
                       status='running', executions=[], output=str(root.resolve()))
         write_json(root / 'scenario.json', scenario)
@@ -740,6 +784,10 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                 raise ScenarioError('Probe does not support a common state schema')
             report['state_schema'] = session.state_schema
             report['target'] = ping.get('target', 'original')
+            report['build_commit'], report['build_commit_known'] = oracle_setup.build_commit(
+                ping, report['limitations'], required=setup is not None)
+            if setup is not None and CAPABILITY not in (ping.get('capabilities') or ()):
+                raise ScenarioError('Probe lacks capability scene_setup; this scenario needs probe 0.11.0')
             if report['target'] == 'meitou':
                 original_seed = seed_value(ping.get('seed'))
                 if ping.get('seed_applied_before_load') is not True:
@@ -753,6 +801,12 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                         or prepared.get('prepared') is not True or prepared.get('save_name') != scenario['save']):
                     raise ScenarioError('Load this scenario save through load_save(wait=True) before run_scenario')
                 report['source_fingerprint'] = validate_origin_fingerprint(prepared.get('source_fingerprint'))
+            if setup is not None:
+                # Every repetition must resolve one pin before the guard is armed (Q5).
+                seeds = ([None] * repetitions if original_seed is None
+                         else [str(base_seed + index) for index in range(repetitions)])
+                report['source_fingerprint'], setup_entries = await oracle_setup.prepare_setup(
+                    session, scenario, cfg, ping, report.get('source_fingerprint'), seeds, engine_facts)
             if reference_profile is not None:
                 report['reference_profile'] = await verify_reference_profile(session, reference_profile)
             report['control_capture_observations'] = []
@@ -779,9 +833,11 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                 await session.call('set_camera_free', enabled=original['free_camera'])
                 execution_seed = base_seed + index - 1 if original_seed is not None else None
                 if execution_seed is None:
-                    execution['load'] = await session.load(scenario['save'], lock_edge=True)
+                    execution['load'] = await session.load(scenario['save'], lock_edge=True,
+                                                           allow_setup=setup is not None)
                 else:
-                    execution['load'] = await session.load(scenario['save'], lock_edge=True, seed=execution_seed)
+                    execution['load'] = await session.load(scenario['save'], lock_edge=True, seed=execution_seed,
+                                                           allow_setup=setup is not None)
                     execution['provenance'] = dict(target='meitou', seed=str(execution_seed),
                         seed_source=execution['load']['ready'].get('seed_source'), seed_applied_before_load=True)
                 saved_origins = (execution['load'].get('saved_origins')
@@ -791,8 +847,15 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                     if report.get('source_fingerprint') is not None and fingerprint != report['source_fingerprint']:
                         raise ScenarioError('Starting save changed between scenario repetitions')
                     report['source_fingerprint'] = fingerprint
+                if execution['load']['ready'].get('build_commit') != report['build_commit']:
+                    raise ScenarioError('Probe build_commit changed between scenario repetitions')
                 if scenario['speed'] > 0:
                     await session.call('set_game_speed', speed=scenario['speed'], preserve_pause=True)
+                if setup is not None:
+                    receipt = await oracle_setup.run_setup_block(session, scenario, folder, execution,
+                                                                 setup_entries[index - 1], engine_facts)
+                    report['limitations'].extend(limitation for limitation in receipt['limitations']
+                                                 if limitation not in report['limitations'])
                 start = await session.call('get_clock')
                 origin = start['elapsed_seconds']
                 execution['initial_clock'] = start
@@ -824,9 +887,14 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                             else:
                                 result = await session.call(command, speed=params['speed'], preserve_pause=True)
                         else:
+                            if setup is not None and command == 'issue_order':
+                                params = oracle_setup.resolve_aliases(params, execution['setup']['alias_map'])
                             result = await session.call(command, **params)
-                        execution['actions'].append(dict(request=action, result=result,
-                                                         clock=await session.call('get_clock')))
+                        record = dict(request=action, result=result)
+                        if setup is not None:
+                            record['resolved_params'] = params
+                        record['clock'] = await session.call('get_clock')
+                        execution['actions'].append(record)
                     for point in group['checkpoints']:
                         reference = (await verify_reference_profile(session, reference_profile)
                                      if reference_profile is not None else None)
@@ -840,6 +908,8 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                             capture['reference_profile'] = reference
                         if execution.get('provenance') is not None:
                             capture['provenance'] = dict(execution['provenance'])
+                        if setup is not None:
+                            capture['setup'] = await scene_capture(session, setup, execution['setup'])
                         execution['checkpoints'].append(capture)
                     previous_at = at
                     session.check_deadline()

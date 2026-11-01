@@ -232,19 +232,6 @@ async def setup_heal(character_id: str, target: str = 'original') -> dict:
     return await target_call('setup_heal', target, character_id=character_id)
 
 
-def with_setup_opt_in(send):
-    """Add allow_setup to the load request only; other session calls are unchanged.
-
-    Relies on OracleSession.load sending load_save through self.call; replace it with
-    an allow_setup argument once OracleSession.load accepts one.
-    """
-    async def call_with_opt_in(command, **params):
-        if command == 'load_save':
-            params['allow_setup'] = True
-        return await send(command, **params)
-    return call_with_opt_in
-
-
 @mcp.tool()
 async def load_save(name: str, lock_edge: bool = False, wait: bool = True,
                     target: str = 'original', seed: str | None = None, allow_setup: bool = False) -> dict:
@@ -265,14 +252,10 @@ async def load_save(name: str, lock_edge: bool = False, wait: bool = True,
         if allow_setup and accepted.get('allow_setup') is not True:
             raise ProbeError('Probe did not accept allow_setup; update the probe')
         return accepted
-    session = OracleSession(target_settings(target))
-    if allow_setup:
-        session.call = with_setup_opt_in(session.call)
-    loaded = await session.load(name, lock_edge=lock_edge, seed=seed)
-    # A missing echo is detected only after the load: the save is loaded, but the
-    # gate is not known to be open, so the tool raises instead of returning.
-    if allow_setup and loaded['accepted'].get('allow_setup') is not True:
-        raise ProbeError('Probe did not accept allow_setup; update the probe')
+    # A missing allow_setup echo raises after acceptance, before waiting: the load
+    # may proceed, but the gate is not known to be open.
+    loaded = await OracleSession(target_settings(target)).load(name, lock_edge=lock_edge, seed=seed,
+                                                               allow_setup=allow_setup)
     return dict(loaded['accepted'], ready=loaded['ready'])
 
 
