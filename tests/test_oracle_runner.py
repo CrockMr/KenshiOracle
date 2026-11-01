@@ -88,6 +88,8 @@ def test_three_repetitions_reload_each_time_and_restore_controls_and_source(tmp_
     result = asyncio.run(run_scenario_file(source, cfg, client=fake))
     report = report_for(cfg)
     assert result['status'] == report['status'] == 'completed'
+    assert report['report_format'] == '0.1' and report['scenario_schema'] == '0.1'
+    assert report['state_schema'] == fake.state['schema_version'] and 'schema_version' not in report
     assert result['executions'] == 3 and result['restored'] is True
     assert fake.loads == ['Synthetic save'] * 4  # Each repetition, then cleanup.
     assert len(report['executions']) == 3

@@ -1,0 +1,43 @@
+{
+  "schema_version": "scenario-0.2",
+  "name": "nature-bandit-ambush",
+  "description": "Rock Bottom (oracle-base-nature). Four Dust Bandits (squad template 3372, faction 200) spawned 30 units east of the unarmed player, settled one simulated second, fully healed with the player, then set to -60 towards the player faction both ways (war flag untouched). At checkpoint 0 the bandit squad is ordered to attack the player. Verdicts are restricted to the scene (aliases, player, relation pair, census within 1500); background metrics are recorded only.",
+  "save": "oracle-base-nature",
+  "speed": 1,
+  "repeat": 5,
+  "setup": {
+    "preflight": {
+      "scene_center": [66484, -90000],
+      "scene_radius": 1500,
+      "squad_size_multiplier": 1,
+      "player_faction_id": "204-gamedata.base",
+      "expect_absent_factions_in_scene": ["200-gamedata.base"]
+    },
+    "moves": [],
+    "spawns": [
+      {
+        "alias": "bandits",
+        "squad_template": "3372-gamedata.base",
+        "count": 4,
+        "faction_id": "200-gamedata.base",
+        "at": {"offset_from_player": [30, 0]},
+        "expected_templates": {"3371-gamedata.base": 1, "1304-gamedata.base": 3}
+      }
+    ],
+    "settle": {"sim_seconds": 1},
+    "heal": "all_scene_characters",
+    "relations": [
+      {"a": "200-gamedata.base", "b": "204-gamedata.base", "a_to_b": -60, "b_to_a": -60}
+    ]
+  },
+  "actions": [
+    {"at": 0, "command": "issue_order",
+     "params": {"type": "attack", "squad_alias": "bandits", "target_alias": "player"}},
+    {"at": 990, "command": "pause", "params": {"paused": true}}
+  ],
+  "checkpoints": [
+    {"at": 0, "name": "initial"}, {"at": 3, "name": "t3"}, {"at": 10, "name": "t10"},
+    {"at": 33, "name": "t33"}, {"at": 66, "name": "t66"}, {"at": 165, "name": "t165"},
+    {"at": 330, "name": "t330"}, {"at": 660, "name": "t660"}, {"at": 990, "name": "fin"}
+  ]
+}

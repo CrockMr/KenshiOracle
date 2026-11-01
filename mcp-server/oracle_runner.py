@@ -722,7 +722,8 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
             raise ScenarioError('An interrupted scenario requires restoration: ' + str(guard_path))
         root = Path(cfg['runs']) / scenario['name'] / (timestamp() + '-' + uuid.uuid4().hex[:8])
         root.mkdir(parents=True, exist_ok=False)
-        report = dict(schema_version='0.1', scenario=scenario, repeat=repetitions,
+        report = dict(report_format='0.1', scenario_schema=scenario['schema_version'], state_schema=None,
+                      scenario=scenario, repeat=repetitions,
                       status='running', executions=[], output=str(root.resolve()))
         write_json(root / 'scenario.json', scenario)
         original = None

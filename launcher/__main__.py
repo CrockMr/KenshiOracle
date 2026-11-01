@@ -23,7 +23,7 @@ def parser():
         if name in ('run-scenario', 'prepare-scenario', 'restore-scenario'):
             command.add_argument('--target', choices=('original', 'meitou'), default='original')
         if name not in ('restore-scenario', 'restore-reference'):
-            command.add_argument('scenario', help='Path to a schema 0.1 scenario JSON')
+            command.add_argument('scenario', help='Path to a scenario JSON (format 0.1 or scenario-0.2)')
         if name in ('run-scenario', 'run-reference-scenario'):
             command.add_argument('--repeat', type=repeat_count)
         if name == 'run-scenario':
