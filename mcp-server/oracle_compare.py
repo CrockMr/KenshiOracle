@@ -180,13 +180,25 @@ def _escape(value):
     return value.replace('~', '~0').replace('/', '~1')
 
 
-def _fields(state, row):
-    """Only proven references enter individual metrics; order semantics are not guessed."""
+def _reference(value, proven, labels):
+    # A setup alias label replaces its id; otherwise only a proven saved HAND is kept.
+    if value is not None and value in labels:
+        return labels[value]
+    return value if value in proven else None
+
+
+def _fields(state, row, labels=None):
+    """Only proven references enter individual metrics; order semantics are not guessed.
+
+    ``labels`` maps setup alias ids to their ``alias:`` label (scene scope), so a
+    reference to an aliased character or squad never shows its raw engine id.
+    """
+    labels = labels or {}
     saved_characters = {r['id'] for r in state['characters'] if _saved_id(r, 1)}
     saved_squads = {r['id'] for r in state['squads'] if _saved_id(r, 34)}
     fields = {key: row.get(key) for key in ('name', 'race_id', 'faction_id', 'state',
                                          'current_town_id', 'town_assignment', 'in_combat')}
-    fields['squad_id'] = row.get('squad_id') if row.get('squad_id') in saved_squads else None
+    fields['squad_id'] = _reference(row.get('squad_id'), saved_squads, labels)
     for index in range(3):
         fields[f'position/{index}'] = row['position'][index] if row.get('position') is not None else None
     health = row.get('health')
@@ -196,12 +208,63 @@ def _fields(state, row):
             fields[f'health/{_escape(part["id"])}/{field}'] = part[field]
     order = row.get('order')
     fields['order/type'] = order['type'] if order is not None else None
-    fields['order/target_id'] = (order['target_id'] if order is not None
-                                 and order['target_id'] in saved_characters else None)
+    fields['order/target_id'] = _reference(order['target_id'], saved_characters, labels) if order is not None else None
     for index in range(3):
         fields[f'order/position/{index}'] = (order['position'][index] if order is not None
                                           and order['position'] is not None else None)
     return fields
+
+
+def character_fields(state, row, labels=None):
+    """Individual fields of one character, references labelled as in ``_fields``."""
+    return _fields(state, row, labels)
+
+
+def saved_observations(original_states, meitou_states):
+    """Observations of individual saved characters, without classification.
+
+    Input rows are {repetition, snapshot: relative POSIX path, state, aliases?}.
+    ``aliases`` (scene scope) maps setup alias ids to labels: those characters are
+    left out here (the scene scope reports them) and references to them are
+    replaced by their label. Returns [(metric, original rows, meitou rows,
+    category)], or the single ``/coverage/saved_characters`` entry when no
+    saved identity exists.
+    """
+    datasets, identities = [], set()
+    for rows in (original_states, meitou_states):
+        evidence = _observations([{key: row[key] for key in ('repetition', 'snapshot')} for row in rows])
+        prepared = []
+        for source, observation in zip(rows, evidence):
+            state = source.get('state')
+            labels = source.get('aliases') or {}
+            mapped = {}
+            if state is not None:
+                validate_state(state)
+                for row in state['characters']:
+                    if _saved_id(row, 1) and row['id'] not in labels:
+                        mapped[row['id']] = _fields(state, row, labels)
+                identities.update(mapped)
+            prepared.append((observation, mapped))
+        datasets.append(prepared)
+    if not identities:
+        sides = [[dict(row, value=None, present=False, reason='No complete producer-proven saved character identity')
+                  for row, _ in dataset] for dataset in datasets]
+        return [('/coverage/saved_characters', *sides, 'number')]
+    result = []
+    for identity in sorted(identities):
+        keys = set().union(*(mapping.get(identity, {}) for dataset in datasets for _, mapping in dataset))
+        for field in sorted(keys):
+            metric = '/characters/' + _escape(identity) + '/' + field
+            sides = []
+            for dataset in datasets:
+                observations = []
+                for observation, mapping in dataset:
+                    fields = mapping.get(identity, {})
+                    observations.append(dict(observation, present=field in fields, value=fields.get(field)))
+                sides.append(observations)
+            category = 'position' if field.startswith(('position/', 'order/position/')) else 'number'
+            result.append((metric, *sides, category))
+    return result
 
 
 def saved_metrics(original_states, meitou_states, *, tolerances=None, known_deviations=None):
@@ -219,39 +282,12 @@ def saved_metrics(original_states, meitou_states, *, tolerances=None, known_devi
     rules = known_deviations or {}
     if type(rules) is not dict:
         raise ValueError('known_deviations must map exact metric IDs to explicit evidence rules')
-    datasets, identities = [], set()
-    for rows in (original_states, meitou_states):
-        evidence = _observations([{key: row[key] for key in ('repetition', 'snapshot')} for row in rows])
-        prepared = []
-        for source, observation in zip(rows, evidence):
-            state = source.get('state')
-            mapped = {}
-            if state is not None:
-                validate_state(state)
-                for row in state['characters']:
-                    if _saved_id(row, 1):
-                        mapped[row['id']] = _fields(state, row)
-                identities.update(mapped)
-            prepared.append((observation, mapped))
-        datasets.append(prepared)
-    if not identities:
-        sides = [[dict(row, value=None, present=False, reason='No complete producer-proven saved character identity')
-                  for row, _ in dataset] for dataset in datasets]
-        return [classify_metric('/coverage/saved_characters', *sides)]
+    observed = saved_observations(original_states, meitou_states)
+    if len(observed) == 1 and observed[0][0] == '/coverage/saved_characters':
+        return [classify_metric('/coverage/saved_characters', observed[0][1], observed[0][2])]
     findings = []
-    for identity in sorted(identities):
-        keys = set().union(*(mapping.get(identity, {}) for dataset in datasets for _, mapping in dataset))
-        for field in sorted(keys):
-            metric = '/characters/' + _escape(identity) + '/' + field
-            sides = []
-            for dataset in datasets:
-                observations = []
-                for observation, mapping in dataset:
-                    fields = mapping.get(identity, {})
-                    observations.append(dict(observation, present=field in fields, value=fields.get(field)))
-                sides.append(observations)
-            category = 'position' if field.startswith(('position/', 'order/position/')) else 'number'
-            absolute = limits.get(metric, limits[category])
-            findings.append(classify_metric(metric, *sides, tolerance=absolute,
-                units='world_units' if category == 'position' else None, known_deviation=rules.get(metric)))
+    for metric, left, right, category in observed:
+        absolute = limits.get(metric, limits[category])
+        findings.append(classify_metric(metric, left, right, tolerance=absolute,
+            units='world_units' if category == 'position' else None, known_deviation=rules.get(metric)))
     return findings

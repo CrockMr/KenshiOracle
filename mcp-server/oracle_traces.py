@@ -119,7 +119,7 @@ def _engagement(values, prefix, timeline, cohort):
     values[prefix + '/window_duration_upper_bound'] = times[-1] - times[0] if all(t is not None for t in times) else None
 
 
-def trace_metrics(campaign, arrival_radius=5.0):
+def trace_metrics(campaign, arrival_radius=5.0, cohorts=None):
     """Return {repetition: {metric: scalar|null}} for a validated campaign.
 
     Saved squads use full type-34 HANDs and the fixed loaded membership of the
@@ -128,6 +128,12 @@ def trace_metrics(campaign, arrival_radius=5.0):
     Missing positions censor every trajectory/arrival metric for that cohort.
     Faction engagement tracks each repetition's own initial loaded cohort, never
     matches generated individuals across games, and preserves unknown booleans.
+
+    ``cohorts`` (scene scope) maps each repetition to {cohort path: [ids]}, the
+    alias and player cohorts of that repetition's setup. Engagement of those
+    cohorts is reported under ``/scene/outcome/engagement/<cohort path>``; the
+    other traces (saved squads, id-based moves and faction engagement) then
+    leave every cohort member out, so they describe the background only.
     """
     if (type(arrival_radius) not in (int, float) or not math.isfinite(arrival_radius)
             or arrival_radius < 0 or arrival_radius > 1e9):
@@ -158,21 +164,31 @@ def trace_metrics(campaign, arrival_radius=5.0):
         if baseline is None:
             values['/trace/initial_cohort_coverage'] = None
             continue
-        squads = {row['id']: row for row in baseline['state']['squads'] if _saved(row, 34)}
-        saved_characters = {row['id'] for row in baseline['state']['characters'] if _saved(row, 1)}
+        scoped = None if cohorts is None else cohorts.get(repetition)
+        if cohorts is not None and scoped is None:
+            raise ValueError('Scene-scope traces require the cohorts of every repetition')
+        excluded = {identity for members in (scoped or {}).values() for identity in members}
+        squads = {row['id']: row for row in baseline['state']['squads']
+                  if _saved(row, 34) and not excluded.intersection(row['members'])}
+        saved_characters = {row['id'] for row in baseline['state']['characters']
+                            if _saved(row, 1) and row['id'] not in excluded}
         for identity, squad in sorted(squads.items()):
             _trajectory(values, '/trajectory/saved_squad/' + _escape(identity), timeline, squad['members'])
         for index, action in enumerate(campaign['scenario'].get('actions', [])):
             params = action.get('params', {})
             if action.get('command') != 'issue_order' or params.get('type') != 'move':
                 continue
+            if scoped is not None and ('character_alias' in params or 'squad_alias' in params):
+                continue  # An aliased actor belongs to a scene cohort.
             cohort = (squads.get(params.get('squad_id'), {}).get('members', []) if 'squad_id' in params
                       else [params['character_id']] if params.get('character_id') in saved_characters else [])
             _arrival(values, '/trajectory/move_action/' + str(index), timeline, cohort, action, arrival_radius)
         factions = defaultdict(list)
         for character in baseline['state']['characters']:
-            if character.get('faction_id') is not None:
+            if character.get('faction_id') is not None and character['id'] not in excluded:
                 factions[character['faction_id']].append(character['id'])
         for faction, cohort in sorted(factions.items()):
             _engagement(values, '/combat/engagement_by_faction/' + _escape(faction), timeline, cohort)
+        for name, cohort in sorted((scoped or {}).items()):
+            _engagement(values, '/scene/outcome/engagement/' + name, timeline, cohort)
     return output
