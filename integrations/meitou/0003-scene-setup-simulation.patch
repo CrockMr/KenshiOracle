@@ -1,0 +1,257 @@
+From 8b255b96d877094e184edce14b212afbd893ada4 Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 10:11:34 +0100
+Subject: [PATCH] Add paused scene-setup entry points to the simulation
+
+Engine side of the oracle scene-setup commands (KenshiOracle
+docs/scene-setup.md, adapter 0.11.0). Nothing calls them without
+--oracle.
+
+- FactionRelations.Assign: sets one relation, clamped, applying the
+  player-row swap and counting in Changes; the war flag is untouched.
+- PopulationSystem.PlanOracleTemplateSquad / SpawnOracleTemplateSquad:
+  a SQUAD_TEMPLATE plan with an explicit faction, planned without side
+  effects so the host can refuse a unique character before any change,
+  then spawned idle outside any town.
+- World.ApplyPausedOracleDebug / ApplyPausedOracleEdit: a teleport,
+  heal or spawn between ticks while paused, in the Inputs bracket with
+  the same republish as ApplyPausedInterfaceCommands.
+- OracleSetupTests: the relation swap, the unchanged war flag, paused
+  visibility and the bracket refusals.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Meitou.Data/Gameplay/FactionData.cs       | 19 ++++
+ .../PopulationSystem.Sandbox.cs               | 40 ++++++++
+ src/Meitou.Simulation/World.OracleSetup.cs    | 41 ++++++++
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs | 94 +++++++++++++++++++
+ 4 files changed, 194 insertions(+)
+ create mode 100644 src/Meitou.Simulation/World.OracleSetup.cs
+ create mode 100644 tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+
+diff --git a/src/Meitou.Data/Gameplay/FactionData.cs b/src/Meitou.Data/Gameplay/FactionData.cs
+index faccbe6b..1216f09c 100644
+--- a/src/Meitou.Data/Gameplay/FactionData.cs
++++ b/src/Meitou.Data/Gameplay/FactionData.cs
+@@ -308,6 +308,25 @@ public sealed class FactionRelations
+     /// <summary>Sets the relation of faction <paramref name="a"/> towards <paramref name="b"/> (a loaded save does this; trust and the other state live outside this table).</summary>
+     public void Set(int a, int b, float value) => relation[a * Count + b] = value;
+ 
++    /// <summary>
++    /// Oracle scene setup: sets <paramref name="a"/>'s relation towards <paramref name="b"/> to <paramref name="value"/>, clamped to [-100, 100]. Unlike
++    /// <see cref="Set"/> a change asked of the player's row goes to the other side's table, as in <see cref="Add"/>, and a change counts in <see cref="Changes"/> so the hostility
++    /// cache and the state hash see it. The war flag is left alone. Returns the stored cell (after the swap) and the value before and after.
++    /// </summary>
++    public (int A, int B, float Before, float After) Assign(int a, int b, float value)
++    {
++        if (!float.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
++        if (a == PlayerFaction && a >= 0) (a, b) = (b, a);
++        if (a == b || !Contains(a) || !Contains(b)) throw new ArgumentException("a relation needs two different factions of this table");
++        float before = Get(a, b), after = Math.Clamp(value, -100, 100);
++        if (after != before)
++        {
++            relation[a * Count + b] = after;
++            Changes++;
++        }
++        return (a, b, before, after);
++    }
++
+     /// <summary>
+     /// The player's rank in faction <paramref name="f"/> (the int at FactionRelations +0x10, saved as GAMESTATE_FACTION <c>rank</c>; docs/game/factions-squads-towns.md
+     /// "Faction rank"): 0 until a dialogue's DA_INCREASE_FACTION_RANK raises it, read by DC_FACTION_RANK.
+diff --git a/src/Meitou.Simulation/PopulationSystem.Sandbox.cs b/src/Meitou.Simulation/PopulationSystem.Sandbox.cs
+index 09d6c97f..70231b72 100644
+--- a/src/Meitou.Simulation/PopulationSystem.Sandbox.cs
++++ b/src/Meitou.Simulation/PopulationSystem.Sandbox.cs
+@@ -80,4 +80,44 @@ public sealed partial class PopulationSystem
+         var squad = SpawnSquad(world, new BuiltSquad(new SquadPlan(template, members, [], []), at, chosen, [.. built]), null, 100, idle: true, yaw: yaw);
+         return squad.Members;
+     }
++
++    /// <summary>An oracle scene-setup squad planned by <see cref="PlanOracleTemplateSquad"/>; nothing exists in the world until <see cref="SpawnOracleTemplateSquad"/>.</summary>
++    public sealed class OracleTemplateSquad
++    {
++        internal BuiltSquad? Built { get; init; }
++        /// <summary>The members' character records in plan order (empty when the plan has none).</summary>
++        public IReadOnlyList<string> RecordIds { get; init; } = [];
++        /// <summary>The plan names a unique character; such a plan is never spawned (idle spawns skip the unique gate).</summary>
++        public bool NamesUniqueCharacter { get; init; }
++    }
++
++    /// <summary>
++    /// Oracle scene setup: plans one squad of the SQUAD_TEMPLATE <paramref name="templateId"/> as the population builds one (<see cref="SquadFactory.Plan"/>, member counts and
++    /// looks rolled from the world seed and <paramref name="key"/>), but of <paramref name="faction"/>, at <paramref name="at"/>; only its first <paramref name="maxCount"/> members;
++    /// slave squads of the plan are not made. Pure (any phase): the host checks the plan before it changes anything.
++    /// </summary>
++    public OracleTemplateSquad PlanOracleTemplateSquad(World world, string templateId, Vector2 at, int faction, int maxCount, ulong key)
++    {
++        if (data.Db.Find(templateId) is not { } record || !SquadFactory.IsTemplate(record)) throw new ArgumentException("not a SQUAD_TEMPLATE record", nameof(templateId));
++        if ((uint)faction >= (uint)data.Factions.Count) throw new ArgumentOutOfRangeException(nameof(faction));
++        if (BuildOne(SquadTemplate.From(record), faction, data.Factions[faction], key, world.Seed, at) is not { } built) return new();
++        var members = built.Members.Take(Math.Max(0, maxCount)).ToList();
++        if (members.Count == 0) return new();
++        return new()
++        {
++            Built = built with { Faction = faction, Members = members },
++            RecordIds = [.. members.Select(m => m.Plan.RecordId)],
++            NamesUniqueCharacter = members.Any(m => UniqueCharacters.IsUnique(data.Db.Find(m.Plan.RecordId))),
++        };
++    }
++
++    /// <summary>
++    /// Oracle scene setup: spawns a <see cref="PlanOracleTemplateSquad"/> plan standing idle outside any town, on the ground. Refuses a plan with a unique character. In the serial
++    /// Inputs phase. Returns the members in order (empty when the plan has none).
++    /// </summary>
++    public IReadOnlyList<CharacterId> SpawnOracleTemplateSquad(World world, OracleTemplateSquad plan)
++    {
++        if (plan.NamesUniqueCharacter) throw new InvalidOperationException("the plan names a unique character");
++        return plan.Built is { } built ? SpawnSquad(world, built, null, 100, idle: true).Members : [];
++    }
+ }
+diff --git a/src/Meitou.Simulation/World.OracleSetup.cs b/src/Meitou.Simulation/World.OracleSetup.cs
+new file mode 100644
+index 00000000..31ff12dc
+--- /dev/null
++++ b/src/Meitou.Simulation/World.OracleSetup.cs
+@@ -0,0 +1,41 @@
++namespace Meitou.Simulation;
++
++public sealed partial class World
++{
++    /// <summary>
++    /// Oracle scene setup: applies one F10 teleport or heal (<see cref="DebugTeleport"/>, <see cref="DebugHeal"/>) between ticks while paused,
++    /// inside the same Inputs bracket and republish as <see cref="ApplyPausedInterfaceCommands"/>, so the change is in <see cref="CharacterTable.Previous"/> and the snapshot
++    /// without advancing time. Other debug commands are refused (<see cref="DebugDamage"/> draws from the medical stream).
++    /// </summary>
++    public void ApplyPausedOracleDebug(DebugCommand command)
++    {
++        if (command is not (DebugTeleport or DebugHeal)) throw new ArgumentException("only teleport and heal apply through the oracle setup bracket", nameof(command));
++        var data = SystemOf<PlayerSystem>()?.Data;
++        if (command is DebugHeal && data is null) throw new InvalidOperationException("healing needs the population data");
++        ApplyPausedOracleEdit(() => DebugCheats.Apply(this, data, null, command));
++    }
++
++    /// <summary>
++    /// Oracle scene setup: runs <paramref name="edit"/> at a tick boundary in the serial Inputs phase (spawns and direct medical writes), then republishes the snapshot as
++    /// <see cref="ApplyPausedInterfaceCommands"/> does. No system runs and the tick and clock do not move.
++    /// </summary>
++    public void ApplyPausedOracleEdit(Action edit)
++    {
++        ArgumentNullException.ThrowIfNull(edit);
++        if (Characters.Phase != TablePhase.Outside) throw new InvalidOperationException("oracle setup edits require a tick boundary");
++        Characters.BeginTick();
++        Characters.Phase = TablePhase.Inputs;
++        try { edit(); }
++        finally
++        {
++            Characters.Phase = TablePhase.Outside;
++            Characters.EndTick();
++        }
++        if (Settings.PublishSnapshots)
++        {
++            var previous = PreviousSnapshot;
++            Publish();
++            PreviousSnapshot = previous;
++        }
++    }
++}
+diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+new file mode 100644
+index 00000000..a1896126
+--- /dev/null
++++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+@@ -0,0 +1,94 @@
++using System.Numerics;
++using Meitou.Data.Gameplay;
++using Meitou.Simulation;
++using SimWorld = Meitou.Simulation.World;
++
++namespace Meitou.Tests.Oracle;
++
++/// <summary>The oracle scene-setup commands' simulation entry points and pure rules.</summary>
++public class OracleSetupTests
++{
++    static float Ground(float x, float z) => 7 + x * 0.01f;
++
++    [Fact]
++    public void Assign_writes_the_player_pair_where_it_is_read_and_counts_the_change()
++    {
++        var table = FactionRelations.Build([
++            new FactionData { Id = "bandits", Name = "bandits", Relations = new Dictionary<string, int> { ["Nameless"] = 0 } },
++            new FactionData { Id = "Nameless", Name = "Nameless", Relations = new Dictionary<string, int>() },
++            new FactionData { Id = "town", Name = "town", Relations = new Dictionary<string, int>() },
++        ]);
++        table.PlayerFaction = 1;
++        // Raw Set would write the player's own row, which Get never reads; Assign swaps it like Add.
++        var (a, b, before, after) = table.Assign(1, 0, -60);
++        Assert.Equal((0, 1, 0f, -60f), (a, b, before, after));
++        Assert.Equal(-60, table.Get(0, 1));
++        Assert.Equal(-60, table.Get(1, 0));
++        Assert.True(table.IsHostile(0, 1));
++        Assert.Equal(1, table.Changes);
++        Assert.False(table.AtWar(0, 1));
++        // The same value again is no change; values are clamped; NPC pairs are one direction only.
++        table.Assign(0, 1, -60);
++        Assert.Equal(1, table.Changes);
++        Assert.Equal(-100, table.Assign(0, 2, -500).After);
++        Assert.Equal(-100, table.Get(0, 2));
++        Assert.NotEqual(-100, table.Get(2, 0));
++        Assert.Equal(2, table.Changes);
++        Assert.Throws<ArgumentException>(() => table.Assign(0, 0, 10));
++        Assert.Throws<ArgumentOutOfRangeException>(() => table.Assign(0, 2, float.NaN));
++    }
++
++    [Fact]
++    public void Assign_leaves_the_war_flag_unchanged()
++    {
++        var table = FactionRelations.Build([
++            new FactionData { Id = "bandits", Name = "bandits", Relations = new Dictionary<string, int>() },
++            new FactionData { Id = "Nameless", Name = "Nameless", Relations = new Dictionary<string, int>() },
++            new FactionData { Id = "town", Name = "town", Relations = new Dictionary<string, int>() },
++        ]);
++        table.PlayerFaction = 1;
++        table.SetWar(0, 1, true);
++        table.SetWar(0, 2, true);
++        // Peace with a faction at war, and hostility towards one at peace: only the relation moves.
++        table.Assign(1, 0, 50);
++        table.Assign(0, 2, 50);
++        table.Assign(2, 0, -60);
++        Assert.Equal((50f, 50f, -60f), (table.Get(0, 1), table.Get(0, 2), table.Get(2, 0)));
++        Assert.True(table.AtWar(0, 1));
++        Assert.True(table.AtWar(1, 0));
++        Assert.True(table.AtWar(0, 2));
++        Assert.False(table.AtWar(2, 0));
++    }
++
++    [Fact]
++    public void Paused_teleport_is_visible_at_once_without_advancing_the_world()
++    {
++        using var world = new SimWorld(new WorldSettings { Seed = 3, PublishSnapshots = false }, new OpenGroundWalkability(Ground), [new PlayerSystem()]);
++        var a = world.Characters.Spawn(new CharacterHot { Position = new Vector3(1, 2, 3), Velocity = Vector3.One }, new CharacterCold(), 0);
++        var b = world.Characters.Spawn(new CharacterHot { Position = new Vector3(4, 5, 6) }, new CharacterCold(), 0);
++        long tick = world.Tick;
++        world.ApplyPausedOracleDebug(new DebugTeleport([a, b], new Vector3(3000, 50, -200)) { Tick = tick });
++        Assert.Equal(tick, world.Tick);
++        // Meitou's only teleport: member k at x + 10k, on the ground, velocity 0.
++        Assert.Equal(new Vector3(3000, Ground(3000, -200), -200), world.Characters.Previous[a.Slot].Position);
++        Assert.Equal(new Vector3(3010, Ground(3010, -200), -200), world.Characters.Previous[b.Slot].Position);
++        Assert.Equal(Vector3.Zero, world.Characters.Previous[a.Slot].Velocity);
++        Assert.Equal((byte)CharacterTask.Idle, world.Characters.Previous[a.Slot].Task);
++    }
++
++    [Fact]
++    public void Only_teleport_and_heal_use_the_setup_bracket_and_edits_keep_the_tick()
++    {
++        using var world = new SimWorld(new WorldSettings { Seed = 3, PublishSnapshots = false }, new OpenGroundWalkability(Ground), [new PlayerSystem()]);
++        var a = world.Characters.Spawn(new CharacterHot(), new CharacterCold(), 0);
++        Assert.Throws<ArgumentException>(() => world.ApplyPausedOracleDebug(new DebugDamage([a], 10) { Tick = 0 }));
++        Assert.Throws<ArgumentException>(() => world.ApplyPausedOracleDebug(new DebugMoney(5) { Tick = 0 }));
++        // No population data: a heal is refused rather than silently skipped.
++        Assert.Throws<InvalidOperationException>(() => world.ApplyPausedOracleDebug(new DebugHeal([a]) { Tick = 0 }));
++        CharacterId spawned = default;
++        world.ApplyPausedOracleEdit(() => spawned = world.Characters.Spawn(new CharacterHot { Position = new Vector3(9, 0, 9) }, new CharacterCold(), world.Tick));
++        Assert.True(world.Characters.IsAlive(spawned));
++        Assert.Equal(new Vector3(9, 0, 9), world.Characters.Previous[spawned.Slot].Position);
++        Assert.Equal(0, world.Tick);
++    }
++}

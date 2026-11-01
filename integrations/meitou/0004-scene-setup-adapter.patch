@@ -1,0 +1,1003 @@
+From b052e78cdfb4151eebd24a60700853d229e08af3 Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 10:17:52 +0100
+Subject: [PATCH] Expose scene-setup commands, readiness and save refusal in
+ the oracle adapter
+
+Implements the KenshiOracle scene-setup contract (docs/scene-setup.md,
+adapter 0.11.0) behind --oracle.
+
+- setup_info, setup_area_census, setup_spawn_squad, setup_set_relation
+  and setup_heal with the contract's parameter texts, gate order
+  (world ready, probe load_save of this world epoch, allow_setup, then
+  paused/no run_until and autosave for mutations, then a player) and
+  refusal texts; replies carry exactly the contract keys, Meitou-only
+  facts in engine_detail. No save-name allowlist.
+- load_save accepts allow_setup; the opt-in takes effect when that load
+  finishes, any other load clears it, a failed load keeps the gate shut.
+  world_mutated is set before a mutation and cleared by a probe load.
+- Spawns are planned before any change: a unique character is refused
+  without consuming the spawn serial behind rng_key.
+- Ping: plugin_version from OracleProtocol.AdapterVersion (0.11.0),
+  capabilities, state_schema_version, world_readiness (no window),
+  world_mutated and build_commit from the new OracleBuildCommit assembly
+  metadata (full commit, or "unknown" without git or with local changes).
+- Oracle mode drops every key, menu and import save/load request.
+- issue_order orders only loaded squad members, refuses a dead target,
+  a dead actor or an actor that is its own target, and replies
+  affected_characters (characters kept for one release).
+- docs/oracle.md documents the commands; OracleSetupTests covers the
+  gate, the probe-load rule, readiness keys, spawn keys, the ping
+  version and the player-faction spawn refusal.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/oracle.md                                |  62 +-
+ src/Meitou.Game/GameHost.Oracle.cs            |  56 +-
+ src/Meitou.Game/GameHost.OracleSetup.cs       | 533 ++++++++++++++++++
+ src/Meitou.Game/GameHost.Saving.cs            |   7 +
+ src/Meitou.Game/Meitou.Game.csproj            |  26 +
+ src/Meitou.Game/Oracle/OracleProtocol.cs      |   2 +-
+ src/Meitou.Game/Oracle/OracleState.cs         |   3 +
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs |  99 ++++
+ 8 files changed, 763 insertions(+), 25 deletions(-)
+ create mode 100644 src/Meitou.Game/GameHost.OracleSetup.cs
+
+diff --git a/docs/oracle.md b/docs/oracle.md
+index 137bd11e..835abec6 100644
+--- a/docs/oracle.md
++++ b/docs/oracle.md
+@@ -22,7 +22,8 @@ services commands at safe frame boundaries including pause, and joins/settles
+ tick-ahead before reading the world. Network workers only parse detached JSON
+ or read a published heartbeat. Replacing a world invalidates the projection,
+ control tokens and pending advances; the socket belongs to the host and is
+-disposed with it. Autosaves are disabled in Oracle mode.
++disposed with it. Autosaves are disabled in Oracle mode, and every key, menu
++or import save/load request is dropped (only the oracle's `load_save` loads).
+ Initial preparation readies population without an unclocked simulation/combat
+ tick; ping records `startup_boundary:"population_prepared_without_simulation_tick"`.
+ 
+@@ -54,8 +55,21 @@ Network reads do not advance timestamps and cannot hide a stopped host.
+ Supported commands: `ping`, `get_clock`, `dump_state`, `pause`,
+ `set_game_speed`, `run_until`, `run_until_status`, `cancel_run_until`,
+ `load_save`, `issue_order`, `get_scene_state`, `set_camera_free`,
+-`prepare_scene_control`, `commit_scene_control`, `restore_scene_control`.
+-Unknown commands and scene thread details return `not_implemented`.
++`prepare_scene_control`, `commit_scene_control`, `restore_scene_control`, and
++the scene-setup commands below. Unknown commands and scene thread details
++return `not_implemented`.
++
++Ping's `plugin_version` is `OracleProtocol.AdapterVersion` (0.11.0, the
++KenshiOracle protocol release implemented). Ping also reports
++`capabilities:["scene_setup"]`, `state_schema_version:"0.2"`,
++`world_readiness`, `world_mutated` and `build_commit`: the full 40-hex commit
++from the assembly metadata `OracleBuildCommit` (`git rev-parse HEAD` at build
++time), or `"unknown"` without git, on a git failure or with uncommitted changes
++(`git status --porcelain`); it is checked against `^[0-9a-f]{40}$` at startup.
++The UI's short `GitCommit` is separate. `issue_order` orders only loaded squad
++members, refuses a dead or missing target and a dead actor or one that is its
++own target (as the native probe), and replies `affected_characters` (and
++`characters`, kept for one release).
+ `run_until` has an operation ID and finishes paused; batches can overshoot the
+ requested calendar time. Capture actual time rather than claiming exact-tick
+ arrival. Loads are asynchronous, end paused, and report readiness through ping.
+@@ -89,10 +103,48 @@ outside common state. KenshiOracle uses `base_seed + repetition - 1`, then
+ reloads with the pre-experiment seed during restoration. A known seed does not
+ remove timing differences from asynchronous services or reconstruct consumed RNG.
+ 
++## Scene setup
++
++Implements the KenshiOracle scene-setup contract (`docs/scene-setup.md` in
++KenshiOracle, adapter 0.11.0): `setup_info`, `setup_area_census` (read-only,
++also while time runs), `setup_spawn_squad`, `setup_set_relation` and
++`setup_heal`; names, keys, parameter texts, gate order and refusal texts are
++the contract's. [`GameHost.OracleSetup.cs`](../src/Meitou.Game/GameHost.OracleSetup.cs)
++projects exactly the contract keys; Meitou-only facts go to `engine_detail`.
++No command saves.
++
++- Gate: a world finished by the oracle's own `load_save` in the current world
++  epoch, requested with `allow_setup:true` (echoed in the reply). An accepted
++  `load_save` closes the gate until that load finishes; a failed load keeps it
++  closed. There is no save-name allowlist. Mutations also need a paused world
++  and no `run_until`; the autosave refusal never fires here because oracle mode
++  has no autosave. `world_mutated` is set before a mutation's engine call and
++  cleared only when a probe load finishes.
++- Spawn: a SQUAD_TEMPLATE plan (`SquadFactory.Plan`, counts and looks rolled
++  from the world seed and `rng_key`) with the given faction, idle, outside any
++  town, on the ground (`y` ignored), `permanent` ignored, no slave squads. The
++  plan is made before any change, so a plan with a unique character is refused
++  without consuming a spawn serial. `rng_key` mixes the template id and the
++  accepted-spawn serial, reset by each finished probe load. The session squad
++  multiplier must be 1.
++- Relations: `FactionRelations.Assign` applies the player-row swap (a pair with
++  the player is one cell read from both sides) and counts in `Changes`; the war
++  flag is untouched (**Verified**, `OracleSetupTests`).
++- Heal: the F10 heal inside a paused tick bracket and republished, so the next
++  dump sees it (**Verified** for the bracket, `OracleSetupTests`). `max` is
++  Meitou's calculated `MaxHp`; the unconscious flag clears on the next body
++  tick.
++- `setup_info.squad_size` reads the install's raw `settings.cfg` line by the
++  contract's rule; `source` is `user_config` when the user config held the
++  Gameplay settings at startup.
++
++In-game behaviour of these commands: **Unknown** until run.
++
+ ## Verification and remaining scope
+ 
+-**Verified:** 115 focused Oracle/camera tests pass; the 62 shared canonical
+-vectors, including 59 historical cases, match Python/native expected bytes.
++**Verified:** 143 focused Oracle/camera tests pass (fork tip on `88ae71a1`);
++the 62 shared canonical vectors, including 59 historical cases, match
++Python/native expected bytes.
+ Tests use synthetic worlds and ephemeral loopback ports, never production ports.
+ See [Oracle tests](../tests/Meitou.Tests/Oracle) and
+ [camera restoration tests](../tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs).
+diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
+index 95d54c35..c81919d4 100644
+--- a/src/Meitou.Game/GameHost.Oracle.cs
++++ b/src/Meitou.Game/GameHost.Oracle.cs
+@@ -61,6 +61,7 @@ sealed partial class GameHost
+             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save");
+         oracleLoadPending = g.Load is not null;
+         oracleState = new OracleState();
++        StartOracleSetup();
+         oracleServer = new OracleServer(g.OraclePort);
+         oracleServer.PublishHeartbeat(new { frame = 0, timestamp_ms = 0, service_frame = 0,
+             service_timestamp_ms = 0, service_thread = 0, game_thread = 0, loading = true });
+@@ -88,11 +89,17 @@ sealed partial class GameHost
+         oracleLoadPending = false;
+         oracleLoadError = null;
+         saveInUse = folder;
++        // Scene setup opens only on a world the oracle's own load_save finished, with the opt-in that load carried; any other load clears it.
++        if (oracleRequestedLoad is not null) { oracleWorldMutated = false; oracleSpawnSerial = 0; }
++        oracleProbeLoadedSave = oracleRequestedLoad; oracleAllowSetup = oracleRequestedLoad is not null && oracleRequestedAllowSetup; oracleProbeEpoch = worldEpoch;
++        oracleRequestedLoad = null; oracleRequestedAllowSetup = false;
+     }
+ 
+     void OracleLoadFailed(string error)
+     {
+         if (!g.Oracle || !oracleLoadPending) return;
++        // A failed load never completes: the scene-setup gate stays closed and world_mutated keeps its value.
++        oracleRequestedLoad = null; oracleRequestedAllowSetup = false;
+         oracleLoadPending = false;
+         oracleLoadError = error;
+         session?.Simulation.SetSpeed(0);
+@@ -156,18 +163,18 @@ sealed partial class GameHost
+         {
+             case "ping":
+                 OracleKeys(p);
+-                return new { target = "meitou", plugin_version = OracleProtocol.AdapterVersion, game_version = "MeitouClient",
+-                    schema_version = "0.2", supported_schema_versions = new[] { "0.1", "0.2" },
+-                    instance_id = oracleInstance, process_id = Environment.ProcessId, oracle_available = true,
+-                    world_ready = OracleReady, frame = oracleFrame, timestamp_ms = realTime.Elapsed.TotalMilliseconds,
+-                    paused = session.Simulation.IsPaused, load_pause_pending = oracleLoadPending || Covered,
+-                    current_save = saveInUse is null ? null : Path.GetFileName(Path.TrimEndingDirectorySeparator(saveInUse)),
+-                    save_root = oracleSaveRoot, saved_origins_required = false, rekenshi_settings_available = false,
+-                    seed = oracleSeed.ToString(CultureInfo.InvariantCulture), seed_source = oracleSeedSource,
+-                    seed_applied_before_load = oracleSeedApplied, load_error = oracleLoadError,
+-                    startup_boundary = "population_prepared_without_simulation_tick",
+-                    set_game_speed_preserve_pause_available = true, camera_load_edge_lock_available = true,
+-                    autosave_disabled_for_oracle = true };
++                var ping = OracleSetupPolicy.PingIdentity();
++                ping["instance_id"] = oracleInstance; ping["process_id"] = Environment.ProcessId; ping["oracle_available"] = true;
++                ping["world_ready"] = OracleReady; ping["frame"] = oracleFrame; ping["timestamp_ms"] = realTime.Elapsed.TotalMilliseconds;
++                ping["paused"] = session.Simulation.IsPaused; ping["load_pause_pending"] = oracleLoadPending || Covered;
++                ping["current_save"] = OracleCurrentSave; ping["save_root"] = oracleSaveRoot; ping["saved_origins_required"] = false; ping["rekenshi_settings_available"] = false;
++                ping["seed"] = oracleSeed.ToString(CultureInfo.InvariantCulture); ping["seed_source"] = oracleSeedSource;
++                ping["seed_applied_before_load"] = oracleSeedApplied; ping["load_error"] = oracleLoadError;
++                ping["startup_boundary"] = "population_prepared_without_simulation_tick";
++                ping["set_game_speed_preserve_pause_available"] = true; ping["camera_load_edge_lock_available"] = true;
++                ping["autosave_disabled_for_oracle"] = true; ping["world_readiness"] = OracleReadiness(); ping["world_mutated"] = oracleWorldMutated;
++                ping["build_commit"] = oracleBuildCommit;
++                return ping;
+             case "get_clock":
+                 OracleKeys(p); RequireOracleWorld(); return OracleClock();
+             case "dump_state": return DumpOracleState(p);
+@@ -196,7 +203,7 @@ sealed partial class GameHost
+                 oraclePreparedControl = null; oracleControlToken = null;
+                 return OracleControlResult(false, true);
+             case "issue_order": return IssueOracleOrder(p);
+-            default: throw new OracleHostError("not_implemented", $"oracle command {command} is not implemented");
++            default: return ExecuteOracleSetup(command, p) ?? throw new OracleHostError("not_implemented", $"oracle command {command} is not implemented");
+         }
+     }
+ 
+@@ -224,13 +231,14 @@ sealed partial class GameHost
+ 
+     object LoadOracleSave(JsonElement p)
+     {
+-        OracleKeys(p, "name", "lock_edge", "pause_on_ready", "seed");
++        OracleKeys(p, "name", "lock_edge", "pause_on_ready", "seed", "allow_setup");
+         string name = OracleText(p, "name", 128);
+         OracleHostPolicy.ValidateSaveName(name);
+         bool edge = p.TryGetProperty("lock_edge", out _) && OracleBool(p, "lock_edge");
+         bool paused = !p.TryGetProperty("pause_on_ready", out _) || OracleBool(p, "pause_on_ready");
+         if (!paused) throw new ArgumentException("oracle loads require pause_on_ready:true");
+         ulong seed = p.TryGetProperty("seed", out var seedJson) ? OracleHostPolicy.ReadSeed(seedJson) : oracleSeed;
++        bool allowSetup = p.TryGetProperty("allow_setup", out _) && OracleBool(p, "allow_setup");
+         if (!SavesAvailable(out string why) || Busy()) throw new OracleHostError("busy", why.Length > 0 ? why : "a save or load is in progress");
+         string folder = Path.Combine(oracleSaveRoot, name);
+         OracleHostPolicy.EnsureNoLinks(folder);
+@@ -247,8 +255,10 @@ sealed partial class GameHost
+         if (edge) oracleEdgeOwned = true;
+         BeginQuickLoad(folder);
+         if (sceneLoad is null) { oracleLoadPending = false; throw new OracleHostError("load_failed", "load was not scheduled"); }
++        // Accepted: the scene-setup gate closes until this load completes (OracleFinishedLoad), which then applies allow_setup.
++        oracleRequestedLoad = name; oracleRequestedAllowSetup = allowSetup; oracleProbeLoadedSave = null; oracleAllowSetup = false;
+         return new { accepted = true, pause_on_ready = true, name, lock_edge = edge,
+-            seed = seed.ToString(CultureInfo.InvariantCulture) };
++            seed = seed.ToString(CultureInfo.InvariantCulture), allow_setup = allowSetup };
+     }
+ 
+     object SetOracleSpeed(JsonElement p)
+@@ -437,10 +447,13 @@ sealed partial class GameHost
+         {
+             if (!oracleState.TryResolveSquad(OracleText(p, "squad_id", 200), out var id) || session.World.Squads.Find(id) is not { } found)
+                 throw new OracleHostError("not_found", "squad is not loaded");
+-            actors.AddRange(found.Members);
++            actors.AddRange(found.Members.Where(session.World.Characters.IsAlive));
+         }
+         if (actors.Count == 0 || actors.Count > 256) throw new OracleHostError("state_unavailable", "order requires 1..256 loaded actors");
++        var table = session.World.Characters;
++        bool Dead(CharacterId id) => table.Cold(id.Slot)?.Medical?.Dead == true;
+         SimCommand order;
++        CharacterId? target = null;
+         if (type == "move")
+         {
+             if (p.TryGetProperty("target_id", out _)) throw new ArgumentException("move uses position, not target_id");
+@@ -449,12 +462,17 @@ sealed partial class GameHost
+         else
+         {
+             if (p.TryGetProperty("position", out _)) throw new ArgumentException("attack uses target_id, not position");
+-            if (!oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var target)) throw new OracleHostError("not_found", "attack target is not loaded");
+-            order = new Meitou.Simulation.Combat.AttackOrder(actors, target) { Tick = session.World.Tick };
++            if (!oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var victim) || !table.IsAlive(victim) || Dead(victim))
++                throw new OracleHostError("not_found", "attack target is not loaded and alive");
++            target = victim;
++            order = new Meitou.Simulation.Combat.AttackOrder(actors, victim) { Tick = session.World.Tick };
+         }
++        // As the native probe: a dead actor or one that is its own target refuses the whole order.
++        if (actors.Any(id => Dead(id) || id == target)) throw new OracleHostError("invalid_request", "an order actor is dead, unavailable, or its own target");
+         session.World.Commands.Enqueue(order);
+         session.World.ApplyPausedInterfaceCommands();
+-        return new { accepted = true, type, characters = actors.Count };
++        // characters is kept for one release beside the native key affected_characters.
++        return new { accepted = true, type, affected_characters = actors.Count, characters = actors.Count };
+     }
+ 
+     static JsonArray OracleVector(Vector3 v) => new(v.X, v.Y, v.Z);
+diff --git a/src/Meitou.Game/GameHost.OracleSetup.cs b/src/Meitou.Game/GameHost.OracleSetup.cs
+new file mode 100644
+index 00000000..58f9f3d5
+--- /dev/null
++++ b/src/Meitou.Game/GameHost.OracleSetup.cs
+@@ -0,0 +1,533 @@
++using System.Globalization;
++using System.Numerics;
++using System.Reflection;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++using System.Text.Json.Nodes;
++using System.Text.RegularExpressions;
++using Meitou.Data.Fcs;
++using Meitou.Game.Oracle;
++using Meitou.Simulation;
++
++namespace Meitou.Game;
++
++/// <summary>
++/// The oracle's scene-setup commands (KenshiOracle <c>docs/scene-setup.md</c>, adapter 0.11.0): <c>setup_info</c>, <c>setup_area_census</c>, <c>setup_spawn_squad</c>,
++/// <c>setup_set_relation</c> and <c>setup_heal</c>. Every one but <c>setup_info</c> needs a world the oracle's own load_save finished with <c>allow_setup:true</c>; mutations
++/// also need a paused world with no run_until. None saves. Heal is the F10 cheat inside a tick bracket (<see cref="World.ApplyPausedOracleDebug"/>), spawns use the same
++/// bracket (<see cref="World.ApplyPausedOracleEdit"/>), relations the swap-aware <see cref="Meitou.Data.Gameplay.FactionRelations.Assign"/>. Replies carry exactly the
++/// contract's keys; Meitou-only facts go to <c>engine_detail</c>.
++/// </summary>
++sealed partial class GameHost
++{
++    string? oracleRequestedLoad, oracleProbeLoadedSave;
++    bool oracleRequestedAllowSetup, oracleAllowSetup, oracleWorldMutated;
++    int oracleProbeEpoch = -1, oracleSpawnSerial, oraclePlayerSaveRequestsRefused;
++    string oracleBuildCommit = OracleSetupPolicy.UnknownCommit;
++    // Where the session's Gameplay settings came from, fixed at startup: the user config, else the install's settings.cfg.
++    bool oracleGameplayFromUserConfig;
++
++    void StartOracleSetup()
++    {
++        oracleGameplayFromUserConfig = config.Gameplay is not null;
++        oracleBuildCommit = OracleSetupPolicy.BuildCommit(typeof(GameHost).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
++            .FirstOrDefault(a => a.Key == "OracleBuildCommit")?.Value);
++    }
++
++    object? ExecuteOracleSetup(string command, JsonElement p) => command switch
++    {
++        "setup_info" => OracleSetupInfo(p),
++        "setup_area_census" => OracleCensus(p),
++        "setup_spawn_squad" => OracleSpawnSquad(p),
++        "setup_set_relation" => OracleSetRelation(p),
++        "setup_heal" => OracleHeal(p),
++        _ => null,
++    };
++
++    string? OracleCurrentSave => saveInUse is null ? null : Path.GetFileName(Path.TrimEndingDirectorySeparator(saveInUse));
++    bool OracleProbeLoad => OracleSetupPolicy.ProbeLoad(OracleCurrentSave, oracleProbeLoadedSave, oracleProbeEpoch, worldEpoch);
++    // Autosave returns first in oracle mode (GameHost.Saving.cs), so it is never enabled under the oracle.
++    bool? OracleAutosaveEnabled => !g.Oracle && Gameplay.AutoSave;
++
++    int OraclePlayerCount()
++    {
++        if (session is null) return 0;
++        var table = session.World.Characters;
++        int n = 0;
++        for (int slot = 0; slot < table.Previous.Length; slot++)
++            if (table.Previous[slot].Alive && table.Cold(slot) is { IsPlayer: true }) ++n;
++        return n;
++    }
++
++    (string Code, string Message)? OracleSetupRefusal(bool mutation) => OracleSetupPolicy.Refusal(OracleReady, OracleProbeLoad, oracleAllowSetup, mutation,
++        session?.Simulation.IsPaused == true, OracleRunning, OracleAutosaveEnabled, OracleReady ? OraclePlayerCount() : 0);
++
++    /// <summary>The contract's gate in its order (G1-G3, then M1-M2 for a mutation, then G4; G5 always passes here); resolves identities once it is open.</summary>
++    void RequireOracleSetup(bool mutation)
++    {
++        if (OracleSetupRefusal(mutation) is { } refusal) throw new OracleHostError(refusal.Code, refusal.Message);
++        oracleState!.Capture(session, popData!, "0.2");
++    }
++
++    JsonObject OracleGate()
++    {
++        bool probe = OracleProbeLoad;
++        return new JsonObject
++        {
++            ["open"] = OracleReady && probe && oracleAllowSetup, ["probe_loaded_save"] = probe ? oracleProbeLoadedSave : null,
++            ["allow_setup"] = probe && oracleAllowSetup, ["epoch"] = worldEpoch,
++            ["refusal"] = OracleSetupPolicy.RefusalJson(OracleSetupRefusal(false)), ["mutation_refusal"] = OracleSetupPolicy.RefusalJson(OracleSetupRefusal(true)),
++        };
++    }
++
++    /// <summary>World-readiness terms for ping (see <see cref="OracleSetupPolicy.Readiness"/>).</summary>
++    JsonObject OracleReadiness() => OracleSetupPolicy.Readiness(session is not null, session is not null && player is not null && popData is not null && loadedSave is not null,
++        sceneLoad is not null, warming, skyArrival is not null, loading is { Exiting: true }, oracleLoadPending, oracleLoadError, OracleReady, session?.Simulation.IsPaused, oracleFrame);
++
++    JsonObject OracleWorldStamp() => new() { ["elapsed_seconds"] = OracleSeconds, ["paused"] = session.Simulation.IsPaused };
++
++    JsonObject OracleMutated(JsonObject result, JsonObject worldBefore)
++    {
++        result["saved"] = false; result["world_mutated"] = oracleWorldMutated; result["gate"] = OracleGate();
++        result["world_before"] = worldBefore; result["world_after"] = OracleWorldStamp();
++        return result;
++    }
++
++    // ---- info ----
++
++    object OracleSetupInfo(JsonElement p)
++    {
++        SetupKeys(p);
++        if (!OracleReady) throw new OracleHostError(OracleSetupPolicy.NotReady.Code, OracleSetupPolicy.NotReady.Message);
++        var (line, sha256, value) = OracleSquadSizeLine();
++        float multiplier = OracleSpawner().Settings.SquadSizeMultiplier;
++        string source = oracleGameplayFromUserConfig ? "user_config" : value is not null ? "settings.cfg" : "default";
++        bool probe = OracleProbeLoad;
++        return new JsonObject
++        {
++            ["gate"] = OracleGate(), ["current_save"] = OracleCurrentSave, ["probe_loaded_save"] = probe ? oracleProbeLoadedSave : null,
++            ["world_mutated"] = oracleWorldMutated, ["autosave_enabled"] = OracleAutosaveEnabled, ["autosave_configured"] = Gameplay.AutoSave,
++            ["player_save_requests_blocked"] = OracleSetupPolicy.RefusesPlayerSaveRequests(g.Oracle),
++            ["squad_size"] = new JsonObject { ["source"] = source, ["multiplier"] = multiplier, ["line"] = line, ["sha256"] = sha256, ["path"] = "settings.cfg" },
++            ["engine_detail"] = new JsonObject { ["player_save_requests_refused"] = oraclePlayerSaveRequestsRefused },
++        };
++    }
++
++    /// <summary>The install's settings.cfg squad-size line (<see cref="OracleSetupPolicy.SquadSizeLine"/>); all null when the file is absent or unreadable.</summary>
++    (string? Line, string? Sha256, float? Value) OracleSquadSizeLine()
++    {
++        try
++        {
++            string file = Path.Combine(install.Root, "settings.cfg");
++            return File.Exists(file) ? OracleSetupPolicy.SquadSizeLine(File.ReadAllBytes(file)) : (null, null, null);
++        }
++        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (null, null, null); }
++    }
++
++    // ---- census ----
++
++    object OracleCensus(JsonElement p)
++    {
++        // Read-only: allowed while time runs, never mutates.
++        SetupKeys(p, "center", "radius", "limit"); RequireOracleSetup(false);
++        Vector3 center = SetupPosition(p, "center");
++        double radius = (float)SetupNumber(p, "radius", .1, 20000);
++        int limit = SetupInteger(p, "limit", 1, 100);
++        var table = session.World.Characters;
++        var found = new List<(double Distance, string Key, CharacterId Id)>();
++        for (int slot = 0; slot < table.Previous.Length; slot++)
++        {
++            if (!table.Previous[slot].Alive) continue;
++            var id = table.IdOf(slot);
++            double d = OracleSetupPolicy.Horizontal(OracleFinitePosition(id), center);
++            if (d <= radius) found.Add((d, OracleIdentity(id), id));
++        }
++        found.Sort((a, b) => a.Distance != b.Distance ? a.Distance.CompareTo(b.Distance) : string.CompareOrdinal(a.Key, b.Key));
++        int alive = 0, dead = 0, unconscious = 0, players = 0;
++        var rows = new JsonArray();
++        foreach (var (distance, _, id) in found)
++        {
++            var cold = table.Cold(id.Slot);
++            bool d = cold?.Medical?.Dead ?? false, u = cold?.Medical?.Unconscious ?? false;
++            dead += d ? 1 : 0; unconscious += !d && u ? 1 : 0; alive += !d && !u ? 1 : 0; players += cold?.IsPlayer == true ? 1 : 0;
++            if (rows.Count >= limit) continue;
++            var row = OracleCharacterRow(id); row["is_player"] = cold?.IsPlayer ?? false; row["distance_xz"] = distance; rows.Add(row);
++        }
++        return new JsonObject { ["center"] = OracleVector(center), ["radius"] = radius, ["characters"] = rows, ["count"] = found.Count, ["truncated"] = found.Count > rows.Count,
++            ["alive_count"] = alive, ["dead_count"] = dead, ["unconscious_count"] = unconscious, ["player_count"] = players, ["gate"] = OracleGate(), ["world"] = OracleWorldStamp() };
++    }
++
++    // ---- spawn ----
++
++    PopulationSystem OracleSpawner() => session.World.Systems.OfType<PopulationSystem>().FirstOrDefault() ?? throw new OracleHostError("state_unavailable", "the world has no population system");
++
++    object OracleSpawnSquad(JsonElement p)
++    {
++        SetupKeys(p, "template_id", "faction_id", "position", "max_count", "permanent"); RequireOracleSetup(true);
++        string sid = SetupText(p, "template_id", 128), fid = SetupText(p, "faction_id", 128);
++        Vector3 at = SetupPosition(p, "position");
++        int count = SetupInteger(p, "max_count", 1, 16);
++        bool permanent = p.TryGetProperty("permanent", out _) && SetupBool(p, "permanent");
++        var record = popData!.Db.Find(sid);
++        int faction = OracleFindFaction(fid);
++        var spawner = OracleSpawner();
++        float multiplier = spawner.Settings.SquadSizeMultiplier;
++        if (OracleSetupPolicy.SpawnRefusal(record is not null, record?.Type == FcsRecordType.SQUAD_TEMPLATE, faction, popData.PlayerFaction, OracleNearPlayer(at, 2000), multiplier)
++            is { } refusal) throw new OracleHostError(refusal.Code, refusal.Message);
++        // Planned before any change: a unique character consumes no spawn serial and leaves world_mutated alone.
++        ulong key = OracleSetupPolicy.SpawnKey(sid, oracleSpawnSerial + 1);
++        var plan = spawner.PlanOracleTemplateSquad(session.World, sid, new Vector2(at.X, at.Z), faction, count, key);
++        if (plan.NamesUniqueCharacter) throw new OracleHostError("invalid_request", "the squad plan names a unique character");
++        ++oracleSpawnSerial;
++        var table = session.World.Characters;
++        var loadedBefore = OracleLoaded();
++        var worldBefore = OracleWorldStamp();
++        oracleWorldMutated = true;
++        IReadOnlyList<CharacterId> made = [];
++        session.World.ApplyPausedOracleEdit(() => made = spawner.SpawnOracleTemplateSquad(session.World, plan));
++        oracleState!.Capture(session, popData, "0.2");
++        var loaded = OracleLoaded(); loaded.ExceptWith(loadedBefore);
++        if (loaded.Any(id => table.Cold(id.Slot) is { IsPlayer: true })) throw new OracleHostError("state_unavailable", "unexpected player enlistment; reload the save");
++        var squad = made.Count > 0 ? session.World.Squads.Find(table.Cold(made[0].Slot)!.SquadId) : null;
++        var members = new JsonArray();
++        foreach (var id in made)
++        {
++            var row = OracleCharacterRow(id); row["medical"] = OracleMedical(id); members.Add(row);
++        }
++        var result = new JsonObject
++        {
++            ["template_id"] = sid, ["faction_id"] = fid, ["position"] = OracleVector(at), ["max_count"] = count, ["permanent"] = permanent,
++            ["size_multiplier"] = multiplier, ["squad_type"] = null,
++            ["returned_squad_id"] = squad is null ? null : oracleState.SquadIdentity(squad.Id), ["returned_members"] = members,
++            ["new_loaded_count"] = loaded.Count, ["new_loaded_truncated"] = loaded.Count > OracleSetupPolicy.MaximumSpawnRows,
++            ["rng_key"] = key.ToString(CultureInfo.InvariantCulture),
++            ["engine_detail"] = new JsonObject
++            {
++                ["call"] = "PopulationSystem.SpawnOracleTemplateSquad (SquadFactory plan with the session multiplier, explicit faction)",
++                ["placement"] = "idle, outside any town, on the ground: position y is ignored", ["permanent_applied"] = false, ["slave_squads_made"] = false,
++                ["spawn_serial"] = oracleSpawnSerial,
++            },
++        };
++        return OracleMutated(result, worldBefore);
++    }
++
++    HashSet<CharacterId> OracleLoaded()
++    {
++        var table = session.World.Characters;
++        var set = new HashSet<CharacterId>();
++        for (int slot = 0; slot < table.Previous.Length; slot++) if (table.Previous[slot].Alive) set.Add(table.IdOf(slot));
++        return set;
++    }
++
++    bool OracleNearPlayer(Vector3 at, double limit)
++    {
++        var table = session.World.Characters;
++        int players = 0;
++        bool near = false;
++        for (int slot = 0; slot < table.Previous.Length; slot++)
++        {
++            if (!table.Previous[slot].Alive || table.Cold(slot) is not { IsPlayer: true } cold) continue;
++            if (++players > OracleSetupPolicy.MaximumPlayers) throw new OracleHostError("state_unavailable", "more than 64 player characters");
++            if (cold.Medical?.Dead != true && OracleSetupPolicy.Horizontal(OracleFinitePosition(table.IdOf(slot)), at) <= limit) near = true;
++        }
++        return near;
++    }
++
++    // ---- relations ----
++
++    object OracleSetRelation(JsonElement p)
++    {
++        SetupKeys(p, "source_id", "target_id", "value"); RequireOracleSetup(true);
++        string sourceId = SetupText(p, "source_id", 128), targetId = SetupText(p, "target_id", 128);
++        float value = (float)SetupNumber(p, "value", -100, 100);
++        int source = OracleFindFaction(sourceId), target = OracleFindFaction(targetId);
++        if (source < 0 || target < 0) throw new OracleHostError("not_found", "faction not found");
++        if (source == target) throw new OracleHostError("invalid_request", "source and target must differ");
++        if (popData!.Relations is not { } relations) throw new OracleHostError("state_unavailable", "faction relations unavailable");
++        var worldBefore = OracleWorldStamp();
++        var matrixBefore = OracleRelationMatrix();
++        var forward = new JsonObject { ["before"] = OracleRelationPair(source, target) };
++        var backward = new JsonObject { ["before"] = OracleRelationPair(target, source) };
++        oracleWorldMutated = true;
++        var (cellA, cellB, _, _) = relations.Assign(source, target, value);
++        forward["after"] = OracleRelationPair(source, target); backward["after"] = OracleRelationPair(target, source);
++        var (changes, total) = OracleRelationChanges(matrixBefore, OracleRelationMatrix());
++        var result = new JsonObject
++        {
++            ["source_id"] = sourceId, ["target_id"] = targetId, ["value"] = value, ["source_to_target"] = forward, ["target_to_source"] = backward,
++            ["changes"] = changes, ["changed_cells"] = total, ["changes_truncated"] = total > OracleSetupPolicy.MaximumRelationRows, ["faction_count"] = relations.Count,
++            ["engine_detail"] = new JsonObject
++            {
++                ["call"] = "FactionRelations.Assign: clamped, a pair with the player stored as the other faction's view and read from both sides, counted in Changes; war flag untouched",
++                ["stored_cell"] = new JsonObject { ["source_id"] = relations.Factions[cellA].Id, ["target_id"] = relations.Factions[cellB].Id },
++                ["player_row_swapped"] = cellA != source, ["relation_changes_counter"] = relations.Changes,
++            },
++        };
++        return OracleMutated(result, worldBefore);
++    }
++
++    /// <summary>The faction with this exact id, or -1; an ambiguous or inconsistent faction list is an engine failure.</summary>
++    int OracleFindFaction(string id)
++    {
++        int found = -1;
++        for (int f = 0; f < popData!.Factions.Count; f++)
++            if (popData.Factions[f].Id == id) found = found < 0 ? f : throw new OracleHostError("state_unavailable", "faction id is ambiguous");
++        if (found >= 0 && popData.Relations.IndexOf(id) != found) throw new OracleHostError("state_unavailable", "faction list and relation table disagree");
++        return found;
++    }
++
++    JsonObject OracleRelationPair(int a, int b)
++    {
++        var r = popData!.Relations;
++        return new JsonObject { ["relation"] = r.Get(a, b), ["is_enemy"] = r.IsHostile(a, b), ["at_war"] = r.AtWar(a, b) };
++    }
++
++    (float[] Values, bool[] Hostile, bool[] War) OracleRelationMatrix()
++    {
++        var r = popData!.Relations; int n = r.Count;
++        var values = new float[n * n]; var hostile = new bool[n * n]; var war = new bool[n * n];
++        for (int a = 0; a < n; a++) for (int b = 0; b < n; b++) (values[a * n + b], hostile[a * n + b], war[a * n + b]) = (r.Get(a, b), r.IsHostile(a, b), r.AtWar(a, b));
++        return (values, hostile, war);
++    }
++
++    (JsonArray Rows, int Total) OracleRelationChanges((float[] Values, bool[] Hostile, bool[] War) before, (float[] Values, bool[] Hostile, bool[] War) after)
++    {
++        var r = popData!.Relations; int n = r.Count, total = 0;
++        var rows = new JsonArray();
++        for (int k = 0; k < n * n; k++)
++        {
++            if (before.Values[k] == after.Values[k] && before.Hostile[k] == after.Hostile[k] && before.War[k] == after.War[k]) continue;
++            if (++total > OracleSetupPolicy.MaximumRelationRows) continue;
++            int a = k / n, b = k % n;
++            rows.Add(new JsonObject { ["source_id"] = r.Factions[a].Id, ["target_id"] = r.Factions[b].Id,
++                ["relation_before"] = before.Values[k], ["relation_after"] = after.Values[k], ["is_enemy_before"] = before.Hostile[k], ["is_enemy_after"] = after.Hostile[k],
++                ["at_war_before"] = before.War[k], ["at_war_after"] = after.War[k] });
++        }
++        return (rows, total);
++    }
++
++    // ---- heal ----
++
++    object OracleHeal(JsonElement p)
++    {
++        SetupKeys(p, "character_id"); RequireOracleSetup(true);
++        string cid = SetupText(p, "character_id", 200);
++        if (!oracleState!.TryResolveCharacter(cid, out var id) || !session.World.Characters.IsAlive(id)) throw new OracleHostError("not_found", "character is not loaded");
++        var medical = session.World.Characters.Cold(id.Slot)?.Medical;
++        if (medical is { Dead: true }) throw new OracleHostError("invalid_request", "character is dead");
++        if (medical is null || medical.Parts.Any(part => part.Template is null || !float.IsFinite(part.MaxHp) || part.MaxHp < 0))
++            throw new OracleHostError("state_unavailable", "medical system unavailable");
++        var worldBefore = OracleWorldStamp();
++        var before = OracleMedical(id);
++        oracleWorldMutated = true;
++        session.World.ApplyPausedOracleDebug(new DebugHeal([id]) { Tick = session.World.Tick });
++        var result = new JsonObject
++        {
++            ["character_id"] = cid, ["before"] = before, ["after"] = OracleMedical(id),
++            ["engine_detail"] = new JsonObject
++            {
++                ["call"] = "MedicalState.Heal (F10 cheat): parts whole, no wear, stun or bandage, full blood, wounds cleared, KO timer 0; the unconscious flag follows on the next body tick",
++                ["max"] = "calculated MaxHp",
++            },
++        };
++        return OracleMutated(result, worldBefore);
++    }
++
++    /// <summary>The contract's medical shape: parts in body order with Meitou's calculated maximum; null without a medical state.</summary>
++    JsonNode? OracleMedical(CharacterId id)
++    {
++        if (session.World.Characters.Cold(id.Slot)?.Medical is not { } medical) return null;
++        var parts = new JsonArray();
++        foreach (var part in medical.Parts)
++            parts.Add(new JsonObject { ["id"] = OracleSetupPolicy.PartId(part.Template.StringId, part.Template.Side), ["flesh"] = part.Flesh, ["stun"] = part.Stun,
++                ["max"] = float.IsFinite(part.MaxHp) ? part.MaxHp : null });
++        return new JsonObject { ["parts"] = parts, ["blood"] = medical.Blood, ["dead"] = medical.Dead, ["unconscious"] = medical.Unconscious };
++    }
++
++    // ---- rows ----
++
++    string OracleIdentity(CharacterId id) => oracleState!.CharacterIdentity(id) ?? throw new OracleHostError("state_unavailable", "character identity unavailable");
++
++    Vector3 OracleFinitePosition(CharacterId id)
++    {
++        var at = session.World.Characters.Previous[id.Slot].Position;
++        return float.IsFinite(at.X) && float.IsFinite(at.Y) && float.IsFinite(at.Z) ? at : throw new OracleHostError("state_unavailable", "character position is not finite");
++    }
++
++    JsonObject OracleCharacterRow(CharacterId id)
++    {
++        var cold = session.World.Characters.Cold(id.Slot);
++        int faction = cold?.Faction ?? -1;
++        return new JsonObject
++        {
++            ["id"] = OracleIdentity(id), ["template_id"] = cold?.RecordId, ["faction_id"] = (uint)faction < (uint)popData!.Factions.Count ? popData.Factions[faction].Id : null,
++            ["squad_id"] = oracleState!.SquadIdentity(cold?.SquadId ?? -1), ["position"] = OracleVector(OracleFinitePosition(id)),
++            ["dead"] = cold?.Medical?.Dead ?? false, ["unconscious"] = cold?.Medical?.Unconscious ?? false,
++        };
++    }
++
++    // ---- parameters: the contract's texts, for setup_* only ----
++
++    static void SetupKeys(JsonElement p, params string[] allowed)
++    {
++        if (p.ValueKind != JsonValueKind.Object) throw new ArgumentException("params must be object");
++        foreach (var item in p.EnumerateObject()) if (!allowed.Contains(item.Name, StringComparer.Ordinal)) throw new ArgumentException("unknown parameter: " + item.Name);
++    }
++    static JsonElement SetupField(JsonElement p, string key) => p.TryGetProperty(key, out var value) ? value : throw new ArgumentException("missing field: " + key);
++    static string SetupText(JsonElement p, string key, int maxBytes)
++    {
++        var value = SetupField(p, key);
++        if (value.ValueKind != JsonValueKind.String || value.GetString() is not { Length: > 0 } text || Encoding.UTF8.GetByteCount(text) > maxBytes || text.Contains('\0'))
++            throw new ArgumentException("invalid string: " + key);
++        return text;
++    }
++    static double SetupNumber(JsonElement p, string key, double min, double max)
++    {
++        var value = SetupField(p, key);
++        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double n) || !double.IsFinite(n) || n < min || n > max) throw new ArgumentException("invalid number: " + key);
++        return n;
++    }
++    static int SetupInteger(JsonElement p, string key, int min, int max)
++    {
++        double n = SetupNumber(p, key, min, max);
++        return n == Math.Floor(n) ? (int)n : throw new ArgumentException(key + " must be an integer");
++    }
++    static bool SetupBool(JsonElement p, string key)
++    {
++        var value = SetupField(p, key);
++        return value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : throw new ArgumentException("invalid boolean: " + key);
++    }
++    static Vector3 SetupPosition(JsonElement p, string key)
++    {
++        var value = SetupField(p, key);
++        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 3 || value.EnumerateArray().Any(v => v.ValueKind != JsonValueKind.Number))
++            throw new ArgumentException(key + " must have three numbers");
++        var xyz = new float[3];
++        for (int i = 0; i < 3; i++)
++        {
++            if (!value[i].TryGetDouble(out double n) || !double.IsFinite(n) || Math.Abs(n) > 1e7) throw new ArgumentException("invalid position coordinate");
++            xyz[i] = (float)n;
++        }
++        return new(xyz[0], xyz[1], xyz[2]);
++    }
++}
++
++/// <summary>Pure rules of the scene-setup commands, shared with their focused tests.</summary>
++internal static partial class OracleSetupPolicy
++{
++    internal const int MaximumPlayers = 64, MaximumSpawnRows = 32, MaximumRelationRows = 100;
++    internal const string UnknownCommit = "unknown";
++    internal static readonly (string Code, string Message) NotReady = ("world_not_ready", "world is unavailable or a save is loading");
++
++    /// <summary>The capabilities ping announces.</summary>
++    internal static readonly string[] Capabilities = ["scene_setup"];
++
++    /// <summary>Ping's fixed identity keys; the host adds the live ones.</summary>
++    internal static JsonObject PingIdentity() => new()
++    {
++        ["target"] = "meitou", ["plugin_version"] = OracleProtocol.AdapterVersion, ["game_version"] = "MeitouClient",
++        ["schema_version"] = "0.2", ["state_schema_version"] = "0.2", ["supported_schema_versions"] = new JsonArray("0.1", "0.2"),
++        ["capabilities"] = new JsonArray([.. Capabilities.Select(c => (JsonNode?)c)]),
++    };
++
++    /// <summary>A completed probe load_save of the current world: its save is the current one and no other world replaced it since.</summary>
++    internal static bool ProbeLoad(string? currentSave, string? probeLoadedSave, int probeEpoch, int worldEpoch) =>
++        probeLoadedSave is not null && probeEpoch == worldEpoch && string.Equals(currentSave, probeLoadedSave, StringComparison.Ordinal);
++
++    /// <summary>The first failing gate row in the contract's order, or null: G1-G3, for a mutation M1-M2, then G4 (G5 always passes on Meitou).</summary>
++    internal static (string Code, string Message)? Refusal(bool worldReady, bool probeLoad, bool allowSetup, bool mutation, bool paused, bool running, bool? autosaveEnabled,
++        int playerCharacters)
++    {
++        if (!worldReady) return NotReady;
++        if (!probeLoad) return ("not_allowed", "scene setup requires a world loaded by the probe's load_save");
++        if (!allowSetup) return ("not_allowed", "scene setup was not enabled: load the save with allow_setup:true");
++        if (mutation && (!paused || running)) return ("invalid_request", "scene setup mutations require a paused world and no run_until");
++        if (mutation && autosaveEnabled != false) return ("not_allowed", "scene setup mutations are refused while autosave is enabled");
++        if (playerCharacters <= 0) return ("state_unavailable", "player unavailable");
++        return null;
++    }
++
++    internal static JsonObject? RefusalJson((string Code, string Message)? refusal) =>
++        refusal is { } r ? new JsonObject { ["code"] = r.Code, ["message"] = r.Message } : null;
++
++    /// <summary>
++    /// The first spawn refusal after the gate and the parameter values, in the contract's order: template absent, not a SQUAD_TEMPLATE, faction absent (<paramref name="faction"/>
++    /// -1), the player faction, no non-dead player character within 2000 units X/Z, a session squad-size multiplier other than 1. The unique-character check follows the plan.
++    /// </summary>
++    internal static (string Code, string Message)? SpawnRefusal(bool templateFound, bool squadTemplate, int faction, int playerFaction, bool nearPlayer, float multiplier)
++    {
++        if (!templateFound) return ("not_found", "template not found");
++        if (!squadTemplate) return ("invalid_request", "template is not a SQUAD_TEMPLATE record");
++        if (faction < 0) return ("not_found", "faction not found");
++        if (faction == playerFaction) return ("invalid_request", "spawning into the player faction is refused");
++        if (!nearPlayer) return ("invalid_request", "spawn position must be within 2000 units (horizontal) of a player character");
++        if (multiplier != 1) return ("invalid_request", "squad size multiplier must be 1");
++        return null;
++    }
++
++    /// <summary>Oracle mode drops every player save/load request (quick keys, menu, import), so a key press cannot write or load a save while the oracle runs.</summary>
++    internal static bool RefusesPlayerSaveRequests(bool oracle) => oracle;
++
++    /// <summary>The template spawn's roll key: the record and the accepted-spawn serial since the last completed load, so the same request sequence after a reload rolls the same.</summary>
++    internal static ulong SpawnKey(string templateId, int serial) => Rng.Mix(Rng.StableHash(templateId) ^ 0x5E7A_0000_0000_0000UL ^ (ulong)(uint)serial);
++
++    internal static string SideName(Meitou.Data.Gameplay.Bodies.BodySide side) =>
++        side switch { Meitou.Data.Gameplay.Bodies.BodySide.Left => "left", Meitou.Data.Gameplay.Bodies.BodySide.Right => "right", _ => "neither" };
++
++    internal static string PartId(string stringId, Meitou.Data.Gameplay.Bodies.BodySide side) => stringId + ":" + SideName(side);
++
++    internal static int Index(double value) => value == Math.Floor(value) ? (int)value : throw new ArgumentException("an index or count must be an integer");
++
++    internal static double Horizontal(Vector3 a, Vector3 b) => Math.Sqrt(((double)a.X - b.X) * ((double)a.X - b.X) + ((double)a.Z - b.Z) * ((double)a.Z - b.Z));
++
++    /// <summary>The build's full commit when it is 40 lowercase hex digits, else <see cref="UnknownCommit"/>.</summary>
++    internal static string BuildCommit(string? metadata) => metadata is not null && CommitPattern().IsMatch(metadata) ? metadata : UnknownCommit;
++
++    [GeneratedRegex("^[0-9a-f]{40}$")]
++    private static partial Regex CommitPattern();
++
++    /// <summary>
++    /// The settings.cfg squad-size line by the contract's rule: split the raw bytes on LF, strip one trailing CR and a UTF-8 BOM on the first line; a line matches when the bytes
++    /// before its first '=', trimmed of ASCII whitespace and ASCII case-folded, are <c>squad size multiplier</c>. Exactly one match gives the line, the lowercase SHA-256 of its
++    /// bytes and its value as Meitou parses it (null when unparsable); zero or several give nulls.
++    /// </summary>
++    internal static (string? Line, string? Sha256, float? Value) SquadSizeLine(byte[] file)
++    {
++        byte[]? match = null;
++        int start = 0, matches = 0;
++        for (int i = 0; i <= file.Length; i++)
++        {
++            if (i < file.Length && file[i] != (byte)'\n') continue;
++            var line = file.AsSpan(start, i - start);
++            if (start == 0 && line.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF])) line = line[3..];
++            if (line.EndsWith((ReadOnlySpan<byte>)[(byte)'\r'])) line = line[..^1];
++            start = i + 1;
++            int eq = line.IndexOf((byte)'=');
++            if (eq < 0 || !Encoding.ASCII.GetString(line[..eq].Trim(" \t\r\n\f\v"u8)).Equals("squad size multiplier", StringComparison.OrdinalIgnoreCase)) continue;
++            ++matches;
++            match = line.ToArray();
++        }
++        if (matches != 1) return (null, null, null);
++        string text = new UTF8Encoding(false, false).GetString(match!);
++        float? value = float.TryParse(text[(text.IndexOf('=') + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out float v) && float.IsFinite(v) ? v : null;
++        return (text, Convert.ToHexStringLower(SHA256.HashData(match!)), value);
++    }
++
++    /// <summary>
++    /// World-readiness terms for ping, reads only. Meitou terms: initialized = session, player, population data and loaded save all present; loading_from_save = a scene load
++    /// in progress; load_pause_pending = the oracle load still pending or the screen still covered (as ping); world_ready = OracleReady. Meitou has no reset flag and no zone
++    /// manager, so game_resetting and zone_manager_is_loading are null (the latter with a reason); covered, warming, sky_arrival, overlay_exiting and load_error are the
++    /// Meitou-only terms of world_ready.
++    /// </summary>
++    internal static JsonObject Readiness(bool worldPresent, bool initialized, bool sceneLoad, bool warming, bool skyArrival, bool overlayExiting, bool loadPending,
++        string? loadError, bool worldReady, bool? paused, long frame)
++    {
++        bool covered = sceneLoad || warming || skyArrival || overlayExiting;
++        return new JsonObject { ["world_present"] = worldPresent, ["initialized"] = initialized, ["game_resetting"] = null, ["loading_from_save"] = sceneLoad,
++            ["loading_from_save_unavailable_reason"] = null, ["load_pending"] = loadPending, ["load_pause_pending"] = loadPending || covered, ["world_ready"] = worldReady,
++            ["paused"] = paused, ["paused_unavailable_reason"] = paused is null ? "world_unavailable" : null,
++            ["zone_manager_is_loading"] = null, ["zone_manager_unavailable_reason"] = "no_zone_manager_in_meitou",
++            ["covered"] = covered, ["warming"] = warming, ["sky_arrival"] = skyArrival, ["overlay_exiting"] = overlayExiting, ["load_error"] = loadError, ["frame"] = frame };
++    }
++}
+diff --git a/src/Meitou.Game/GameHost.Saving.cs b/src/Meitou.Game/GameHost.Saving.cs
+index 6ff4110e..c434ad28 100644
+--- a/src/Meitou.Game/GameHost.Saving.cs
++++ b/src/Meitou.Game/GameHost.Saving.cs
+@@ -128,6 +128,13 @@ sealed partial class GameHost
+         HandleFeedback();
+         PrintSavedLog();
+         Autosave(realDt);
++        // In oracle mode no key, menu or import request writes or loads a save (only the oracle's own load_save loads, directly).
++        if (OracleSetupPolicy.RefusesPlayerSaveRequests(g.Oracle) && (quickSaveRequested || quickLoadRequested || saveRequestedFolder is not null || loadRequestedFolder is not null || importRequested is not null))
++        {
++            quickSaveRequested = quickLoadRequested = false; saveRequestedFolder = loadRequestedFolder = null; importRequested = null;
++            oraclePlayerSaveRequestsRefused++;
++            player.Notice("Saving and loading are disabled while the oracle runs.", true);
++        }
+         if (quickSaveRequested) { quickSaveRequested = false; QuickSaveNow(); }
+         if (quickLoadRequested) { quickLoadRequested = false; BeginQuickLoad(); }
+         if (saveRequestedFolder is { } to) { saveRequestedFolder = null; QuickSaveNow(to); }
+diff --git a/src/Meitou.Game/Meitou.Game.csproj b/src/Meitou.Game/Meitou.Game.csproj
+index 956908f0..24b0df8b 100644
+--- a/src/Meitou.Game/Meitou.Game.csproj
++++ b/src/Meitou.Game/Meitou.Game.csproj
+@@ -83,4 +83,30 @@
+     </ItemGroup>
+   </Target>
+ 
++  <!-- The opt-in oracle's build_commit (docs/oracle.md): the full commit, or "unknown" without git, on any git failure or with uncommitted changes. GitCommit above stays the UI's. -->
++  <Target Name="ReadOracleBuildCommit" BeforeTargets="GetAssemblyAttributes">
++    <Exec Command="git rev-parse HEAD" WorkingDirectory="$(MSBuildProjectDirectory)"
++          ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true"
++          StandardOutputImportance="Low" StandardErrorImportance="Low" Condition="'$(OracleBuildCommit)' == ''">
++      <Output TaskParameter="ConsoleOutput" ItemName="_OracleHead" />
++      <Output TaskParameter="ExitCode" PropertyName="_OracleHeadExit" />
++    </Exec>
++    <Exec Command="git status --porcelain" WorkingDirectory="$(MSBuildProjectDirectory)"
++          ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true"
++          StandardOutputImportance="Low" StandardErrorImportance="Low" Condition="'$(OracleBuildCommit)' == '' and '$(_OracleHeadExit)' == '0'">
++      <Output TaskParameter="ConsoleOutput" ItemName="_OracleDirty" />
++      <Output TaskParameter="ExitCode" PropertyName="_OracleDirtyExit" />
++    </Exec>
++    <PropertyGroup>
++      <OracleBuildCommit Condition="'$(OracleBuildCommit)' == '' and '$(_OracleHeadExit)' == '0' and '$(_OracleDirtyExit)' == '0' and '@(_OracleDirty->Count())' == '0'">@(_OracleHead)</OracleBuildCommit>
++      <OracleBuildCommit Condition="'$(OracleBuildCommit)' == ''">unknown</OracleBuildCommit>
++    </PropertyGroup>
++    <ItemGroup>
++      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
++        <_Parameter1>OracleBuildCommit</_Parameter1>
++        <_Parameter2>$(OracleBuildCommit)</_Parameter2>
++      </AssemblyAttribute>
++    </ItemGroup>
++  </Target>
++
+ </Project>
+diff --git a/src/Meitou.Game/Oracle/OracleProtocol.cs b/src/Meitou.Game/Oracle/OracleProtocol.cs
+index 3b9d3af1..e8116adb 100644
+--- a/src/Meitou.Game/Oracle/OracleProtocol.cs
++++ b/src/Meitou.Game/Oracle/OracleProtocol.cs
+@@ -7,7 +7,7 @@ namespace Meitou.Game.Oracle;
+ internal static class OracleProtocol
+ {
+     /// <summary>The adapter version ping reports as <c>plugin_version</c>; it follows the KenshiOracle protocol release it implements.</summary>
+-    internal const string AdapterVersion = "0.10.0";
++    internal const string AdapterVersion = "0.11.0";
+     internal const int MaxLineBytes = 65536; // Includes the terminating LF.
+     internal const int QueueCapacity = 64;
+     static readonly UTF8Encoding Utf8 = new(false, true);
+diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
+index a4f9dd3f..66d033a0 100644
+--- a/src/Meitou.Game/Oracle/OracleState.cs
++++ b/src/Meitou.Game/Oracle/OracleState.cs
+@@ -26,6 +26,9 @@ internal sealed class OracleState
+     internal string? CharacterIdentity(CharacterId id) =>
+         characterIds.TryGetValue(id, out string? identity) && currentCharacters.ContainsKey(identity) ? identity : null;
+ 
++    internal string? SquadIdentity(int id) =>
++        squadIds.TryGetValue(id, out string? identity) && currentSquads.ContainsKey(identity) ? identity : null;
++
+     internal bool TryResolveCharacter(string identity, out CharacterId id) => currentCharacters.TryGetValue(identity, out id);
+     internal bool TryResolveSquad(string identity, out int id) => currentSquads.TryGetValue(identity, out id);
+ 
+diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+index a1896126..eaa075be 100644
+--- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+@@ -1,5 +1,8 @@
+ using System.Numerics;
+ using Meitou.Data.Gameplay;
++using Meitou.Data.Gameplay.Bodies;
++using Meitou.Game;
++using Meitou.Game.Oracle;
+ using Meitou.Simulation;
+ using SimWorld = Meitou.Simulation.World;
+ 
+@@ -10,6 +13,102 @@ public class OracleSetupTests
+ {
+     static float Ground(float x, float z) => 7 + x * 0.01f;
+ 
++    [Theory]
++    [InlineData(true, true, true, false, true, false, false, 1, null)]                           // read-only, open
++    [InlineData(true, true, true, true, true, false, false, 1, null)]                            // mutation, open
++    [InlineData(false, true, true, false, true, false, false, 1, "world_not_ready")]             // G1
++    [InlineData(true, false, true, false, true, false, false, 1, "not_allowed:load_save")]       // G2: not a probe load_save
++    [InlineData(true, true, false, false, true, false, false, 1, "not_allowed:allow_setup")]     // G3: no opt-in
++    [InlineData(true, true, true, true, false, false, false, 1, "invalid_request")]              // M1: running
++    [InlineData(true, true, true, true, true, true, false, 1, "invalid_request")]                // M1: run_until active
++    [InlineData(true, true, true, false, false, true, true, 1, null)]                            // census ignores M1 and M2
++    [InlineData(true, true, true, true, true, false, true, 1, "not_allowed:autosave")]           // M2
++    [InlineData(true, true, true, true, true, false, null, 1, "not_allowed:autosave")]           // M2: unreadable autosave
++    [InlineData(true, true, true, false, true, false, false, 0, "state_unavailable")]            // G4
++    [InlineData(true, false, false, true, false, true, true, 0, "not_allowed:load_save")]        // the first failing row wins
++    public void The_gate_refuses_in_the_contract_order(bool ready, bool probeLoad, bool allowSetup, bool mutation, bool paused, bool running, bool? autosave, int players,
++        string? expected)
++    {
++        var refusal = OracleSetupPolicy.Refusal(ready, probeLoad, allowSetup, mutation, paused, running, autosave, players);
++        string? got = refusal is not { } r ? null : r.Code != "not_allowed" ? r.Code
++            : "not_allowed:" + (r.Message.Contains("allow_setup:true") ? "allow_setup" : r.Message.Contains("autosave") ? "autosave" : "load_save");
++        Assert.Equal(expected, got);
++    }
++
++    [Theory]
++    [InlineData("oracle-base-nature", "oracle-base-nature", 3, 3, true)]
++    [InlineData("my-campaign", "my-campaign", 3, 3, true)]                 // no save-name allowlist
++    [InlineData("oracle-base-nature", null, -1, 3, false)]                 // loaded by --load, not by load_save
++    [InlineData("oracle-base-nature", "oracle-base-ville", 3, 3, false)]   // the current world is not the one the oracle loaded
++    [InlineData("Oracle-Base-Nature", "oracle-base-nature", 3, 3, false)]  // names are exact
++    [InlineData("oracle-base-nature", "oracle-base-nature", 3, 4, false)]  // another world replaced it since
++    public void Only_a_completed_probe_load_of_the_current_world_counts(string? current, string? loaded, int probeEpoch, int worldEpoch, bool expected) =>
++        Assert.Equal(expected, OracleSetupPolicy.ProbeLoad(current, loaded, probeEpoch, worldEpoch));
++
++    [Fact]
++    public void Oracle_mode_refuses_player_saves()
++    {
++        Assert.True(OracleSetupPolicy.RefusesPlayerSaveRequests(oracle: true));
++        Assert.False(OracleSetupPolicy.RefusesPlayerSaveRequests(oracle: false));
++    }
++
++    [Fact]
++    public void Readiness_reports_the_contract_keys_without_a_window_and_says_why_a_value_is_missing()
++    {
++        var ready = OracleSetupPolicy.Readiness(true, true, false, false, false, false, false, null, true, true, 42);
++        foreach (var key in new[] { "world_present", "initialized", "game_resetting", "loading_from_save", "loading_from_save_unavailable_reason", "load_pending",
++                     "load_pause_pending", "world_ready", "paused", "paused_unavailable_reason", "zone_manager_is_loading", "zone_manager_unavailable_reason", "frame" })
++            Assert.True(ready.ContainsKey(key), key);
++        Assert.False(ready.ContainsKey("window"));
++        Assert.True(ready["world_ready"]!.GetValue<bool>()); Assert.True(ready["paused"]!.GetValue<bool>()); Assert.Null(ready["paused_unavailable_reason"]);
++        Assert.False(ready["load_pause_pending"]!.GetValue<bool>()); Assert.Null(ready["zone_manager_is_loading"]); Assert.Equal(42, ready["frame"]!.GetValue<long>());
++
++        var loading = OracleSetupPolicy.Readiness(true, true, true, false, false, false, false, null, false, false, 7);
++        Assert.True(loading["loading_from_save"]!.GetValue<bool>()); Assert.True(loading["covered"]!.GetValue<bool>()); Assert.True(loading["load_pause_pending"]!.GetValue<bool>());
++        Assert.False(loading["paused"]!.GetValue<bool>()); Assert.Null(loading["paused_unavailable_reason"]);
++
++        var none = OracleSetupPolicy.Readiness(false, false, false, false, false, false, true, "boom", false, null, 0);
++        Assert.Null(none["paused"]); Assert.Equal("world_unavailable", none["paused_unavailable_reason"]!.GetValue<string>());
++        Assert.True(none["load_pending"]!.GetValue<bool>()); Assert.True(none["load_pause_pending"]!.GetValue<bool>()); Assert.Equal("boom", none["load_error"]!.GetValue<string>());
++    }
++
++    [Fact]
++    public void Part_ids_and_indexes_follow_the_dump_and_native_conventions()
++    {
++        Assert.Equal("28-gamedata.quack:left", OracleSetupPolicy.PartId("28-gamedata.quack", BodySide.Left));
++        Assert.Equal("100-gamedata.quack:neither", OracleSetupPolicy.PartId("100-gamedata.quack", BodySide.None));
++        Assert.Equal(5, OracleSetupPolicy.Horizontal(new Vector3(3, 100, 4), Vector3.Zero), 6);
++        Assert.Equal(3, OracleSetupPolicy.Index(3));
++        Assert.Throws<ArgumentException>(() => OracleSetupPolicy.Index(2.5));
++    }
++
++    [Fact]
++    public void Template_spawn_keys_repeat_after_a_reload_and_differ_within_one_world()
++    {
++        // The host resets the serial on every finished probe load, so the same request sequence on a fresh load rolls the same squads.
++        Assert.Equal(OracleSetupPolicy.SpawnKey("57-gamedata.base", 1), OracleSetupPolicy.SpawnKey("57-gamedata.base", 1));
++        Assert.NotEqual(OracleSetupPolicy.SpawnKey("57-gamedata.base", 1), OracleSetupPolicy.SpawnKey("57-gamedata.base", 2));
++        Assert.NotEqual(OracleSetupPolicy.SpawnKey("57-gamedata.base", 1), OracleSetupPolicy.SpawnKey("58-gamedata.base", 1));
++    }
++
++    [Fact]
++    public void Ping_reports_the_adapter_version_and_the_scene_setup_capability()
++    {
++        var ping = OracleSetupPolicy.PingIdentity();
++        Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
++        Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
++        Assert.Equal("0.2", ping["state_schema_version"]!.GetValue<string>());
++        Assert.Equal(["scene_setup"], ping["capabilities"]!.AsArray().Select(c => c!.GetValue<string>()));
++    }
++
++    [Fact]
++    public void Spawning_into_the_player_faction_is_refused()
++    {
++        Assert.Equal(("invalid_request", "spawning into the player faction is refused"),
++            OracleSetupPolicy.SpawnRefusal(templateFound: true, squadTemplate: true, faction: 1, playerFaction: 1, nearPlayer: true, multiplier: 1));
++        Assert.Null(OracleSetupPolicy.SpawnRefusal(templateFound: true, squadTemplate: true, faction: 0, playerFaction: 1, nearPlayer: true, multiplier: 1));
++    }
++
+     [Fact]
+     public void Assign_writes_the_player_pair_where_it_is_read_and_counts_the_change()
+     {
