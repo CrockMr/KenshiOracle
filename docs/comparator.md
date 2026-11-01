@@ -56,6 +56,19 @@ Loader requires:
 - Meitou: distinct uint64 seeds applied before loading and consistent across
   ready state, repetition provenance and every snapshot's provenance.
 - Verified control restoration for both campaigns.
+- Build commit: a campaign with `build_commit_known:false` (`"unknown"`) is
+  refused, and so is a commit that changes between the report and any
+  repetition's setup receipt. A report without `build_commit` (written before
+  0.11) is refused for `scenario-0.2` and stays comparable for scenario 0.1,
+  with the limitation `build commit not recorded`.
+- Scene setup (a `scenario-0.2` with a `setup` block): every repetition's
+  `setup` receipt has `receipt_format:"scene-setup-0.1"`, the declared target,
+  `verdict:"passed"` and no failure; its `setup_hash` equals the hash
+  recomputed from `scenario.setup` (rule in
+  [scene setup](scene-setup.md#receipt-report-and-comparator)); its
+  `alias_map` holds exactly the declared spawn and member aliases plus
+  `player` or `player/1..n`, binds no character twice, has the same key set
+  in every repetition, and equals every capture's `setup.alias_map`.
 
 `completed` status alone is insufficient. Fingerprint does not cover assets,
 mods, their order or builds: retain these preconditions and build evidence
@@ -131,6 +144,40 @@ the same hour length (**Verified**) and the calendar advances about 33 calendar
 seconds per real second at x1 (**Observed**); no simulated-time counter is read,
 so simulated-time equivalence there is **Unknown**; see
 [time units](protocol.md#time-units).
+
+<a id="scene-scope"></a>
+
+## Scene scope (scenario-0.2 with setup)
+
+With a `setup` block, the comparator classifies only the scene, as frozen in
+[scene setup](scene-setup.md#receipt-report-and-comparator); the code is
+[oracle_scope.py](../mcp-server/oracle_scope.py). A scenario without
+`setup` keeps every metric described above.
+
+Characters in scope at a checkpoint are the alias ids, the player ids and every
+character within `scene_radius` (X/Z, inclusive) of `scene_center`, read from
+that checkpoint's snapshot. Ids come from each repetition's `alias_map`, never
+from HAND proof, and a spawned id never appears in a metric path.
+
+| Prefix | Metrics | Use |
+| --- | --- | --- |
+| `/scene/` | `/scene/squads/<spawn>/present`; `/scene/cohort/<cohort>/size`, `present`, `missing`; `/scene/intruders/count` (in-radius characters outside the alias and player cohorts; null when a position is unknown); `/scene/relations/<a>/<b>/value` for each declared pair, both directions | classified, in `findings` |
+| `/scene/outcome/` | per cohort `survivors`, `dead`, `unconscious` and `health/current_total`, `stun_total`, `maximum_total`; the player's individual fields under `/scene/outcome/characters/alias:<alias>/`; engagement of each cohort over the whole scenario | `scene_outcome`, one observation per repetition, never classified |
+| `/background/` | the metrics of the sections above with this prefix: population, clock, every other relation, faction starting cohorts and faction engagement without the cohort members, saved characters other than the players, saved-squad trajectories and id-based moves outside the cohorts | `background_metrics`, never classified |
+
+Cohorts are `player` (the `player` or `player/<n>` aliases) and
+`<spawn alias>/<template>`. Spawned members are interchangeable: they are
+compared only as these (alias, template) aggregates, never one by one, so the
+engines' reply order and ids do not matter. In values, a reference to an
+aliased character or squad reads `alias:<alias>` (members:
+`alias:<spawn>/<template>`).
+
+`setup_members` lists, per target and repetition, the receipt's member facts
+(`alias`, `template_id`, `faction_id`, `part_max`, `blood_before`,
+`blood_after`, `rng_key`, without the engine id). The maxima are facts: there
+is no verdict on the fight outcome. `scene_scope` records the centre, radius,
+declared pairs and alias keys. The report's limitations state that outcome and
+background metrics are not classified.
 
 <a id="écarts-re_kenshi-et-sorties"></a>
 

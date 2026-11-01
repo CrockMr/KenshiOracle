@@ -44,12 +44,17 @@ def proof(*, restored=False):
         known_deviations=deepcopy(KNOWN_DEVIATIONS))
 
 
-def campaign(folder, target, *, n=5):
+def campaign(folder, target, *, n=5, scenario=None, snapshot=None, receipt=None, commit=None):
+    """Synthetic campaign; ``snapshot``, ``receipt`` and ``commit`` shape 0.11 scene-setup reports."""
     folder.mkdir()
-    scenario = deepcopy(SCENARIO)
+    scenario = deepcopy(SCENARIO if scenario is None else scenario)
     scenario['repeat'] = n
     report = dict(target=target, status='completed', restoration=dict(verified=True),
                   scenario=scenario, repeat=n, source_fingerprint=FINGERPRINT, executions=[])
+    if commit is not None:
+        report.update(report_format='0.1', scenario_schema=scenario['schema_version'], state_schema='0.2',
+                      build_commit=commit, build_commit_known=commit != 'unknown',
+                      limitations=['commit unknown'] if commit == 'unknown' else [])
     if target == 'original':
         report['reference_profile'] = proof(restored=True)
     for index in range(1, n+1):
@@ -62,16 +67,19 @@ def campaign(folder, target, *, n=5):
             execution['provenance'] = dict(target='meitou', seed=str(1000+index),
                 seed_source='oracle_load_override', seed_applied_before_load=True)
             execution['load']['ready'] = deepcopy(execution['provenance'])
+        if receipt is not None:
+            execution['setup'] = receipt(target, index, scenario)
         for point in scenario['checkpoints']:
-            snapshot = state()
+            values = state() if snapshot is None else snapshot(target, index, point)
             at = point['at']
-            snapshot['clock'].update(elapsed_seconds=216000+at, hour=12+at/3600)
-            snapshot['characters'][0]['position'][0] = (10 if target == 'meitou' else 0) + at
+            values['clock'].update(elapsed_seconds=216000+at, hour=12+at/3600)
+            if snapshot is None:
+                values['characters'][0]['position'][0] = (10 if target == 'meitou' else 0) + at
             if point['name'] == 'initial':
-                execution['initial_clock'] = deepcopy(snapshot['clock'])
+                execution['initial_clock'] = deepcopy(values['clock'])
             output = folder / str(index) / (point['name'] + '.json')
             output.parent.mkdir(exist_ok=True)
-            payload = canonical_bytes(snapshot)
+            payload = canonical_bytes(values)
             output.write_bytes(payload)
             published = json.loads(payload)
             capture = dict(name=point['name'], path=output.relative_to(folder).as_posix(),
@@ -81,6 +89,11 @@ def campaign(folder, target, *, n=5):
                 capture['reference_profile'] = proof()
             else:
                 capture['provenance'] = deepcopy(execution['provenance'])
+            if receipt is not None:
+                capture['setup'] = dict(setup_hash=execution['setup']['setup_hash'],
+                    alias_map=deepcopy(execution['setup']['alias_map']),
+                    census=dict(count=4, truncated=False, alive_count=4, dead_count=0,
+                                unconscious_count=0, player_count=1))
             execution['checkpoints'].append(capture)
         report['executions'].append(execution)
     save_report(folder, report)
@@ -393,3 +406,436 @@ def test_absent_template_group_is_zero_only_with_complete_known_squad_coverage()
     finding = next(row for row in findings if row['metric'] == prefix+'/squads')
     assert finding['classification'] == 'not_comparable'
     assert finding['meitou']['values'] == [None]
+
+
+# Scene scope (scenario-0.2 with a setup block, docs/scene-setup.md). The
+# receipts follow the W7 receipt format; every id and record is synthetic.
+
+PLAYER, BYSTANDER = 'hand:1:7:101:1:1001', 'hand:1:7:101:2:1002'
+PLAYER_SQUAD, BYSTANDER_SQUAD = 'hand:34:7:101:0:0', 'hand:34:7:101:0:1'
+COMMITS = dict(original='a'*40, meitou='b'*40)
+# Spawned ids differ between engines; members are matched only by (alias, template).
+SPAWNED = dict(original=(['hand:1:9:300:1:%d' % k for k in (1, 2, 3)], 'hand:34:9:300:0:0'),
+               meitou=(['local:spawn-%d' % k for k in (7, 8, 9)], 'local:squad-4'))
+TEMPLATES = ['leader.base', 'grunt.base', 'grunt.base']
+PAIR = ('enemy-faction', 'player-faction')
+SETUP_SCENARIO = dict(
+    schema_version='scenario-0.2', name='synthetic-scene', save='Synthetic save', speed=1, repeat=5,
+    setup=dict(
+        preflight=dict(scene_center=[0, 0], scene_radius=1500, squad_size_multiplier=1,
+                       player_faction_id='player-faction', expect_absent_factions_in_scene=['enemy-faction']),
+        moves=[],
+        spawns=[dict(alias='raiders', squad_template='squad-template.base', count=3,
+                     faction_id='enemy-faction', at=dict(offset_from_player=[30, 0]),
+                     expected_templates={'leader.base': 1, 'grunt.base': 2})],
+        settle=dict(sim_seconds=1), heal='all_scene_characters',
+        relations=[dict(a='enemy-faction', b='player-faction', a_to_b=-60, b_to_a=-60)]),
+    actions=[dict(at=0, command='issue_order',
+                  params=dict(type='attack', squad_alias='raiders', target_alias='player'))],
+    checkpoints=[dict(at=0, name='initial'), dict(at=2, name='later')])
+
+
+def contract_hash(setup):
+    """The receipt rule of docs/scene-setup.md, written independently of oracle_scope."""
+    return hashlib.sha256(json.dumps(setup, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+                                     allow_nan=False).encode('utf-8')).hexdigest()
+
+
+def spawned(target, index):
+    members, squad = SPAWNED[target]
+    return [member.replace('spawn-', f'spawn-{index}-') for member in members], squad
+
+
+def alias_map(target, index):
+    members, squad = spawned(target, index)
+    return {'player': PLAYER, 'raiders': squad, 'raiders/leader.base/1': members[0],
+            'raiders/grunt.base/1': members[1], 'raiders/grunt.base/2': members[2]}
+
+
+def receipt(target, index, scenario):
+    aliases = alias_map(target, index)
+    members = [dict(alias=alias, id=aliases[alias], template_id=alias.split('/')[1] if '/' in alias else None,
+                    faction_id='player-faction' if alias == 'player' else 'enemy-faction',
+                    part_max={'fixture-head:neither': 100 + index if target == 'original' else 100},
+                    blood_before=80, blood_after=100, rng_key=None if target == 'original' else str(index))
+               for alias in aliases if alias != 'raiders']
+    return dict(receipt_format='scene-setup-0.1', target=target, setup_hash=contract_hash(scenario['setup']),
+                build_commit=COMMITS[target], build_commit_known=True, alias_map=aliases, steps=[],
+                dumps={name: dict(path=f'setup/{name}.json', sha256='0'*64) for name in ('S3b', 'S5', 'S6')},
+                members=members, squad_size=dict(source='setup_info', multiplier=1,
+                    line='Squad size multiplier=1', sha256='1'*64, path='settings.cfg'),
+                settle=dict(sim_seconds=1, calendar_seconds_requested=33), limitations=[],
+                verdict='passed', failure=None)
+
+
+def person(identity, faction, squad, position, origin='saved'):
+    return dict(id=identity, name='Synthetic ' + identity[-4:], race_id='fixture-race', faction_id=faction,
+                squad_id=squad, position=list(position), state='alive',
+                health=[dict(id='fixture-head:neither', current=100, stun=0, maximum=100)], order=None,
+                identity_origin=origin, current_town_id=None, town_assignment=None, in_combat=False)
+
+
+def scene_state(target, index, point, tweak=None):
+    members, squad = spawned(target, index)
+    order = list(range(3)) if target == 'original' else [2, 0, 1]  # Engine order is irrelevant.
+    characters = [person(PLAYER, 'player-faction', PLAYER_SQUAD, [0, 0, 0]),
+                  person(BYSTANDER, 'bystander-faction', BYSTANDER_SQUAD, [5000, 0, 0])]
+    characters += [person(members[k], 'enemy-faction', squad, [30, 0, k], origin='generated') for k in order]
+    value = dict(schema_version='0.2', clock=dict(day=2, hour=12, elapsed_seconds=216000, speed=0, paused=True),
+        characters=characters,
+        squads=[dict(id=PLAYER_SQUAD, faction_id='player-faction', members=[PLAYER], leader_id=PLAYER,
+                     identity_origin='saved', template_id=None, origin_town_id=None),
+                dict(id=BYSTANDER_SQUAD, faction_id='bystander-faction', members=[BYSTANDER], leader_id=BYSTANDER,
+                     identity_origin='saved', template_id='bystander-template', origin_town_id=None),
+                dict(id=squad, faction_id='enemy-faction', members=sorted(members), leader_id=members[0],
+                     identity_origin='generated', template_id='squad-template.base', origin_town_id=None)],
+        factions=[dict(id=faction, name='Synthetic ' + faction)
+                  for faction in ('bystander-faction', 'enemy-faction', 'player-faction')],
+        relations=[dict(source_id='enemy-faction', target_id='player-faction', value=-60),
+                   dict(source_id='player-faction', target_id='enemy-faction', value=-60),
+                   dict(source_id='bystander-faction', target_id='player-faction', value=10)])
+    if tweak is not None:
+        tweak(target, index, point, value)
+    return value
+
+
+def by_alias(value, target, index, alias):
+    identity = alias_map(target, index)[alias]
+    return next(row for row in value['characters'] if row['id'] == identity)
+
+
+def scene_campaigns(tmp_path, tweak=None, commits=COMMITS):
+    original, meitou = tmp_path/'original', tmp_path/'meitou'
+    builder = lambda target, index, point: scene_state(target, index, point, tweak)
+    left = campaign(original, 'original', scenario=SETUP_SCENARIO, snapshot=builder, receipt=receipt,
+                    commit=commits['original'])
+    right = campaign(meitou, 'meitou', scenario=SETUP_SCENARIO, snapshot=builder, receipt=receipt,
+                     commit=commits['meitou'])
+    return original, meitou, left, right, tmp_path/'comparisons'/'scene'
+
+
+def scene_report(original, meitou, output):
+    compare_campaigns(original, meitou, output)
+    return json.loads((output/'report.json').read_text(encoding='utf-8'))
+
+
+def rows_by_metric(rows, checkpoint='later'):
+    return {row['metric']: row for row in rows if row['checkpoint'] == checkpoint}
+
+
+def values(row, target):
+    return [observation['value'] for observation in row[target]]
+
+
+def test_scene_scope_classifies_only_scene_metrics_and_records_the_rest(tmp_path):
+    original, meitou, _, _, output = scene_campaigns(tmp_path)
+    report = scene_report(original, meitou, output)
+    findings = report['findings']
+    assert findings and all(row['metric'].startswith('/scene/')
+                            and not row['metric'].startswith('/scene/outcome/') for row in findings)
+    assert all(row['classification'] == 'stable_identical' for row in findings)
+    assert report['scene_outcome'] and all(row['metric'].startswith('/scene/outcome/') for row in report['scene_outcome'])
+    assert report['background_metrics'] and all(row['metric'].startswith('/background/')
+                                                for row in report['background_metrics'])
+    assert any('outcome and background metrics are not classified' in text for text in report['limitations'])
+    assert 'build commit not recorded' not in report['limitations']
+    assert report['original']['build_commit'] == 'a'*40 and report['meitou']['build_commit'] == 'b'*40
+    assert report['scene_scope']['relation_pairs'] == [list(PAIR), list(reversed(PAIR))]
+    for target in ('original', 'meitou'):
+        facts = report['setup_members'][target]
+        assert [row['repetition'] for row in facts] == [1, 2, 3, 4, 5]
+        assert {row['alias'] for row in facts[0]['members']} == {
+            'player', 'raiders/leader.base/1', 'raiders/grunt.base/1', 'raiders/grunt.base/2'}
+        assert all('id' not in row and 'part_max' in row for fact in facts for row in fact['members'])
+    assert [row['members'][0]['part_max'] for row in report['setup_members']['original']] == [
+        {'fixture-head:neither': 100 + index} for index in range(1, 6)]
+    metrics = [row['metric'] for group in ('findings', 'scene_outcome', 'background_metrics') for row in report[group]]
+    for target in ('original', 'meitou'):
+        for index in range(1, 6):
+            members, squad = spawned(target, index)
+            assert not any(identity in metric for identity in [*members, squad] for metric in metrics)
+    assert all(PLAYER not in metric for metric in metrics)
+    assert '/scene/outcome/characters/alias:player/position/0' in rows_by_metric(report['scene_outcome'])
+    drafts = list((output/'issues').glob('*.md'))
+    assert not drafts
+
+
+def test_only_the_declared_relation_pair_is_classified(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            value['relations'][2]['value'] = -90
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    relations = sorted(row['metric'] for row in report['findings'] if '/relations/' in row['metric'])
+    assert relations == ['/scene/relations/enemy-faction/player-faction/value'] * 2 + [
+        '/scene/relations/player-faction/enemy-faction/value'] * 2
+    background = rows_by_metric(report['background_metrics'])
+    other = background['/background/relations/bystander-faction/player-faction/value']
+    assert values(other, 'original') == [10]*5 and values(other, 'meitou') == [-90]*5
+    assert not any(row['metric'].startswith('/background/relations/' + PAIR[0] + '/' + PAIR[1])
+                   or row['metric'].startswith('/background/relations/' + PAIR[1] + '/' + PAIR[0])
+                   for row in report['background_metrics'])
+
+
+def test_pair_relation_difference_is_classified(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            value['relations'][0]['value'] = -30
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    finding = rows_by_metric(report['findings'])['/scene/relations/enemy-faction/player-faction/value']
+    assert finding['classification'] == 'stable_divergent'
+
+
+def test_background_difference_gives_no_finding(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            bystander = next(row for row in value['characters'] if row['id'] == BYSTANDER)
+            bystander.update(state='dead', position=[6000, 0, 0])
+            value['characters'].append(person('local:far-%d' % index, 'bystander-faction', None, [9000, 0, 0],
+                                              origin='generated'))
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    assert all(row['classification'] == 'stable_identical' for row in report['findings'])
+    background = rows_by_metric(report['background_metrics'])
+    position = background['/background/characters/' + BYSTANDER.replace('/', '~1') + '/position/0']
+    assert values(position, 'original') == [5000]*5 and values(position, 'meitou') == [6000]*5
+    total = background['/background/population/loaded/total']
+    assert values(total, 'original') == [5]*5 and values(total, 'meitou') == [6]*5
+    assert all('classification' not in row for row in report['background_metrics'])
+
+
+def test_intruder_inside_the_scene_radius_is_compared(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            value['characters'].append(person('local:intruder-%d' % index, 'bystander-faction', None,
+                                              [900, 0, -900], origin='generated'))
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    findings = rows_by_metric(report['findings'])
+    intruders = findings['/scene/intruders/count']
+    assert intruders['classification'] == 'stable_divergent'
+    assert intruders['original']['values'] == [0]*5 and intruders['meitou']['values'] == [1]*5
+    assert rows_by_metric(report['findings'], 'initial')['/scene/intruders/count']['classification'] == 'stable_identical'
+    assert list((output/'issues').glob('*.md'))
+
+
+def test_members_are_grouped_by_alias_and_template_not_paired(tmp_path):
+    def tweak(target, index, point, value):
+        if point['name'] == 'later':
+            # A different grunt dies on each engine; the (alias, template) aggregate is equal.
+            alias = 'raiders/grunt.base/1' if target == 'original' else 'raiders/grunt.base/2'
+            by_alias(value, target, index, alias)['state'] = 'dead'
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    findings = rows_by_metric(report['findings'])
+    assert {metric for metric in findings if metric.startswith('/scene/cohort/')} == {
+        '/scene/cohort/' + cohort + '/' + field
+        for cohort in ('player', 'raiders/grunt.base', 'raiders/leader.base')
+        for field in ('missing', 'present', 'size')}
+    assert findings['/scene/cohort/raiders/grunt.base/present']['original']['values'] == [2]*5
+    assert all(row['classification'] == 'stable_identical' for row in report['findings'])
+    dead = rows_by_metric(report['scene_outcome'])['/scene/outcome/cohort/raiders/grunt.base/dead']
+    assert values(dead, 'original') == values(dead, 'meitou') == [1]*5
+    metrics = [row['metric'] for group in ('findings', 'scene_outcome', 'background_metrics') for row in report[group]]
+    assert not any('/grunt.base/1' in metric or '/grunt.base/2' in metric or '/leader.base/1' in metric
+                   for metric in metrics)
+
+
+def test_missing_member_is_a_classified_presence_difference(tmp_path):
+    def tweak(target, index, point, value):
+        if target == 'meitou' and point['name'] == 'later':
+            identity = alias_map(target, index)['raiders/leader.base/1']
+            value['characters'] = [row for row in value['characters'] if row['id'] != identity]
+            for squad in value['squads']:
+                if identity in squad['members']:
+                    squad['members'].remove(identity)
+                    squad['leader_id'] = None
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    findings = rows_by_metric(report['findings'])
+    assert findings['/scene/cohort/raiders/leader.base/missing']['classification'] == 'stable_divergent'
+    assert findings['/scene/cohort/raiders/leader.base/missing']['meitou']['values'] == [1]*5
+
+
+def test_fight_outcome_is_reported_per_repetition_and_never_classified(tmp_path):
+    def tweak(target, index, point, value):
+        if point['name'] != 'later':
+            return
+        if target == 'meitou':
+            by_alias(value, target, index, 'raiders/leader.base/1')['state'] = 'dead'
+            player = by_alias(value, target, index, 'player')
+            player.update(state='unconscious', in_combat=True)
+            player['health'][0]['current'] = 10
+        elif index % 2:
+            by_alias(value, target, index, 'raiders/grunt.base/2')['in_combat'] = True
+    original, meitou, _, _, output = scene_campaigns(tmp_path, tweak)
+    report = scene_report(original, meitou, output)
+    assert all(row['classification'] == 'stable_identical' for row in report['findings'])
+    assert not any('/outcome/' in row['metric'] for row in report['findings'])
+    outcome = rows_by_metric(report['scene_outcome'])
+    leader = outcome['/scene/outcome/cohort/raiders/leader.base/dead']
+    assert values(leader, 'original') == [0]*5 and values(leader, 'meitou') == [1]*5
+    assert [row['repetition'] for row in leader['original']] == [1, 2, 3, 4, 5]
+    assert all(row['snapshot'].startswith('../../original/') for row in leader['original'])
+    health = outcome['/scene/outcome/cohort/player/health/current_total']
+    assert values(health, 'original') == [100]*5 and values(health, 'meitou') == [10]*5
+    state_row = outcome['/scene/outcome/characters/alias:player/state']
+    assert values(state_row, 'meitou') == ['unconscious']*5
+    engagement = rows_by_metric(report['scene_outcome'], 'whole_scenario')
+    grunts = engagement['/scene/outcome/engagement/raiders/grunt.base/engagement_observed']
+    assert values(grunts, 'original') == [True, False, True, False, True]
+    assert values(grunts, 'meitou') == [False]*5
+    player = engagement['/scene/outcome/engagement/player/engagement_observed']
+    assert values(player, 'meitou') == [True]*5
+    background = rows_by_metric(report['background_metrics'], 'whole_scenario')
+    assert set(background) >= {'/background/combat/engagement_by_faction/bystander-faction/engagement_observed'}
+    assert not any(metric.startswith(('/background/combat/engagement_by_faction/enemy-faction',
+                                      '/background/combat/engagement_by_faction/player-faction'))
+                   for metric in background)
+    assert not any(metric.startswith('/background/trajectory/saved_squad/' + PLAYER_SQUAD) for metric in background)
+
+
+@pytest.mark.parametrize('mutation', ['receipt_hash', 'scenario_setup', 'capture_hash'])
+def test_setup_hash_mismatch_is_rejected(tmp_path, mutation):
+    original, meitou, report, _, output = scene_campaigns(tmp_path)
+    execution = report['executions'][2]
+    if mutation == 'receipt_hash':
+        execution['setup']['setup_hash'] = 'f'*64
+    elif mutation == 'scenario_setup':
+        # The scenario still validates, but no longer matches what the receipt hashed.
+        report['scenario']['setup']['relations'][0]['b_to_a'] = -61
+    else:
+        execution['checkpoints'][1]['setup']['setup_hash'] = 'f'*64
+    save_report(original, report)
+    with pytest.raises(ValueError, match='hash'):
+        compare_campaigns(original, meitou, output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('mutation', ['capture_id', 'capture_missing', 'undeclared_alias',
+                                    'missing_alias', 'player_forms', 'duplicate_member'])
+def test_alias_map_mismatch_is_rejected(tmp_path, mutation):
+    original, meitou, _, report, output = scene_campaigns(tmp_path)
+    execution = report['executions'][1]
+    aliases = execution['setup']['alias_map']
+    if mutation == 'capture_id':
+        execution['checkpoints'][0]['setup']['alias_map']['raiders/grunt.base/1'] = 'local:other'
+    elif mutation == 'capture_missing':
+        del execution['checkpoints'][1]['setup']
+    elif mutation == 'undeclared_alias':
+        aliases['raiders/grunt.base/3'] = 'local:extra'
+    elif mutation == 'missing_alias':
+        del aliases['raiders/grunt.base/2']
+    elif mutation == 'player_forms':
+        aliases['player/1'] = aliases.pop('player')
+    else:
+        aliases['raiders/grunt.base/2'] = aliases['raiders/grunt.base/1']
+    if mutation not in ('capture_id', 'capture_missing'):
+        for capture in execution['checkpoints']:
+            capture['setup']['alias_map'] = deepcopy(aliases)
+    save_report(meitou, report)
+    with pytest.raises(ValueError, match='alias'):
+        compare_campaigns(original, meitou, output)
+    assert not output.exists()
+
+
+def test_alias_set_must_be_the_same_in_every_repetition(tmp_path):
+    original, meitou, report, _, output = scene_campaigns(tmp_path)
+    execution = report['executions'][3]
+    aliases = execution['setup']['alias_map']
+    aliases['player/1'] = aliases.pop('player')
+    aliases['player/2'] = BYSTANDER
+    for member in execution['setup']['members']:
+        if member['alias'] == 'player':
+            member['alias'] = 'player/1'
+    for capture in execution['checkpoints']:
+        capture['setup']['alias_map'] = deepcopy(aliases)
+    save_report(original, report)
+    with pytest.raises(ValueError, match='alias sets differ'):
+        compare_campaigns(original, meitou, output)
+
+
+@pytest.mark.parametrize('mutation', ['verdict', 'failure', 'receipt_absent', 'format', 'target'])
+def test_setup_must_have_passed_in_every_repetition(tmp_path, mutation):
+    original, meitou, report, _, output = scene_campaigns(tmp_path)
+    execution = report['executions'][4]
+    if mutation == 'verdict':
+        execution['setup']['verdict'] = 'failed'
+    elif mutation == 'failure':
+        execution['setup']['failure'] = dict(step='S5', message='heal not full')
+    elif mutation == 'receipt_absent':
+        del execution['setup']
+    elif mutation == 'format':
+        execution['setup']['receipt_format'] = 'scene-setup-0.2'
+    else:
+        execution['setup']['target'] = 'meitou'
+    save_report(original, report)
+    with pytest.raises(ValueError, match='setup'):
+        compare_campaigns(original, meitou, output)
+
+
+@pytest.mark.parametrize('scenario', ['0.1', 'scenario-0.2'])
+def test_unknown_build_commit_is_rejected(tmp_path, scenario):
+    if scenario == '0.1':
+        original, meitou = tmp_path/'original', tmp_path/'meitou'
+        campaign(original, 'original', commit='unknown')
+        campaign(meitou, 'meitou', commit='c'*40)
+    else:
+        original, meitou, report, _, _ = scene_campaigns(tmp_path)
+        report.update(build_commit='unknown', build_commit_known=False, limitations=['commit unknown'])
+        for execution in report['executions']:
+            execution['setup'].update(build_commit='unknown', build_commit_known=False)
+        save_report(original, report)
+    with pytest.raises(ValueError, match='build commit is unknown'):
+        compare_campaigns(original, meitou, tmp_path/'output')
+    assert not (tmp_path/'output').exists()
+
+
+@pytest.mark.parametrize('mutation', ['receipt_commit', 'receipt_known', 'inconsistent', 'malformed'])
+def test_build_commit_must_be_known_and_unchanged_between_repetitions(tmp_path, mutation):
+    original, meitou, _, report, output = scene_campaigns(tmp_path)
+    if mutation == 'receipt_commit':
+        report['executions'][3]['setup']['build_commit'] = 'c'*40
+    elif mutation == 'receipt_known':
+        report['executions'][3]['setup'].update(build_commit='unknown', build_commit_known=False)
+    elif mutation == 'inconsistent':
+        report['build_commit_known'] = False
+    else:
+        report['build_commit'] = 'B'*40
+    save_report(meitou, report)
+    with pytest.raises(ValueError, match='build commit'):
+        compare_campaigns(original, meitou, output)
+
+
+def test_pre_011_report_is_refused_for_scenario_02(tmp_path):
+    original, meitou, report, _, output = scene_campaigns(tmp_path)
+    for key in ('build_commit', 'build_commit_known'):
+        del report[key]
+    save_report(original, report)
+    with pytest.raises(ValueError, match='build_commit'):
+        compare_campaigns(original, meitou, output)
+
+
+def test_scenario_01_campaigns_still_compare_with_or_without_a_recorded_commit(tmp_path):
+    old, new = tmp_path/'old', tmp_path/'new'
+    old.mkdir()
+    new.mkdir()
+    campaign(old/'original', 'original')
+    campaign(old/'meitou', 'meitou')
+    campaign(new/'original', 'original', commit='c'*40)
+    campaign(new/'meitou', 'meitou', commit='d'*40)
+    reports = {}
+    for folder in (old, new):
+        compare_campaigns(folder/'original', folder/'meitou', folder/'output')
+        reports[folder.name] = json.loads((folder/'output'/'report.json').read_text(encoding='utf-8'))
+    assert 'build commit not recorded' in reports['old']['limitations']
+    assert 'build commit not recorded' not in reports['new']['limitations']
+    assert reports['old']['original']['build_commit'] is None
+    assert reports['new']['meitou']['build_commit'] == 'd'*40
+    for report in reports.values():
+        assert 'background_metrics' not in report and 'scene_outcome' not in report
+        metric = next(row for row in report['findings'] if row['metric'] == f'/characters/{FIRST}/position/0')
+        assert metric['classification'] == 'stable_divergent'
+    strip = lambda report: [(row['checkpoint'], row['metric'], row['classification']) for row in report['findings']]
+    assert strip(reports['old']) == strip(reports['new'])
