@@ -35,7 +35,7 @@ Version **0.9.3** adds canonicalization of saved identities, retained in 0.9.5. 
 | `characters[].health[].id` | `MedicalSystem.h:131`, `HealthPartStatus::data` → `GameData::stringID`, then `:145`, `HealthPartStatus::side`. | **Verified**: suffix `:neither`, `:left`, `:right` or `:both`. Unknown side value: the entire health value is `null`, with no array index used as an identity. |
 | `characters[].health[].current` | `MedicalSystem.h:167`, `HealthPartStatus::flesh`. | **Verified**, wounds **Observed** in two battle replay repetitions, minimum 16,303886 for the attacker; negative values allowed. `null` if non-finite. |
 | `characters[].health[].stun` | `MedicalSystem.h:168`, `HealthPartStatus::fleshStun`. | **Verified**, positive values **Observed** alongside wounds in the battle replay; `null` if non-finite. |
-| `characters[].health[].maximum` | `MedicalSystem.h:173`, `HealthPartStatus::_maxHealth`. | **Verified** as a stored value; `null` if negative or non-finite. Equivalence to maximum health recalculated after age/multipliers is **Unknown**; this field exposes precisely the stored value. |
+| `characters[].health[].maximum` | Native: `MedicalSystem.h:173`, `HealthPartStatus::_maxHealth`. Meitou (patch 0005): the calculated `HealthPart.MaxHp`. | Native: **Verified** as a stored value. Meitou: **Verified in code** as a calculated value, not the stored `_maxHealth`. Both are `null` if negative or non-finite. The two agree only in the setup heal receipts of 1 November 2026 (**Observed**: unworn organic humans at scale 1, full health); wear, stumps, prosthetics, robots and other scales are **Unknown**. Equivalence of the native stored value to maximum health recalculated after age/multipliers is **Unknown**. |
 | `characters[].order` | `Character.h:530`, `getBody()` → `CharBody.h:67`, `getCurrentAction()`. | **Verified**; immediate task, not the complete order queue or long-term objectives. `move_cus_ordered`, then `null` after movement, **Observed** for Ryers and Okada in all three repetitions. `null` if there is no action, `NULL_TASK`, no body or an unknown type. |
 | `characters[].order.type` | `Tasker.h:142`, `Tasker::key()`; public enumeration names from `Enums.h`, own table `OracleTaskNames.h`, converted to lowercase. | **Verified**. A future type absent from the table remains unknown and leaves a TODO; no C++ enumeration integer enters the schema. |
 | `characters[].order.target_id` | `Tasker.h:146`, `Tasker::subject`, encoded as a `hand`, then canonicalized if its full handle is linked to the context. | **Verified**; correct target **Observed** for the replay's targeted attack. `null` for a null handle. It may reference an absent object: type 0 observed during autonomous movement means `BUILDING` (`Enums.h:4–7`). Fleeing references the actor itself. Other references retain their current HAND; no universal combat target is assumed. |
@@ -119,8 +119,14 @@ also completed three snapshots and restoration. The 21 Meitou captures,
 5-versus-5 quiet-town comparison and their limits are collected in the
 [phase 2 report](phase2-validation.md).
 
-The Meitou projection currently leaves `order` and `health[].maximum` as `null`:
-equivalence of the task and stored maximum value has not been established.
+The Meitou projection leaves `order` as `null`: equivalence of the task has not
+been established. Since patch 0005 of the
+[Meitou series](../integrations/meitou/README.md), `health[].maximum` is
+Meitou's calculated part maximum, not the stored value, and `null` when negative
+or non-finite. It matched the original only in the 1 November 2026 setup heal
+receipts (**Observed**: unworn organic humans at scale 1, full health); other
+cases are **Unknown**. The capture changes no simulation state or state hash
+(**Verified**, `OracleStateTests` in the patch).
 See [Meitou configuration and limits](meitou-target.md).
 
 <a id="identités-et-comparabilité"></a>

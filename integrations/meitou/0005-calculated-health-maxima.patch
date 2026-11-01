@@ -1,0 +1,112 @@
+From 899ba86ab9dc959d0df2ea2381181a00db258cef Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 17:10:10 +0100
+Subject: [PATCH] Expose calculated health maxima in the oracle state dump
+
+health[].maximum now carries Meitou's calculated HealthPart.MaxHp
+instead of null, null when negative or non-finite as the native probe
+does. It is documented as calculated, not the original's stored
+_maxHealth: agreement is Observed only for unworn organic humans at
+scale 1 in the setup heal receipts. The capture stays read-only; a
+test pins plain, scaled, worn, stump, worn-away and non-finite parts
+and checks that the state hash is unchanged. order stays null.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/oracle.md                                | 13 +++++--
+ src/Meitou.Game/Oracle/OracleState.cs         |  4 +--
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs | 35 ++++++++++++++++++-
+ 3 files changed, 46 insertions(+), 6 deletions(-)
+
+diff --git a/docs/oracle.md b/docs/oracle.md
+index 64195121..32609181 100644
+--- a/docs/oracle.md
++++ b/docs/oracle.md
+@@ -92,9 +92,16 @@ The additive 0.2 fields expose saved-origin evidence, broad melee/ranged combat
+ mode and squad templates. Town placement/current membership/origin remain null:
+ equality of native `Town::instanceID.uid` and `TownSite.InstanceId` is unproven.
+ Names, array indexes, town definition IDs and transient HANDs are not substitutes.
+-`order` and `health[].maximum` remain null where original-task/stored-health
+-equivalence is unknown. Template fallbacks on newly created squads also need
+-their own semantic verification.
++`order` remains null: a Meitou act-out row is not proof of the original
++running task. `health[].maximum` is Meitou's calculated `MaxHp` (base, or 5 for
++a stump, or the fitted prosthetic's HP, times multiplier and scale, minus wear),
++null when negative or non-finite as in the native probe. It is not the
++original's stored `_maxHealth`: the two agreed in the setup heal receipts of
++the 1 November 2026 campaign (**Observed**, unworn organic humans at scale 1,
++full health), and agreement under wear, stumps, prosthetics, robots or other
++scales is **Unknown**. Reading it changes no simulation state or state hash
++(**Verified**, `OracleStateTests`). Template fallbacks on newly created squads
++also need their own semantic verification.
+ 
+ In Oracle mode, `--seed` is applied to the in-memory save before `SaveLoader`
+ and its first draws; it replaces the save's stored seed without rewriting that
+diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
+index 66d033a0..34d1b67f 100644
+--- a/src/Meitou.Game/Oracle/OracleState.cs
++++ b/src/Meitou.Game/Oracle/OracleState.cs
+@@ -105,8 +105,8 @@ internal sealed class OracleState
+                     string partId = part.Template.StringId + Side(part.Template.Side);
+                     if (KnownId(part.Template.StringId) is null || !partIds.Add(partId)) { health = null; break; }
+                     health.Add(new JsonObject { ["id"] = partId, ["current"] = Number(part.Flesh), ["stun"] = Number(part.Stun),
+-                        // The original exposes stored _maxHealth. Equivalence with calculated MaxHp is not established.
+-                        ["maximum"] = null });
++                        // Calculated MaxHp, not the original's stored _maxHealth. Null when negative or non-finite, as the native probe.
++                        ["maximum"] = part.MaxHp >= 0 ? Number(part.MaxHp) : null });
+                 }
+             }
+             var row = new JsonObject
+diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+index aa8631e5..761210df 100644
+--- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+@@ -64,7 +64,7 @@ public class OracleStateTests
+         Assert.Equal("saved", state["squads"]![0]!["identity_origin"]!.GetValue<string>());
+         Assert.Equal("hand:34:7:8:0:9", row["squad_id"]!.GetValue<string>());
+         Assert.Equal(-13, row["health"]![0]!["current"]!.GetValue<double>());
+-        Assert.Null(row["health"]![0]!["maximum"]);
++        Assert.Equal(100, row["health"]![0]!["maximum"]!.GetValue<double>());
+         Assert.Null(row["in_combat"]); Assert.Null(row["current_town_id"]); Assert.Null(row["town_assignment"]); Assert.Null(row["order"]);
+         Assert.True(projection.TryResolveCharacter(row["id"]!.GetValue<string>(), out var resolved)); Assert.Equal(id, resolved);
+         Assert.Equal(row["id"]!.GetValue<string>(), projection.CharacterIdentity(id));
+@@ -75,6 +75,39 @@ public class OracleStateTests
+         Assert.Equal("saved", projection.Capture(session, Data())["characters"]![0]!["identity_origin"]!.GetValue<string>());
+     }
+ 
++    [Fact]
++    public void Health_maximum_is_calculated_max_hp_null_when_worn_away_and_capture_keeps_the_state_hash()
++    {
++        using var session = Session();
++        static HealthPart Part(string id, Action<HealthPart>? set = null)
++        {
++            var part = new HealthPart(new BodyPartTemplate { StringId = id }, 1, 100);
++            set?.Invoke(part);
++            return part;
++        }
++        var medical = new MedicalState([
++            Part("fixture-a-plain"),
++            Part("fixture-b-scaled", p => { p.HpMultiplier = 1.5f; p.BodyScale = 1.25f; }),
++            Part("fixture-c-worn", p => p.Wear = 30),
++            Part("fixture-d-stump", p => p.Limb = LimbState.Stump),
++            Part("fixture-e-worn-away", p => p.Wear = 130),
++            Part("fixture-f-nonfinite", p => p.BaseHp = float.NaN),
++        ]);
++        session.World.Characters.Spawn(new CharacterHot(), new CharacterCold { Medical = medical }, 0);
++        ulong before = session.World.StateHash();
++        var health = new OracleState().Capture(session, Data())["characters"]![0]!["health"]!.AsArray();
++        Assert.Equal(before, session.World.StateHash());
++        double? Maximum(int index) => health[index]!["maximum"]?.GetValue<double>();
++        Assert.Equal(["fixture-a-plain:neither", "fixture-b-scaled:neither", "fixture-c-worn:neither", "fixture-d-stump:neither",
++            "fixture-e-worn-away:neither", "fixture-f-nonfinite:neither"], health.Select(p => p!["id"]!.GetValue<string>()));
++        Assert.Equal(100, Maximum(0));
++        Assert.Equal(187.5, Maximum(1));
++        Assert.Equal(70, Maximum(2));
++        Assert.Equal(5, Maximum(3));
++        Assert.Null(Maximum(4));
++        Assert.Null(Maximum(5));
++    }
++
+     [Fact]
+     public void Clock_is_absolute_calendar_seconds_and_relations_remain_directional()
+     {

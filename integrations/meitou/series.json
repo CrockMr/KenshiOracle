@@ -1,7 +1,7 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
+  "fork_tip": "899ba86ab9dc959d0df2ea2381181a00db258cef",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
@@ -28,6 +28,12 @@
       "source_commit": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
       "sha256": "0632138778c0c1cd1294da61442f35905cd64cc3bd6faf68ee1ad765f0a9e711",
       "bytes": 67753
+    },
+    {
+      "file": "0005-calculated-health-maxima.patch",
+      "source_commit": "899ba86ab9dc959d0df2ea2381181a00db258cef",
+      "sha256": "df4f0023a34df69162bfebdb688e1659cf8a3c6aa2d1282492f4df08636d696d",
+      "bytes": 6712
     }
   ]
 }
