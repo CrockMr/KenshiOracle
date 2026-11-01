@@ -7,6 +7,7 @@
   "port": 47801,
   "state_schema": "0.2",
   "base_seed": 0,
+  "engine_profile": "runtime/engine-profile.json",
   "timeout": 10,
   "startup_grace": 240,
   "load_timeout": 240,

@@ -44,6 +44,9 @@ target's port nor runtime. The Meitou target must declare `"target":"meitou"`,
 use a distinct port (47801 by default) and its own `runtime`, for example
 `runtime/meitou`. `state_schema:"0.2"` requires the additive contract.
 `game_install` supplies `KENSHI_PATH` to the child process.
+When `config.meitou.json` has no `engine_profile`, it uses the one from
+`config.json`: one local profile may hold both targets' entries, because
+lookups are keyed by target.
 
 The supervisor reads `meitou.user.json` preferences from the configured
 directory or executable directory, then places a copy in

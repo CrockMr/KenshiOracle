@@ -25,4 +25,7 @@ def target_config(original, target='original'):
         raise ValueError('MeitouClient requires its own runtime directory')
     result['port'] = port
     result.setdefault('state_schema', '0.2')
+    # One local profile may hold both targets' entries; lookups are keyed by target.
+    if not result.get('engine_profile') and original.get('engine_profile'):
+        result['engine_profile'] = original['engine_profile']
     return result

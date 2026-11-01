@@ -5,6 +5,7 @@
   "rekenshi_module": "../Kenshi/RE_Kenshi.dll",
   "reference_controls": null,
   "meitou_config": "config.meitou.json",
+  "engine_profile": "runtime/engine-profile.json",
   "arguments": [],
   "launcher_click": false,
   "port": 47800,

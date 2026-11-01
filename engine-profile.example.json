@@ -1,0 +1,21 @@
+{
+  "profile_format": "engine-profile-0.1",
+  "entries": [
+    {
+      "target": "original",
+      "save": "oracle-base-nature",
+      "source_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "seed": null,
+      "player": {"xz": [0, 0], "y_before_settle": 0, "y_after_settle": 0, "decimals": 3},
+      "evidence": "placeholder only, not evidence: replace every value with your own local run"
+    },
+    {
+      "target": "meitou",
+      "save": "oracle-base-nature",
+      "source_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "seed": null,
+      "player": {"xz": [0, 0], "y_before_settle": 0, "y_after_settle": 0, "decimals": 3},
+      "evidence": "placeholder only, not evidence: replace every value with your own local run"
+    }
+  ]
+}
