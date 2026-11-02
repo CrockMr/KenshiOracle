@@ -1,8 +1,8 @@
 <a id="couverture-de-létat-commun-01-et-02"></a>
 
-# Shared state 0.1 and 0.2 coverage
+# Shared state 0.1, 0.2 and 0.3 coverage
 
-The contracts are [state.schema.json, 0.1](../schema/state.schema.json) and [state-0.2.schema.json](../schema/state-0.2.schema.json). The native adapter is in [OracleState.h](../plugin/OracleState.h); shared validation and normalization are in [oracle_schema.py](../mcp-server/oracle_schema.py). This page distinguishes the existence of an API from validation of a real capture.
+The contracts are [state.schema.json, 0.1](../schema/state.schema.json), [state-0.2.schema.json](../schema/state-0.2.schema.json) and [state-0.3.schema.json](../schema/state-0.3.schema.json). The native adapter is in [OracleState.h](../plugin/OracleState.h); shared validation and normalization are in [oracle_schema.py](../mcp-server/oracle_schema.py). This page distinguishes the existence of an API from validation of a real capture.
 
 - **Verified**: declaration present in the public headers used, with an explicit mapping in our code. This alone does not prove safety or completeness in every scene.
 - **Observed**: limited behavior established by the cited trials; distinguish their versions and do not extend it to other scenes.
@@ -16,7 +16,7 @@ Version **0.9.3** adds canonicalization of saved identities, retained in 0.9.5. 
 
 | Field or collection | Exact public source and conversion | Status and limits |
 | --- | --- | --- |
-| `schema_version` | Requested version `0.1` or `0.2`, without an engine API. | **Verified** in the schemas and serializers. The historical evidence above concerns 0.1. |
+| `schema_version` | Requested version `0.1`, `0.2` or `0.3`, without an engine API. | **Verified** in the schemas and serializers. The historical evidence above concerns 0.1. |
 | `clock` | `GameWorld.h:238`, `GameWorld::getTimeStamp_inGameHours()`; `util/TimeOfDay.h:23`, `TimeOfDay::getTotalHours()`. | **Verified**; progression and lack of movement while paused are **Observed** in the [clock measurements](research/simulation-clock-measurements.md). |
 | `clock.day` | `floor(total_hours / 24)`, carrying into the next day if the rounded hour reaches 24. | **Verified**: zero-based day. This is not the day displayed starting at 1 in the interface. |
 | `clock.hour` | `total_hours % 24`, with shared six-decimal rounding. | **Verified**; native code normalizes an hour rounded to 24 to zero on the following day. The schema also permits 24 for another adapter's representation of this boundary. |
@@ -59,7 +59,8 @@ Version **0.9.3** adds canonicalization of saved identities, retained in 0.9.5. 
 Version 0.1 remains unchanged. Version 0.2 retains its fields and requires
 **seven additional fields**: four per character and three per squad.
 Changing only `schema_version` is insufficient. The runner selects 0.2 if the
-probe advertises it, otherwise 0.1; `state_schema` explicitly requests either
+probe advertises it, otherwise 0.1 (since [0.3](#extension-additive-03), the
+highest version both sides advertise); `state_schema` explicitly requests a
 version. A version change during an execution is rejected.
 Scenarios and reports retain their own version 0.1.
 
@@ -130,6 +131,50 @@ on both engines, but not as the same characters. Wear, prosthetics, robots, and
 multiplier or scale changes after load are **Unknown**. The capture changes no simulation state or state hash
 (**Verified**, `OracleStateTests` in the patch).
 See [Meitou configuration and limits](meitou-target.md).
+
+<a id="extension-additive-03"></a>
+
+## Additive extension 0.3
+
+Versions 0.1 and 0.2 are unchanged byte for byte: every accepted 0.2 snapshot
+stays valid. Version 0.3 is 0.2 plus **two required character fields**;
+changing only `schema_version` is rejected, and a 0.2 snapshot cannot carry
+them. The runner selects the highest version that both it and the probe
+advertise (0.3, then 0.2, then 0.1); `state_schema` requests one version
+exactly and never falls back. The comparator refuses two campaigns with
+different state schema versions, and a campaign whose snapshots differ from
+its recorded `state_schema` or from each other. The Meitou target requests
+0.3 unless its configuration says otherwise.
+
+| Added field | Native source and Meitou projection | Certainty and limits |
+| --- | --- | --- |
+| `characters[].slave_state` | Native: `Character.h:217`, member `Character::stateBroadcast` (offset 0x1A0); when it is non-null, `StateBroadcastData.h`, member `StateBroadcastData::_slaveState` (offset 0x0), named after `Enums.h:269` `SlaveStateEnum`: `NOT_SLAVE` `not_slave`, `IS_SLAVE` `slave`, `ESCAPING_SLAVE` `escaping_slave`, `EX_SLAVE` `ex_slave`. Member reads only, no engine function is called. Meitou: `CharacterCold.SlaveState` 0, 1, 2 as `not_slave`, `slave`, `escaping_slave`. | API **Verified** from the headers; the three member offsets are checked at compile time against the same headers, not against the game binary. Native values **Unknown**: no live read has been made, and their equivalence with the saved `slavestate` value is **Unknown**. `null` when `stateBroadcast` is null or the raw value is outside 0 to 3; `null` never means `not_slave`. MeitouClient loads a saved 3 as 0 (`SlaveSave.cs`, **Verified** in its code), so it never emits `ex_slave`; a character the original reports as an ex-slave would compare as `ex_slave` against `not_slave`. |
+| `characters[].slave_owner_faction_id` | Native: `StateBroadcastData::isSlaveOf` (`Faction*`, offset 0xE0); when it is non-null and is one of the factions captured in the same snapshot (found by pointer comparison before any dereference), `Faction::getData()->stringID`, exactly as `factions[].id`. Meitou: `SlaveOwner >= 0` gives `PopulationData.Factions[SlaveOwner].Id`, otherwise `null`. | API **Verified**; values **Unknown**. Same `GameData::stringID` namespace as `factions[].id`. `null` means that no owner faction is readable; it does not prove that the character has no owner. An owner pointer outside the captured factions also gives `null` (not observed). When MeitouClient loads an original save it ignores the original's `slaver` handle (`SlaveSave.cs`, **Verified** in its code), so such a slave has no owner (`null`) on MeitouClient; what the original holds in `isSlaveOf` at run time is **Unknown**. |
+
+Read safety: the fields are read under the same guard as the other character
+fields (ready paused world, command service, captured census). Whether
+`stateBroadcast` can be null or stale for a loaded character is **Unknown**
+until a live read and the usual read-safety review.
+
+**Not covered** (**Unknown**, no field): shackles worn or locked, cage or
+prisoner use (`inSomething`/`inWhat`), and `Character::isChained`, whose
+meaning is not proven equivalent to MeitouClient's worn-shackle test. Neither
+are `StateBroadcastData::isEscapedPrisoner`, `isKidnapped` or the time of the
+last slave-state change.
+
+Comparison: in a 0.3 comparison, the two fields of each saved character are
+individual metrics (`/characters/<id>/slave_state` and
+`/characters/<id>/slave_owner_faction_id`) classified like the other character
+fields, and in a scene scope they join the player's outcome fields. A `null`
+in any repetition makes the metric not comparable; it never matches
+`not_slave`. A 0.2 comparison gains no metric.
+
+The Meitou projection is planned as patch 0006 of the
+[Meitou series](../integrations/meitou/README.md); patches 0001 to 0005 do not
+produce 0.3, and a Meitou target on them needs `state_schema:"0.2"` in both
+targets' configurations. Three 0.3 [canonical vectors](../schema/canonical-vectors.json)
+(65 cases in all, the earlier 62 unchanged) pass in Python (**Verified**); the
+C# test of patches 0001 to 0005 pins the earlier 62-case fixture.
 
 <a id="identités-et-comparabilité"></a>
 

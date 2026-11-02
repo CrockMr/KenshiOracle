@@ -130,7 +130,7 @@ The pytest suite does not need Kenshi. It uses synthetic data, fake processes an
 | Tool | Purpose |
 | --- | --- |
 | `ping`, `get_clock` | Check the probe and read the game clock |
-| `dump_state(target="original")` | Snapshot of covered loaded state, validated against the negotiated schema 0.1 or 0.2 |
+| `dump_state(target="original")` | Snapshot of covered loaded state, validated against the negotiated schema 0.1, 0.2 or 0.3 |
 | `pause`, `set_game_speed`, `run_until` | Control time up to the next checkpoint |
 | `load_save`, `issue_order` | Load the starting save and replay the scenario's orders |
 | `run_scenario(path, repeat=None)` | Run a scenario end to end; optional repeat overrides the file (1–100) |

@@ -25,9 +25,9 @@ Other historical scene and telemetry commands are retained. The following are ph
 
 | Native command | Parameters | Result and conditions |
 | --- | --- | --- |
-| `ping` | None | Plugin/game versions, `schema_version:"0.1"`, `instance_id`, `process_id`, availability and historical capabilities. `instance_id` identifies a launch, not a character. |
+| `ping` | None | Plugin/game versions, `schema_version` (phase 1 probes: `"0.1"`; later probes: their default state schema), `supported_schema_versions` (since state 0.2), `instance_id`, `process_id`, availability and historical capabilities. `instance_id` identifies a launch, not a character. |
 | `get_clock` | None | `{day,hour,elapsed_seconds,speed,paused}`. Ready world required. |
-| `dump_state` | `filename`, simple ASCII name of 1 to 100 alphanumeric, `_` or `-` characters, followed by `.json` | `{path,schema_version,bytes,identity_source}`. Ready paused world, no active advancement, origins prepared. Destination under `KENSHI_ORACLE_OUTPUT`, otherwise `oracle-dumps/` in the working directory. Absolute path returned. Windows reserved names rejected, never overwrites. |
+| `dump_state` | `filename`, simple ASCII name of 1 to 100 alphanumeric, `_` or `-` characters, followed by `.json`; optional `schema_version` (`0.1`, `0.2` or `0.3`, see [negotiation](#state-schema-negotiation)) on probes that advertise `supported_schema_versions` | `{path,schema_version,bytes,identity_source}`. Ready paused world, no active advancement, origins prepared. Destination under `KENSHI_ORACLE_OUTPUT`, otherwise `oracle-dumps/` in the working directory. Absolute path returned. Windows reserved names rejected, never overwrites. |
 | `pause` | Boolean `paused` | Actual pause; explicit pause interrupts active advancement. |
 | `set_game_speed` | `speed` from 0 to 5, optional `preserve_pause` | Historical contract retained. `preserve_pause:true` requires positive speed and preserves pause. |
 | `run_until` | Absolute `target_seconds` on the game clock; real `timeout_seconds`, default120, native bounds 0,1 to 3600 | Immediately returns `{operation_id,status,target_seconds,clock}`. Requires a paused start and positive speed explicitly commanded since the last load. The hook watches the crossing, then pauses; it does not block the main loop. |
@@ -86,6 +86,22 @@ The probe replaces proven current handles with saved identities in IDs, squad me
 Character/squad identities are opaque `hand:TYPE:C:CS:I:S` strings, of saved origin when the binding above is proven. Races/factions use their `GameData.stringID`; medical parts append side to this identity. Lists sort lexically by `id`, squad members by identity, and relations by `(source_id,target_id)`. Relations are directional. Task is the immediate current action identified by its lowercase public name; a target may be absent from the snapshot. Position is exposed only for `move_cus_ordered`, `move_on_free_will`, and `move_on_free_will_fast` when valid; other tasks have `position:null`.
 
 Objects have sorted keys. For a finite binary64 number with absolute value at most1e9, calculate `floor(abs(x)*1e6+0.5)`, then reapply sign; half units therefore round away from zero. Negative zero becomes zero. Decimal output without exponent, at most six fractional digits, no unnecessary trailing zeros; UTF-8 without BOM, JSON control escaping, no presentation whitespace, one LF terminator. This choice is reproduced in C++ v100 and Python and remains reproducible in C#. No locale-dependent rounding.
+
+<a id="state-schema-negotiation"></a>
+
+State schema versions and negotiation: [0.1](../schema/state.schema.json),
+[0.2](../schema/state-0.2.schema.json) and [0.3](../schema/state-0.3.schema.json)
+are separate, unchanged contracts; each later version only adds required
+fields ([coverage](state-coverage.md#extension-additive-03)). A producer lists
+the versions it writes in `supported_schema_versions` (the native probe of
+this batch: `0.1`, `0.2`, `0.3`, default `0.3`). The runner selects the
+highest version that both sides support and sends it as `dump_state`'s
+`schema_version`; a phase 1 probe without that list is sent no parameter and
+gives 0.1. The configuration key `state_schema` requests one version exactly:
+a producer that does not advertise it is refused, never downgraded. The
+snapshot's `schema_version` must equal the negotiated version, and a change
+of supported versions during an execution is refused. The comparator accepts
+0.2 and 0.3 campaigns but never compares two different versions.
 
 State-file size is bounded to 64 MiB. Python validation rejects duplicate keys, non-finite numbers, invalid Unicode, unexpected properties, and duplicate identities. MCP checks the returned path under `oracle_output`, validates schema, then writes canonical bytes. Byte identity for the same state does not promise engine determinism.
 

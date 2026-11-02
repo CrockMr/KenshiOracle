@@ -44,7 +44,10 @@ In the main `config.json` used by CLI and MCP, add:
 This field points to the separate configuration; replace neither the original
 target's port nor runtime. The Meitou target must declare `"target":"meitou"`,
 use a distinct port (47801 by default) and its own `runtime`, for example
-`runtime/meitou`. `state_schema:"0.2"` requires the additive contract.
+`runtime/meitou`. `state_schema` defaults to `"0.3"` and requires that
+contract; an adapter without state 0.3 (patches 0001 to 0005) needs
+`"state_schema":"0.2"` here and in `config.json`, because the comparator
+never compares two state schema versions.
 `game_install` supplies `KENSHI_PATH` to the child process.
 When `config.meitou.json` has no `engine_profile`, it uses the one from
 `config.json`: one local profile may hold both targets' entries, because
@@ -147,8 +150,11 @@ Remove-Item Env:KENSHI_ORACLE_VECTORS
 ```
 
 The fixture identity is the SHA-256 of its content with CRLF normalized to LF,
-`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`, checked by both
-KenshiOracle and the C# tests, so CRLF and LF checkouts agree without a Git setting.
-The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The 62 cases include
-the 59 historical ones; selecting another file does not authorize changing
+`06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170`, checked by
+KenshiOracle, so CRLF and LF checkouts agree without a Git setting. The C# test
+of patches 0001 to 0005 pins the earlier 62-case identity
+`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`; its
+fixture copy and pin must be refreshed with the state 0.3 adapter before it
+reads this file. The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The
+65 cases include the 59 historical ones and three state 0.3 cases; selecting another file does not authorize changing
 expected bytes to make a capture pass.

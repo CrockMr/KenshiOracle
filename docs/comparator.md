@@ -47,7 +47,10 @@ Loader requires:
 
 - Same scenario excluding repetition count, same save and same
   `quick.save`/indexed-platoon fingerprint; complete repetitions/checkpoints.
-- Canonical **0.2** snapshots, matching SHA-256, within their campaign directory.
+- Canonical **0.2** or **0.3** snapshots, matching SHA-256, within their campaign
+  directory. All snapshots of a campaign use one state schema, equal to the
+  report's `state_schema` when recorded, and both campaigns use the same one;
+  a 0.2 campaign is never compared with a 0.3 campaign.
   Paused clock, requested time reached, `actual_at`, overshoot and snapshot
   clock consistent with repetition origin.
 - Original: audited Kenshi 1.0.65/RE_Kenshi 0.3.5 build, GUI/CRT evidence of six
