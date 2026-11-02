@@ -47,7 +47,7 @@ def check_outputs(result, output):
     for text in ('Original N = 5', 'MeitouClient N = 5', 'range', 'median', 'Outside range', 'Tolerance'):
         assert text in markdown
     assert '../../' in markdown or '../original/' in markdown
-    drafts = list((output/'issues').glob('*.md'))
+    drafts = sorted(path for path in (output/'issues').glob('*.md') if path.name != 'README.md')
     assert drafts
     text = drafts[0].read_text(encoding='utf-8')
     assert 'Local draft for review. No issue has been published.' in text

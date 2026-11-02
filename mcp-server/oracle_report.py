@@ -1,12 +1,13 @@
 """Bounded Markdown pages and a compact streamed JSON comparison artifact."""
 from collections import Counter, defaultdict
-import hashlib
 import html
 import json
 import os
 from pathlib import Path
 import tempfile
 from urllib.parse import quote
+
+from oracle_triage import checkpoint_times, chronological, disagreeing, triage
 
 
 CLASS_ORDER = ('stable_divergent', 'stable_identical', 'variable_outside_range',
@@ -16,6 +17,7 @@ LABELS = dict(stable_identical='Stable identical', stable_divergent='Stable dive
               known_deviation='Known deviation', not_comparable='Not comparable')
 PAGE_SIZE = 100
 PREVIEW_SIZE = 20
+DRAFT_MEMBERS = 20
 TARGET_PAGE_BYTES = 200 * 1024
 
 
@@ -87,22 +89,125 @@ def _directory(path):
         raise ValueError('Report artifact directories must not be links or reparse points')
 
 
-def _issue(report, finding):
-    # Keep the existing English draft text and hash-based filenames unchanged.
-    return ['# ' + report['scenario']['name'] + ': stable difference in ' + finding['metric'], '',
+def _link(path, prefix=''):
+    return quote(prefix + path, safe='/.-_')
+
+
+def _seeds(report):
+    """{repetition: Meitou seed}; a report without the map pairs its seeds in execution order."""
+    recorded = report['meitou'].get('repetition_seeds')
+    if recorded is not None:
+        return {int(key): value for key, value in recorded.items()}
+    return {index: seed for index, seed in enumerate(report['meitou'].get('seeds') or [], 1)}
+
+
+def _commit(report, target):
+    commit = report[target].get('build_commit')
+    return '`' + commit + '`' if commit else 'build commit not recorded'
+
+
+def _p(value):
+    return 'none' if value is None else f'{value:.4g}'
+
+
+def _at(checkpoint):
+    return checkpoint['name'] + (' (whole scenario)' if checkpoint['at'] is None else f" (at {_json(checkpoint['at'])} s)")
+
+
+def _test_text(test):
+    if not test or test.get('p_value') is None:
+        return 'not testable (missing, null or mixed values)'
+    mode = ('exact over ' if test['exact'] else 'sampled over ') + f"{test['splits']} splits"
+    return (f"two-sided permutation test ({test['kind']}), p = {_p(test['p_value'])}, minimum attainable p = "
+            f"{_p(test['minimum_p_value'])}, {mode}")
+
+
+def _issue(report, group, finding):
+    """English draft of one strong group; links are relative to issues/."""
+    seeds, scenario = _seeds(report), report['scenario']
+    fingerprint = report.get('source_fingerprint')
+    disagree = set(disagreeing(finding))
+    first = group['first_checkpoint']
+    reproduce = group['disagreeing_repetitions'][0] if group['disagreeing_repetitions'] else None
+    save = _cell(scenario.get('save', 'not recorded'))
+    rows = ['# ' + _cell(scenario['name']) + ': ' + _cell(group['entity']) + ', ' + _cell(group['headline']['metric'])
+            + (f" and {group['size'] - 1} related metrics" if group['size'] > 1 else ''), '',
         'Local draft for review. No issue has been published.', '',
-        f"Checkpoint: {finding['checkpoint']}. Original N={report['original']['n']}; Meitou N={report['meitou']['n']}.", '',
-        'The original value is identical across all observed repetitions; at least one Meitou value differs '
-        'beyond the declared numerical tolerance. This is a priority discrepancy, not proof of its cause.', '',
-        'Original: ' + '; '.join(_unique(finding['original'])), '',
-        'Meitou: ' + '; '.join(_unique(finding['meitou'])), '',
-        'Tolerance: ' + _json(finding['tolerance']), '',
+        f"Group {group['id']}: {group['size']} metrics, {group['onset']} onset. This is a priority discrepancy, "
+        'not proof of its cause.', '',
+        '- Scenario: ' + _cell(scenario['name']),
+        '- Save: ' + save + '; start-save fingerprint ' + ('`' + str(fingerprint) + '`' if fingerprint else 'not recorded'),
+        '- Build commits: original ' + _commit(report, 'original') + '; MeitouClient ' + _commit(report, 'meitou'),
+        '- State schema: ' + _cell(report.get('state_schema') or 'not recorded'),
+        f"- Original N={report['original']['n']}; Meitou N={report['meitou']['n']}.",
+        '- Meitou seeds per repetition: ' + ('; '.join(f'{key}: {value}' for key, value in sorted(seeds.items()))
+                                             or 'not recorded') + '. The original takes no seed.',
+        '- Group key: entity ' + _cell(group['entity']) + '; disagreeing Meitou repetitions '
+        + _json(group['disagreeing_repetitions']) + '; onset ' + group['onset'],
+        '- First divergent checkpoint: ' + _cell(_at(first)),
+        '- Headline: ' + _cell(group['headline']['metric']) + ' at ' + _cell(finding['checkpoint']) + ', '
+        + LABELS[finding['base_classification']].lower() + '; ' + _test_text(finding.get('test')) + '.', '',
+        '## Headline observations', '',
+        '| Engine | Repetition | Seed | Value | Disagrees | Snapshot |', '| --- | ---: | --- | --- | --- | --- |']
+    for target, label in (('original', 'Original'), ('meitou', 'MeitouClient')):
+        for row in finding[target]['observations']:
+            seed = seeds.get(row['repetition'], 'not recorded') if target == 'meitou' else 'none'
+            flag = ('yes' if row['repetition'] in disagree else 'no') if target == 'meitou' else 'reference'
+            rows.append(f"| {label} | {row['repetition']} | {seed} | {_json(row['value'])} | {flag} | "
+                        f"[snapshot]({_link(row['snapshot'], '../')}) |")
+    rows += ['', 'Tolerance: ' + _json(finding['tolerance']), '',
         'Meitou observations outside the original reference: ' + str(finding['meitou'].get('outside_count')), '',
-        'Photos: ' + _photos(finding, '../'), '',
-        'Reproduce using the same scenario/save fingerprint, verified reference settings and the recorded Meitou seeds.']
+        *([f"This whole-scenario metric also uses {len(finding['additional_snapshots'])} snapshots of every "
+           'checkpoint, listed in the [JSON report](../report.json).', '']
+          if finding.get('additional_snapshots') else []),
+        f"## Member metrics ({group['size']})", '',
+        '| Metric | Checkpoints | Class | Disagreeing | p |', '| --- | --- | --- | --- | ---: |']
+    for member in group['members'][:DRAFT_MEMBERS]:
+        rows.append('| ' + _cell(member['metric']) + ' | ' + _cell(', '.join(member['checkpoints'])) + ' | '
+                    + LABELS[member['classification']] + ' | ' + _json(member['disagreeing_repetitions']) + ' | '
+                    + _p(member['p_value']) + ' |')
+    if group['size'] > DRAFT_MEMBERS:
+        rows += ['', f"and {group['size'] - DRAFT_MEMBERS} more; the complete list is in the "
+                     '[JSON report](../report.json) under `groups`.']
+    rows += ['', 'Reproduce: load save ' + save
+             + (f' in MeitouClient with seed {seeds.get(reproduce, "not recorded")} (repetition {reproduce})'
+                if reproduce is not None else ' in MeitouClient')
+             + (' and compare the whole scenario' if first['at'] is None else ' and compare checkpoint ' + _cell(_at(first)))
+             + ' with the original reference.']
+    return rows
 
 
-def _plan(findings):
+def _group_rows(groups, link):
+    rows = ['| Group | Entity | Onset | First checkpoint | Size | Disagreeing | p | Headline |' + (' Draft |' if link is not None else ''),
+            '| --- | --- | --- | --- | ---: | --- | ---: | --- |' + (' --- |' if link is not None else '')]
+    for group in groups:
+        rows.append('| ' + ' | '.join((group['id'], _cell(group['entity']), group['onset'],
+            _cell(group['first_checkpoint']['name']), str(group['size']), _json(group['disagreeing_repetitions']),
+            _p(group['p_value']), _cell(group['headline']['metric']))) + ' |'
+            + (' [Draft](' + link + group['id'] + '.md) |' if link is not None else ''))
+    return rows
+
+
+def _group_sections(groups, link, limit=None):
+    """Strong (drafted), weak and known-deviation group tables; ``link`` is the drafts' folder prefix."""
+    strong = [group for group in groups if group['drafted']]
+    weak = [group for group in groups if not group['drafted'] and not group['known_deviation']]
+    known = [group for group in groups if group['known_deviation']]
+    rows = [f"{len(groups)} root-cause groups: {len(strong)} strong (drafted), {len(weak)} weak "
+            f"(listed, not drafted), {len(known)} known deviations (listed, not drafted). A group is strong when "
+            'its headline p-value is below 0.01.', '']
+    for title, chosen, drafts in (('Strong groups (drafted)', strong, link), ('Weak groups (not drafted)', weak, None),
+                                  ('Known deviations (grouped, not drafted)', known, None)):
+        if not chosen:
+            continue
+        rows += ['### ' + title, '', *_group_rows(chosen[:limit], drafts)]
+        if limit is not None and len(chosen) > limit:
+            rows += ['', f'{len(chosen) - limit} further groups are listed in the issue index and report.json.']
+        rows.append('')
+    return rows
+
+
+def _plan(findings, order):
     grouped = defaultdict(list)
     for finding in findings:
         if finding['classification'] not in CLASS_ORDER:
@@ -111,7 +216,7 @@ def _plan(findings):
             grouped[finding['classification']].append(finding)
     plan = []
     for classification in CLASS_ORDER:
-        ordered = sorted(grouped[classification], key=lambda finding: (finding['checkpoint'], finding['metric']))
+        ordered = sorted(grouped[classification], key=order)
         chunks, chunk, size = [], [], 0
         for finding in ordered:
             row_bytes = len(_finding_row(finding, '../').encode('utf-8')) + 1
@@ -221,13 +326,19 @@ def render_reports(report, output, *, rewrite=False):
     _directory(output/'issues')
     _directory(output/'details')
     findings = report['findings']
+    # Groups are recomputed from the computed findings (pure, deterministic); nothing is reclassified.
+    groups = triage(report)
+    order = chronological(checkpoint_times(report, findings))
     counts = Counter(finding['classification'] for finding in findings)
-    plan = _plan(findings)
-    strong = sorted((finding for finding in findings if finding['classification'] == 'stable_divergent'),
-                    key=lambda finding: (finding['checkpoint'], finding['metric']))
+    plan = _plan(findings, order)
+    strong = sorted((finding for finding in findings if finding['classification'] == 'stable_divergent'), key=order)
+    drafted = [group for group in groups if group['drafted']]
     report['summary'] = dict(original_n=report['original']['n'], meitou_n=report['meitou']['n'],
         findings=len(findings), classifications={name: counts[name] for name in CLASS_ORDER},
-        drafts=len(strong), detail_findings=sum(metadata['finding_count'] for metadata, _ in plan),
+        groups=len(groups), strong_groups=len(drafted),
+        weak_groups=sum(not group['drafted'] and not group['known_deviation'] for group in groups),
+        known_deviation_groups=sum(group['known_deviation'] for group in groups),
+        drafts=len(drafted), detail_findings=sum(metadata['finding_count'] for metadata, _ in plan),
         detail_pages=len(plan), preview_findings=min(PREVIEW_SIZE, len(strong)))
     report['details_catalog'] = dict(index='details/index.md', page_size=PAGE_SIZE,
         target_page_bytes=TARGET_PAGE_BYTES, page_count=len(plan),
@@ -237,12 +348,14 @@ def render_reports(report, output, *, rewrite=False):
         pages_by_class[metadata['classification']].append(metadata)
     common = [f"Original N = {report['original']['n']}, MeitouClient N = {report['meitou']['n']}.", '',
         'Descriptive statistics: observed ranges, medians and repetitions outside the range. '
-        'No significance test or evidence of generalization is claimed.', '',
+        'Divergent findings carry an exact permutation test; it qualifies one metric, not a cause, '
+        'and no evidence of generalization is claimed.', '',
         'Stable classes use the exact original observations. Numerical equality between engines '
         'may depend on the published tolerance; `comparison_exact` distinguishes this case.', '']
     rows = ['# Comparison: ' + _cell(report['scenario']['name']), '', *common,
-        f"{len(findings)} metrics; {len(strong)} local English issue drafts; {len(plan)} detail pages.", '',
-        '[All details](details/index.md) · [Complete JSON report](report.json)', '',
+        f"{len(findings)} metrics; {len(groups)} root-cause groups; {len(drafted)} local English issue drafts; "
+        f"{len(plan)} detail pages.", '',
+        '[All details](details/index.md) · [Issue drafts](issues/README.md) · [Complete JSON report](report.json)', '',
         '| Class | Count | Details |', '| --- | ---: | --- |']
     for classification in CLASS_ORDER:
         pages = pages_by_class[classification]
@@ -250,8 +363,10 @@ def render_reports(report, output, *, rewrite=False):
         rows.append('| ' + LABELS[classification] + ' | ' + str(counts[classification]) + ' | ' + link + ' |')
     rows += ['', 'NPCs without a proven saved origin are compared only in groups. '
         'A disappearance never proves a death. Towns without a shared placement identity remain not comparable.', '',
-        '## First strong discrepancies', '',
-        'Preview limited to 20 strong discrepancies; the detail pages retain all other discrepancies and unknown coverage.', '',
+        '## Root-cause groups', '', *_group_sections(groups, 'issues/', PAGE_SIZE),
+        '## First stable divergent findings', '',
+        'Preview limited to the 20 earliest stable divergent findings; the detail pages retain all other '
+        'discrepancies and unknown coverage.', '',
         *_table_header()]
     rows += [_finding_row(finding) for finding in strong[:PREVIEW_SIZE]]
     rows += _scene_rows(report)
@@ -286,9 +401,14 @@ def render_reports(report, output, *, rewrite=False):
         rows += [_finding_row(finding, '../') for finding in page_findings]
         rows += ['', nav]
         _text(output/metadata['path'], rows)
-    for finding in strong:
-        digest = hashlib.sha256((finding['checkpoint'] + ':' + finding['metric']).encode()).hexdigest()[:16]
-        _text(output/'issues'/(digest + '.md'), _issue(report, finding))
+    indexed = {(finding['metric'], finding['checkpoint']): finding for finding in findings}
+    _text(output/'issues'/'README.md', ['# Issue drafts: ' + _cell(report['scenario']['name']), '',
+        'Local drafts for review. No issue has been published. One draft per strong root-cause group; weak '
+        'groups and known deviations are listed here only.', '', '[Back to summary](../report.md)', '',
+        *_group_sections(groups, '')])
+    for group in drafted:
+        headline = indexed[(group['headline']['metric'], group['headline']['checkpoint'])]
+        _text(output/'issues'/(group['id'] + '.md'), _issue(report, group, headline))
     def dump(handle):
         json.dump(report, handle, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
         handle.write('\n')

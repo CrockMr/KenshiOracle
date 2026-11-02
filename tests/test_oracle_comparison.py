@@ -121,7 +121,11 @@ def test_complete_five_by_five_comparison_writes_relative_equivalent_reports_and
     assert report['source_fingerprint'] == FINGERPRINT
     assert report['original']['n'] == report['meitou']['n'] == 5
     assert report['meitou']['seeds'] == [str(value) for value in range(1001, 1006)]
-    assert report['findings'][0]['classification'] == 'stable_divergent'
+    # Format 0.3: findings are chronological (checkpoint time, then metric), not grouped by class.
+    times = {'initial': 0, 'later': 2, 'whole_scenario': float('inf')}
+    order = [(times[row['checkpoint']], row['checkpoint'], row['metric']) for row in report['findings']]
+    assert order == sorted(order)
+    assert any(row['classification'] == 'stable_divergent' for row in report['findings'])
     metric = next(row for row in report['findings'] if row['metric'] == f'/characters/{FIRST}/position/0')
     assert metric['classification'] == 'stable_divergent'
     for row in metric['original']['observations']:
@@ -129,8 +133,9 @@ def test_complete_five_by_five_comparison_writes_relative_equivalent_reports_and
         assert (output/row['snapshot']).resolve().is_relative_to(original)
     assert '../../original/' in markdown and 'Original N = 5' in markdown
     assert str(output.parent.parent) not in json.dumps(report)
-    drafts = list((output/'issues').glob('*.md'))
-    assert drafts
+    # One draft per strong root-cause group (format 0.3), plus the issues/README.md index.
+    drafts = sorted(path for path in (output/'issues').glob('*.md') if path.name != 'README.md')
+    assert drafts and len(drafts) == report['summary']['drafts'] == sum(g['drafted'] for g in report['groups'])
     text = drafts[0].read_text(encoding='utf-8')
     assert 'Local draft for review. No issue has been published.' in text
     assert 'Original N=5; Meitou N=5' in text
@@ -587,7 +592,7 @@ def test_scene_scope_classifies_only_scene_metrics_and_records_the_rest(tmp_path
     assert '## Scene outcome and setup facts' in summary
     assert '| initial | /scene/outcome/cohort/player/dead | 1: 0; 2: 0; 3: 0; 4: 0; 5: 0 |' in summary
     assert '| original | 3 | player | 103 |' in summary and '| meitou | 3 | player | 100 |' in summary
-    drafts = list((output/'issues').glob('*.md'))
+    drafts = [path for path in (output/'issues').glob('*.md') if path.name != 'README.md']
     assert not drafts
 
 
@@ -724,7 +729,7 @@ def test_intruder_inside_the_scene_radius_is_compared(tmp_path):
     assert intruders['classification'] == 'stable_divergent'
     assert intruders['original']['values'] == [0]*5 and intruders['meitou']['values'] == [1]*5
     assert rows_by_metric(report['findings'], 'initial')['/scene/intruders/count']['classification'] == 'stable_identical'
-    assert list((output/'issues').glob('*.md'))
+    assert [path for path in (output/'issues').glob('*.md') if path.name != 'README.md']
 
 
 def test_members_are_grouped_by_alias_and_template_not_paired(tmp_path):
@@ -946,7 +951,10 @@ def test_scenario_01_campaigns_still_compare_with_or_without_a_recorded_commit(t
     assert reports['old']['original']['build_commit'] is None
     assert reports['new']['meitou']['build_commit'] == 'd'*40
     for report in reports.values():
-        assert 'background_metrics' not in report and 'scene_outcome' not in report
+        # Format 0.3: without a setup, background_metrics holds only the clock (never classified).
+        assert 'scene_outcome' not in report and report['background_metrics']
+        assert all(row['metric'].startswith('/background/clock/') for row in report['background_metrics'])
+        assert not any(row['metric'].startswith('/clock/') for row in report['findings'])
     for folder in (old, new):
         assert '## Scene outcome' not in (folder/'output'/'report.md').read_text(encoding='utf-8')
         metric = next(row for row in report['findings'] if row['metric'] == f'/characters/{FIRST}/position/0')
@@ -1160,3 +1168,22 @@ def test_report_md_writes_null_for_a_repetition_without_a_nearest_squad(tmp_path
     assert ('| 1: 5000 Synthetic bystander-faction; 2: 5000 Synthetic bystander-faction; 3: null; '
             '4: 5000 Synthetic bystander-faction; 5: 5000 Synthetic bystander-faction |') in summary
     assert 'from the nearest player character' in summary
+
+
+def test_clock_is_background_and_groups_cover_every_divergent_finding(campaigns):
+    original, meitou, _, _, output = campaigns
+    compare_campaigns(original, meitou, output)
+    report = json.loads((output/'report.json').read_text(encoding='utf-8'))
+    assert report['format_version'] == '0.3' and report['state_schema'] == '0.2'
+    assert report['meitou']['repetition_seeds'] == {str(index): str(1000 + index) for index in range(1, 6)}
+    clock = rows_by_metric(report['background_metrics'], 'later')
+    assert '/background/clock/elapsed_seconds' in clock and 'classification' not in clock['/background/clock/hour']
+    assert not any(row['metric'].startswith('/clock/') for row in report['findings'])
+    assert any('/background/clock/' in text and 'overshoot' in text for text in report['limitations'])
+    ids = {group['id'] for group in report['groups']}
+    for row in report['findings']:
+        divergent = row['base_classification'] in ('stable_divergent', 'variable_outside_range')
+        assert (row['group'] in ids) if divergent else row['group'] is None
+        assert ('test' in row) == divergent
+    assert sum(group['size'] for group in report['groups']) == len(
+        {row['metric'] for row in report['findings'] if row['group'] is not None})

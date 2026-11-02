@@ -17,6 +17,7 @@ from oracle_scope import (BACKGROUND_PREFIX, COMMIT_NOT_RECORDED, RECEIPT_FORMAT
                           setup_hash, validate_alias_map)
 from oracle_scope import limitations as scope_limitations
 from oracle_traces import trace_metrics
+from oracle_triage import FORMAT_VERSION, checkpoint_times, chronological
 from original_reference import SUPPORTED_REK_HASH
 from rekenshi_profile import REQUESTED_SETTINGS, validate_runtime_evidence
 
@@ -187,7 +188,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
     fingerprint = validate_origin_fingerprint(report.get('source_fingerprint'))
     checkpoints = {point['name']: point['at'] for point in scenario['checkpoints']}
     grouped = defaultdict(list)
-    seeds, identities = [], set()
+    seeds, identities, repetition_seeds = [], set(), {}
     # One campaign uses one state schema (0.2, 0.3 or 0.4); the runner records it.
     state_schema = report.get('state_schema')
     for execution in executions:
@@ -214,6 +215,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
                     or ready.get('seed_source') != provenance['seed_source']):
                 raise ValueError('Each Meitou repetition requires a verified seed applied before loading')
             seeds.append(seed)
+            repetition_seeds[str(repetition)] = seed
         alias_map = None
         if scope is not None:
             alias_map, facts = setup_receipt(execution, target, scope, expected_hash, commit)
@@ -275,7 +277,8 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
     if target == 'meitou' and len(set(seeds)) != len(seeds):
         raise ValueError('Meitou repetitions must use distinct seeds')
     return dict(report=report, path=relative(path, output), scenario=scenario, n=len(executions),
-                fingerprint=fingerprint, checkpoints=dict(grouped), seeds=seeds, build_commit=commit,
+                fingerprint=fingerprint, checkpoints=dict(grouped), seeds=seeds, repetition_seeds=repetition_seeds,
+                build_commit=commit,
                 aliases=aliases, setup_members=members, state_schema=state_schema)
 
 
@@ -382,11 +385,23 @@ def metric_observations(original, meitou, left, right):
             for key in sorted(keys)]
 
 
-def aggregate_metrics(original, meitou, original_baselines, meitou_baselines, tolerances=None, known_deviations=None):
+CLOCK_PREFIX = '/clock/'
+CLOCK_LIMITATION = ('Clock fields are recorded as /background/clock/ metrics and never classified or drafted: '
+                    'the load nudge and the checkpoint overshoot make them differ between engines by construction.')
+
+
+def aggregate_metrics(original, meitou, original_baselines, meitou_baselines, tolerances=None, known_deviations=None,
+                      background=None, checkpoint=None):
+    """Classify the aggregate metrics; ``/clock/`` rows go to ``background`` (when given), never classified."""
     left = {row['repetition']: snapshot_metrics(row['state'], original_baselines[row['repetition']]) for row in original}
     right = {row['repetition']: snapshot_metrics(row['state'], meitou_baselines[row['repetition']]) for row in meitou}
     findings = []
     for key, left_rows, right_rows in metric_observations(original, meitou, left, right):
+        if key.startswith(CLOCK_PREFIX):
+            if background is not None:
+                background.append(dict(metric=BACKGROUND_PREFIX + key, checkpoint=checkpoint,
+                                       original=left_rows, meitou=right_rows))
+            continue
         tolerance = (tolerances or {}).get(key, (tolerances or {}).get('number', 0.0))
         findings.append(classify_metric(key, left_rows, right_rows, tolerance=tolerance,
             known_deviation=(known_deviations or {}).get(key)))
@@ -525,16 +540,18 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
         first = min(scenario['checkpoints'], key=lambda row: row['at'])['name']
         left_baselines = {row['repetition']: row['state'] for row in original['checkpoints'][first]}
         right_baselines = {row['repetition']: row['state'] for row in meitou['checkpoints'][first]}
-        findings = []
-        for point in scenario['checkpoints']:
+        findings, background = [], []
+        for point in sorted(scenario['checkpoints'], key=lambda point: (point['at'], point['name'])):
             name = point['name']
             left, right = original['checkpoints'][name], meitou['checkpoints'][name]
             group = saved_metrics(left, right, tolerances=tolerances, known_deviations=known_deviations)
-            group += aggregate_metrics(left, right, left_baselines, right_baselines, tolerances, known_deviations)
+            group += aggregate_metrics(left, right, left_baselines, right_baselines, tolerances, known_deviations,
+                                       background=background, checkpoint=name)
             for finding in group:
                 finding['checkpoint'] = name
             findings.extend(group)
         findings.extend(temporal_findings(original, meitou, tolerances, known_deviations, arrival_radius))
+        extra = dict(background_metrics=background)
     else:
         findings, outcome, background = scene_comparison(original, meitou, scope, tolerances,
                                                          known_deviations, arrival_radius)
@@ -543,12 +560,14 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
                                       aliases=sorted(original['aliases'][min(original['aliases'])])),
                      scene_outcome=outcome, background_metrics=background,
                      setup_members=dict(original=original['setup_members'], meitou=meitou['setup_members']))
-    findings.sort(key=lambda row: (CLASSES.index(row['classification']), row['checkpoint'], row['metric']))
+    # Chronological: checkpoint time, then name, then metric; whole_scenario last.
+    findings.sort(key=chronological(checkpoint_times(dict(scenario=scenario), findings)))
     build_limitations = [COMMIT_NOT_RECORDED] if None in (original['build_commit'], meitou['build_commit']) else []
     build_limitations += campaign_limitations(original, 'original') + campaign_limitations(meitou, 'meitou')
-    report = dict(format_version='0.2', scenario=scenario,
+    report = dict(format_version=FORMAT_VERSION, scenario=scenario, state_schema=original['state_schema'],
         original=dict(n=original['n'], report=original['path'], build_commit=original['build_commit']),
-        meitou=dict(n=meitou['n'], report=meitou['path'], seeds=meitou['seeds'], build_commit=meitou['build_commit']),
+        meitou=dict(n=meitou['n'], report=meitou['path'], seeds=meitou['seeds'],
+                    repetition_seeds=meitou['repetition_seeds'], build_commit=meitou['build_commit']),
         source_fingerprint=original['fingerprint'], findings=findings,
         reference_deviations=original['report']['reference_profile'].get('known_deviations', []),
         tolerances=tolerances or {}, arrival_radius_world_units=arrival_radius, limitations=[
@@ -563,8 +582,13 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
             'Arrival is observed within an X/Z radius for all initial members; its exact time remains unknown.',
             'Positive snapshots measure an observed engagement span; they prove neither continuous combat nor cumulative duration.',
             'Duration bounds apply only to the sampled window; duration_seconds remains not comparable without a temporal log.',
+            CLOCK_LIMITATION,
+            'Group p-values come from two-sided permutation tests (exact up to 200000 splits) on one headline metric; '
+            'they treat repetitions as exchangeable and metrics as independent, and are not corrected for the '
+            'number of metrics or checkpoints.',
             *build_limitations, *(scope_limitations() if scope is not None else [])], **extra)
     write_reports(report, output)
     return dict(report=str(output / 'report.json'), summary=str(output / 'report.md'),
                 issues=str(output / 'issues'), original_n=original['n'], meitou_n=meitou['n'],
-                classifications=dict(Counter(row['classification'] for row in findings)))
+                classifications=dict(Counter(row['classification'] for row in findings)),
+                groups=len(report['groups']), drafts=report['summary']['drafts'])

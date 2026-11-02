@@ -224,10 +224,110 @@ and evidence applicable to this field; verifying causality remains an audit
 responsibility, not a statistical inference. A rule replaces neither parity
 nor unknown coverage with “known deviation”.
 
+<a id="root-cause-groups"></a>
+
+## Tests, root-cause groups and drafts
+
+The code is [oracle_triage.py](../mcp-server/oracle_triage.py) and
+[oracle_stats.py](../mcp-server/oracle_stats.py). Grouping runs after
+classification and never changes a class.
+
+**Per-finding test.** Every finding whose base classification is
+`stable_divergent` or `variable_outside_range` (known deviations included)
+carries `test`, an exact two-sided permutation test of its original values
+against its Meitou values (difference of means for numbers, total variation
+distance for booleans and strings; dict `test`, `kind`, `statistic`,
+`p_value`, `splits`, `exact`, `minimum_p_value`), and `strength`: `strong`
+when `p_value` is below 0.01, else `weak`. With five repetitions per side the
+smallest attainable p-value is 2/252 (about 0.0079): only a complete
+separation of the two samples is strong. Other findings carry neither key. The
+test treats repetitions as exchangeable and metrics as independent; it
+qualifies one metric, is not corrected for the number of metrics or
+checkpoints, and proves no cause.
+
+**Groups.** The divergent findings form root-cause groups:
+
+1. One metric's divergent findings across checkpoints are one *member*; its
+   checkpoints are listed in time order, `whole_scenario` last. The member's
+   p-value is the smallest over those checkpoints.
+2. The member's *entity* is the smallest unit one cause plausibly explains:
+   `faction:<F>` for `/population/by_faction/<F>/`,
+   `/population/by_squad_template/<F>/` and `/combat/starting_cohort/<F>/`;
+   `squad:<id>` for `/characters/<id>/`, `/squads/<id>/` and
+   `/trajectory/saved_squad/<id>/`; `scene` for `/scene/`; otherwise
+   `family:/<a>/<b>`, the first two path parts. A character's squad is the most
+   frequent original value of its `squad_id` field, else the container part of
+   its saved handle (`hand:1:C:CS:I:S` gives `hand:34:C:CS:0:0`). On three real
+   campaign pairs every recorded saved `squad_id` equals that container squad
+   (**Observed**).
+3. The *disagreeing set* is the Meitou repetitions that disagree with the
+   original at the member's first divergent checkpoint: beyond the tolerance
+   for a stable original, outside [min, max] widened by the tolerance (or
+   outside the observed set) for a variable one.
+4. The group key is (entity, disagreeing set, onset). Onset is `load` when the
+   first divergent checkpoint is the scenario's earliest checkpoint, else
+   `simulation`; the group's first checkpoint is its earliest member's. A
+   known deviation never shares a group with an unexplained member.
+5. A key whose disagreeing set is a proper subset of another key's set, with
+   the same entity and onset, joins the smallest such superset.
+6. A whole-scenario trace member (checkpoint `whole_scenario`: trajectories, moves, engagement)
+   has no checkpoint of its own: it joins its entity's simulation key whose set
+   contains its own, else its metric family's key.
+
+Rules 4 to 6 relax a key that held the exact first checkpoint: on real
+campaigns that key split one squad's drift over every checkpoint, every
+subset of repetitions that left a variable range and every trajectory. The
+headline of a group is its member with the lowest p-value, then the earliest
+tested checkpoint, then the lexically first metric; the group's `strength` and
+`p_value` are the headline's. Groups are ordered strong before weak, then by
+size times the number of disagreeing repetitions (descending), then load
+before simulation, then entity and set; known-deviation groups come last. Ids
+are `g<rank>-<hash>` (for example `g001-4cd97d82`), the hash being of the
+key, so a rerun on the same campaigns gives the same ids.
+
+**Drafts.** `issues/` holds one English draft per **strong** group that is not
+a known deviation, named by its group id, and `issues/README.md`, which lists
+every group: strong ones with their draft, weak ones (headline, size,
+p-value) and known deviations, neither drafted. Each draft states the
+scenario, the save and its start-save fingerprint, both build commits (or
+`build commit not recorded`), the state schema, N per side, the Meitou seed of
+each repetition, the group key and onset, the first divergent checkpoint with
+its time, the headline test (p-value, minimum attainable p-value, exact or
+sampled), a headline table repetition, seed, value, disagreement and snapshot
+link with original and MeitouClient rows labelled, the tolerance, the member
+metrics (at most 20, then "and N more"; the complete list is in
+`report.json`) and a one-line reproduction hint (save, the seed of a
+disagreeing repetition, checkpoint). Links are relative. No issue is
+published.
+
+**Clock.** `/clock/*` fields are recorded in `background_metrics` as
+`/background/clock/*` in every comparison, never classified or drafted: the
+load nudge and the checkpoint overshoot make them differ between engines by
+construction. A limitation line in each report says so.
+
+<a id="outputs"></a>
+
+## Outputs and format version
+
+`report.json` has `format_version` **0.3** (0.2 before groups). It adds
+`groups` (each with `id`, `key`, `entity`, `disagreeing_repetitions`,
+`first_checkpoint` `{name, at}` with `at` null for `whole_scenario`, `onset`,
+`headline` `{metric, checkpoint, p_value}`, `members`, `strength`, `p_value`,
+`size`, `known_deviation`, `drafted`), per-finding `group` (null outside a
+group), `test` and `strength` on divergent findings, `state_schema`,
+`meitou.repetition_seeds` (repetition to seed) and, without a setup block,
+`background_metrics` holding the clock. `summary` counts `groups`,
+`strong_groups`, `weak_groups`, `known_deviation_groups` and `drafts` (strong
+groups drafted). Findings, the preview and detail pages are in chronological
+order: checkpoint `at`, then checkpoint name, then metric, `whole_scenario`
+last.
+
 `OUTPUT` contains:
 
-- `report.md`: summary, N on both sides, sorted classes and preview limited to
-  20 strong discrepancies, linking all details.
+- `report.md`: summary, N on both sides, sorted classes, the root-cause group
+  tables (strong with draft links, weak and known deviations; at most 100 rows
+  each) and a preview limited to the 20 earliest stable divergent findings,
+  linking all details.
   Its limitations state the computed share of faction relation metrics
   (`/relations/` and `/scene/relations/`) among the compared metrics, adding
   that they are the majority of that total only when they are; the count of
@@ -237,12 +337,12 @@ nor unknown coverage with “known deviation”.
   indicators per page, targeting 200 KiB where a row's size permits.
 - `report.json`: equivalent detailed observations/statistics, also including
   parities summarized by count in Markdown.
-- `issues/`: one English draft per **stable divergent** metric, with evidence,
-  values and tolerance; metric-derived filenames and relative links.
-  No issue is published.
+- `issues/`: `README.md` and one English draft per strong root-cause group, as
+  described above. No issue is published.
 
-With small N, ranges/medians describe only the sample; no significance test
-is presented as proof. An original N = 5, 15-snapshot campaign is
+With small N, ranges/medians describe only the sample; a permutation p-value
+qualifies a group's headline metric and is never presented as proof of a
+cause. An original N = 5, 15-snapshot campaign is
 validated locally (local evidence, not published),
 with cold profile restoration. The
 Meitou N = 5 campaign (local evidence, not published)

@@ -1,6 +1,5 @@
 """Readable pagination preserves every computed finding and local evidence link."""
 from copy import deepcopy
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -41,6 +40,18 @@ def report(counts=None):
         limitations=['Sparse observations do not establish exact duration.'], reference_deviations=[])
 
 
+ADDED = ('test', 'strength', 'group')
+
+
+def computed(findings):
+    """Findings without the keys format 0.3 adds (permutation test, strength, group id)."""
+    return [{key: value for key, value in row.items() if key not in ADDED} for row in findings]
+
+
+def drafts(output):
+    return sorted(path for path in (output/'issues').glob('*.md') if path.name != 'README.md')
+
+
 def data_rows(text):
     return [line for line in text.splitlines() if line.startswith('| initial |')]
 
@@ -54,12 +65,15 @@ def test_main_is_a_short_summary_and_detail_pages_cover_each_nonidentical_findin
     catalog = value['details_catalog']
     assert len(data_rows(main)) == 20
     assert 'details/index.md' in main and 'Complete JSON report' in main
+    # Format 0.3: one draft per strong root-cause group. The 205 stable divergent fixture metrics share
+    # one family, one disagreeing set (all five repetitions) and the load onset, so they form one group.
     assert value['summary'] == dict(original_n=5, meitou_n=5, findings=312,
         classifications=dict(stable_divergent=205, stable_identical=3, variable_outside_range=101,
                              known_deviation=1, variable_compatible=1, not_comparable=1),
-        drafts=205, detail_findings=309, detail_pages=8, preview_findings=20)
+        groups=3, strong_groups=1, weak_groups=1, known_deviation_groups=1,
+        drafts=1, detail_findings=309, detail_pages=8, preview_findings=20)
     assert catalog['page_size'] == 100 and catalog['page_count'] == 8
-    assert value['findings'] == before
+    assert computed(value['findings']) == before
     assert sum(page['finding_count'] for page in catalog['pages']) == 309
     rendered = []
     for index, page in enumerate(catalog['pages']):
@@ -74,8 +88,8 @@ def test_main_is_a_short_summary_and_detail_pages_cover_each_nonidentical_findin
     assert [page['finding_count'] for page in catalog['pages'][:3]] == [100, 100, 5]
     assert [page['classification'] for page in catalog['pages']] == [
         'stable_divergent']*3 + ['variable_outside_range']*2 + ['known_deviation', 'variable_compatible', 'not_comparable']
-    assert len(list((output/'issues').glob('*.md'))) == 205
-    assert json.loads((output/'report.json').read_bytes())['findings'] == before
+    assert len(drafts(output)) == 1 and (output/'issues'/'README.md').is_file()
+    assert computed(json.loads((output/'report.json').read_bytes())['findings']) == before
 
 
 def test_detail_statistics_and_photos_use_the_page_directory_for_relative_links(tmp_path):
@@ -94,11 +108,11 @@ def test_detail_statistics_and_photos_use_the_page_directory_for_relative_links(
     assert '../../../extra/later.json' in links
     for link in links:
         assert (path.parent/unquote(link)).resolve() == (output/unquote(link[3:])).resolve()
-    first = value['findings'][0]
-    digest = hashlib.sha256((first['checkpoint']+':'+first['metric']).encode()).hexdigest()[:16]
-    issue = (output/'issues'/(digest+'.md')).read_text(encoding='utf-8')
+    issue = (output/'issues'/(value['groups'][0]['id']+'.md')).read_text(encoding='utf-8')
     assert 'Local draft for review. No issue has been published.' in issue
-    assert 'Photos: ' in issue and '../../../original/1/initial.json' in issue
+    # Format 0.3: the group draft links each headline snapshot in its repetition table.
+    assert '[snapshot](../../../original/1/initial.json)' in issue and '[snapshot](../../../meitou/5/initial.json)' in issue
+    assert 'also uses 1 snapshots of every checkpoint' in issue
     assert 'Original N=5; Meitou N=5' in issue
 
 
