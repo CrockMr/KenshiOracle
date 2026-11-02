@@ -5185,6 +5185,704 @@
       },
       "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9LHsiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInN0dW4iOjB9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJuYW1lIjoiQmV0YSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzEsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJzbGF2ZV9zdGF0ZSI6ImV4X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
       "expected_sha256": "5886f22c7bc73f8262f6c9b8183055b6ff4cd3dce7ae3cbd555a923e74442c74"
+    },
+    {
+      "name": "additive-state-04",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.4",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": 12.5,
+                "splint": 0,
+                "wear": 3.000001
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "not_slave",
+            "slave_owner_faction_id": null,
+            "medical": {
+              "blood": 97.5,
+              "bleed_rate": 0.125,
+              "hunger": 2.25,
+              "fed": 1.5,
+              "coma": false,
+              "blood_loss_trauma": true
+            },
+            "stats": {
+              "assassination": 0.5,
+              "athletics": 1.5,
+              "blunt": 2.5,
+              "cooking": 3.5,
+              "crossbows": 4.5,
+              "dexterity": 5.5,
+              "dodge": 6.5,
+              "engineering": 7.5,
+              "farming": 8.5,
+              "friendly_fire": 9.5,
+              "hackers": 10.5,
+              "heavyweapons": 11.5,
+              "katanas": 12.5,
+              "labouring": 13.5,
+              "lockpicking": 14.5,
+              "martialarts": 15.5,
+              "masscombat": 16.5,
+              "medic": 17.5,
+              "melee_attack": 18.5,
+              "melee_defence": 19.5,
+              "perception": 20.5,
+              "polearms": 21.5,
+              "robotics": 22.5,
+              "sabres": 23.5,
+              "science": 24.5,
+              "smithing_armour": 25.5,
+              "smithing_bow": 26.5,
+              "smithing_weapon": 27.5,
+              "stealth": 28.5,
+              "strength": 29.5,
+              "swimming": 30.5,
+              "thieving": 31.5,
+              "toughness": 32.5,
+              "turrets": 33.5
+            },
+            "in_something": "bed",
+            "carrying": "character",
+            "carrying_id": "hand:1:7:101:2:1002",
+            "being_carried": false
+          },
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": 12.5,
+                "splint": 0,
+                "wear": 3.000001
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "ex_slave",
+            "slave_owner_faction_id": "fixture-faction",
+            "medical": {
+              "blood": null,
+              "bleed_rate": -5e-07,
+              "hunger": 0,
+              "fed": null,
+              "coma": null,
+              "blood_loss_trauma": false
+            },
+            "stats": {
+              "assassination": -1.2345675,
+              "athletics": null,
+              "blunt": -1.2345675,
+              "cooking": null,
+              "crossbows": -1.2345675,
+              "dexterity": null,
+              "dodge": -1.2345675,
+              "engineering": null,
+              "farming": -1.2345675,
+              "friendly_fire": null,
+              "hackers": -1.2345675,
+              "heavyweapons": null,
+              "katanas": -1.2345675,
+              "labouring": null,
+              "lockpicking": -1.2345675,
+              "martialarts": null,
+              "masscombat": -1.2345675,
+              "medic": null,
+              "melee_attack": -1.2345675,
+              "melee_defence": null,
+              "perception": -1.2345675,
+              "polearms": null,
+              "robotics": -1.2345675,
+              "sabres": null,
+              "science": -1.2345675,
+              "smithing_armour": null,
+              "smithing_bow": -1.2345675,
+              "smithing_weapon": null,
+              "stealth": -1.2345675,
+              "strength": null,
+              "swimming": -1.2345675,
+              "thieving": null,
+              "toughness": -1.2345675,
+              "turrets": null
+            },
+            "in_something": "prison",
+            "carrying": "nothing",
+            "carrying_id": null,
+            "being_carried": true
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:1:1001",
+              "hand:1:7:101:2:1002"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null,
+            "money": 123456
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpmYWxzZSwiY2FycnlpbmciOiJjaGFyYWN0ZXIiLCJjYXJyeWluZ19pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6MC4xMjUsImJsb29kIjo5Ny41LCJibG9vZF9sb3NzX3RyYXVtYSI6dHJ1ZSwiY29tYSI6ZmFsc2UsImZlZCI6MS41LCJodW5nZXIiOjIuMjV9LCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MC41LCJhdGhsZXRpY3MiOjEuNSwiYmx1bnQiOjIuNSwiY29va2luZyI6My41LCJjcm9zc2Jvd3MiOjQuNSwiZGV4dGVyaXR5Ijo1LjUsImRvZGdlIjo2LjUsImVuZ2luZWVyaW5nIjo3LjUsImZhcm1pbmciOjguNSwiZnJpZW5kbHlfZmlyZSI6OS41LCJoYWNrZXJzIjoxMC41LCJoZWF2eXdlYXBvbnMiOjExLjUsImthdGFuYXMiOjEyLjUsImxhYm91cmluZyI6MTMuNSwibG9ja3BpY2tpbmciOjE0LjUsIm1hcnRpYWxhcnRzIjoxNS41LCJtYXNzY29tYmF0IjoxNi41LCJtZWRpYyI6MTcuNSwibWVsZWVfYXR0YWNrIjoxOC41LCJtZWxlZV9kZWZlbmNlIjoxOS41LCJwZXJjZXB0aW9uIjoyMC41LCJwb2xlYXJtcyI6MjEuNSwicm9ib3RpY3MiOjIyLjUsInNhYnJlcyI6MjMuNSwic2NpZW5jZSI6MjQuNSwic21pdGhpbmdfYXJtb3VyIjoyNS41LCJzbWl0aGluZ19ib3ciOjI2LjUsInNtaXRoaW5nX3dlYXBvbiI6MjcuNSwic3RlYWx0aCI6MjguNSwic3RyZW5ndGgiOjI5LjUsInN3aW1taW5nIjozMC41LCJ0aGlldmluZyI6MzEuNSwidG91Z2huZXNzIjozMi41LCJ0dXJyZXRzIjozMy41fSwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoibm90aGluZyIsImNhcnJ5aW5nX2lkIjpudWxsLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6InByaXNvbiIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6LTAuMDAwMDAxLCJibG9vZCI6bnVsbCwiYmxvb2RfbG9zc190cmF1bWEiOmZhbHNlLCJjb21hIjpudWxsLCJmZWQiOm51bGwsImh1bmdlciI6MH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOi0xLjIzNDU2OCwiYXRobGV0aWNzIjpudWxsLCJibHVudCI6LTEuMjM0NTY4LCJjb29raW5nIjpudWxsLCJjcm9zc2Jvd3MiOi0xLjIzNDU2OCwiZGV4dGVyaXR5IjpudWxsLCJkb2RnZSI6LTEuMjM0NTY4LCJlbmdpbmVlcmluZyI6bnVsbCwiZmFybWluZyI6LTEuMjM0NTY4LCJmcmllbmRseV9maXJlIjpudWxsLCJoYWNrZXJzIjotMS4yMzQ1NjgsImhlYXZ5d2VhcG9ucyI6bnVsbCwia2F0YW5hcyI6LTEuMjM0NTY4LCJsYWJvdXJpbmciOm51bGwsImxvY2twaWNraW5nIjotMS4yMzQ1NjgsIm1hcnRpYWxhcnRzIjpudWxsLCJtYXNzY29tYmF0IjotMS4yMzQ1NjgsIm1lZGljIjpudWxsLCJtZWxlZV9hdHRhY2siOi0xLjIzNDU2OCwibWVsZWVfZGVmZW5jZSI6bnVsbCwicGVyY2VwdGlvbiI6LTEuMjM0NTY4LCJwb2xlYXJtcyI6bnVsbCwicm9ib3RpY3MiOi0xLjIzNDU2OCwic2FicmVzIjpudWxsLCJzY2llbmNlIjotMS4yMzQ1NjgsInNtaXRoaW5nX2FybW91ciI6bnVsbCwic21pdGhpbmdfYm93IjotMS4yMzQ1NjgsInNtaXRoaW5nX3dlYXBvbiI6bnVsbCwic3RlYWx0aCI6LTEuMjM0NTY4LCJzdHJlbmd0aCI6bnVsbCwic3dpbW1pbmciOi0xLjIzNDU2OCwidGhpZXZpbmciOm51bGwsInRvdWdobmVzcyI6LTEuMjM0NTY4LCJ0dXJyZXRzIjpudWxsfSwidG93bl9hc3NpZ25tZW50IjpudWxsfV0sImNsb2NrIjp7ImRheSI6MiwiZWxhcHNlZF9zZWNvbmRzIjoyMTYwMDAsImhvdXIiOjEyLCJwYXVzZWQiOnRydWUsInNwZWVkIjowfSwiZmFjdGlvbnMiOlt7ImlkIjoiZml4dHVyZS1mYWN0aW9uIiwibmFtZSI6IkZpeHR1cmUgZmFjdGlvbiJ9XSwicmVsYXRpb25zIjpbXSwic2NoZW1hX3ZlcnNpb24iOiIwLjQiLCJzcXVhZHMiOlt7ImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJpZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJsZWFkZXJfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwibWVtYmVycyI6WyJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaGFuZDoxOjc6MTAxOjI6MTAwMiJdLCJtb25leSI6MTIzNDU2LCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
+      "expected_sha256": "c9848379d8e2c96817c612214fe8fe857643a7503bc891c6b4ee1c656c6793f9"
+    },
+    {
+      "name": "state-04-permutation",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.4",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": 12.5,
+                "splint": 0,
+                "wear": 3.000001
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "ex_slave",
+            "slave_owner_faction_id": "fixture-faction",
+            "medical": {
+              "blood_loss_trauma": false,
+              "coma": null,
+              "fed": null,
+              "hunger": 0,
+              "bleed_rate": -5e-07,
+              "blood": null
+            },
+            "stats": {
+              "turrets": null,
+              "toughness": -1.2345675,
+              "thieving": null,
+              "swimming": -1.2345675,
+              "strength": null,
+              "stealth": -1.2345675,
+              "smithing_weapon": null,
+              "smithing_bow": -1.2345675,
+              "smithing_armour": null,
+              "science": -1.2345675,
+              "sabres": null,
+              "robotics": -1.2345675,
+              "polearms": null,
+              "perception": -1.2345675,
+              "melee_defence": null,
+              "melee_attack": -1.2345675,
+              "medic": null,
+              "masscombat": -1.2345675,
+              "martialarts": null,
+              "lockpicking": -1.2345675,
+              "labouring": null,
+              "katanas": -1.2345675,
+              "heavyweapons": null,
+              "hackers": -1.2345675,
+              "friendly_fire": null,
+              "farming": -1.2345675,
+              "engineering": null,
+              "dodge": -1.2345675,
+              "dexterity": null,
+              "crossbows": -1.2345675,
+              "cooking": null,
+              "blunt": -1.2345675,
+              "athletics": null,
+              "assassination": -1.2345675
+            },
+            "in_something": "prison",
+            "carrying": "nothing",
+            "carrying_id": null,
+            "being_carried": true
+          },
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": 12.5,
+                "splint": 0,
+                "wear": 3.000001
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "not_slave",
+            "slave_owner_faction_id": null,
+            "medical": {
+              "blood_loss_trauma": true,
+              "coma": false,
+              "fed": 1.5,
+              "hunger": 2.25,
+              "bleed_rate": 0.125,
+              "blood": 97.5
+            },
+            "stats": {
+              "turrets": 33.5,
+              "toughness": 32.5,
+              "thieving": 31.5,
+              "swimming": 30.5,
+              "strength": 29.5,
+              "stealth": 28.5,
+              "smithing_weapon": 27.5,
+              "smithing_bow": 26.5,
+              "smithing_armour": 25.5,
+              "science": 24.5,
+              "sabres": 23.5,
+              "robotics": 22.5,
+              "polearms": 21.5,
+              "perception": 20.5,
+              "melee_defence": 19.5,
+              "melee_attack": 18.5,
+              "medic": 17.5,
+              "masscombat": 16.5,
+              "martialarts": 15.5,
+              "lockpicking": 14.5,
+              "labouring": 13.5,
+              "katanas": 12.5,
+              "heavyweapons": 11.5,
+              "hackers": 10.5,
+              "friendly_fire": 9.5,
+              "farming": 8.5,
+              "engineering": 7.5,
+              "dodge": 6.5,
+              "dexterity": 5.5,
+              "crossbows": 4.5,
+              "cooking": 3.5,
+              "blunt": 2.5,
+              "athletics": 1.5,
+              "assassination": 0.5
+            },
+            "in_something": "bed",
+            "carrying": "character",
+            "carrying_id": "hand:1:7:101:2:1002",
+            "being_carried": false
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:2:1002",
+              "hand:1:7:101:1:1001"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null,
+            "money": 123456
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpmYWxzZSwiY2FycnlpbmciOiJjaGFyYWN0ZXIiLCJjYXJyeWluZ19pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6MC4xMjUsImJsb29kIjo5Ny41LCJibG9vZF9sb3NzX3RyYXVtYSI6dHJ1ZSwiY29tYSI6ZmFsc2UsImZlZCI6MS41LCJodW5nZXIiOjIuMjV9LCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MC41LCJhdGhsZXRpY3MiOjEuNSwiYmx1bnQiOjIuNSwiY29va2luZyI6My41LCJjcm9zc2Jvd3MiOjQuNSwiZGV4dGVyaXR5Ijo1LjUsImRvZGdlIjo2LjUsImVuZ2luZWVyaW5nIjo3LjUsImZhcm1pbmciOjguNSwiZnJpZW5kbHlfZmlyZSI6OS41LCJoYWNrZXJzIjoxMC41LCJoZWF2eXdlYXBvbnMiOjExLjUsImthdGFuYXMiOjEyLjUsImxhYm91cmluZyI6MTMuNSwibG9ja3BpY2tpbmciOjE0LjUsIm1hcnRpYWxhcnRzIjoxNS41LCJtYXNzY29tYmF0IjoxNi41LCJtZWRpYyI6MTcuNSwibWVsZWVfYXR0YWNrIjoxOC41LCJtZWxlZV9kZWZlbmNlIjoxOS41LCJwZXJjZXB0aW9uIjoyMC41LCJwb2xlYXJtcyI6MjEuNSwicm9ib3RpY3MiOjIyLjUsInNhYnJlcyI6MjMuNSwic2NpZW5jZSI6MjQuNSwic21pdGhpbmdfYXJtb3VyIjoyNS41LCJzbWl0aGluZ19ib3ciOjI2LjUsInNtaXRoaW5nX3dlYXBvbiI6MjcuNSwic3RlYWx0aCI6MjguNSwic3RyZW5ndGgiOjI5LjUsInN3aW1taW5nIjozMC41LCJ0aGlldmluZyI6MzEuNSwidG91Z2huZXNzIjozMi41LCJ0dXJyZXRzIjozMy41fSwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoibm90aGluZyIsImNhcnJ5aW5nX2lkIjpudWxsLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6InByaXNvbiIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6LTAuMDAwMDAxLCJibG9vZCI6bnVsbCwiYmxvb2RfbG9zc190cmF1bWEiOmZhbHNlLCJjb21hIjpudWxsLCJmZWQiOm51bGwsImh1bmdlciI6MH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOi0xLjIzNDU2OCwiYXRobGV0aWNzIjpudWxsLCJibHVudCI6LTEuMjM0NTY4LCJjb29raW5nIjpudWxsLCJjcm9zc2Jvd3MiOi0xLjIzNDU2OCwiZGV4dGVyaXR5IjpudWxsLCJkb2RnZSI6LTEuMjM0NTY4LCJlbmdpbmVlcmluZyI6bnVsbCwiZmFybWluZyI6LTEuMjM0NTY4LCJmcmllbmRseV9maXJlIjpudWxsLCJoYWNrZXJzIjotMS4yMzQ1NjgsImhlYXZ5d2VhcG9ucyI6bnVsbCwia2F0YW5hcyI6LTEuMjM0NTY4LCJsYWJvdXJpbmciOm51bGwsImxvY2twaWNraW5nIjotMS4yMzQ1NjgsIm1hcnRpYWxhcnRzIjpudWxsLCJtYXNzY29tYmF0IjotMS4yMzQ1NjgsIm1lZGljIjpudWxsLCJtZWxlZV9hdHRhY2siOi0xLjIzNDU2OCwibWVsZWVfZGVmZW5jZSI6bnVsbCwicGVyY2VwdGlvbiI6LTEuMjM0NTY4LCJwb2xlYXJtcyI6bnVsbCwicm9ib3RpY3MiOi0xLjIzNDU2OCwic2FicmVzIjpudWxsLCJzY2llbmNlIjotMS4yMzQ1NjgsInNtaXRoaW5nX2FybW91ciI6bnVsbCwic21pdGhpbmdfYm93IjotMS4yMzQ1NjgsInNtaXRoaW5nX3dlYXBvbiI6bnVsbCwic3RlYWx0aCI6LTEuMjM0NTY4LCJzdHJlbmd0aCI6bnVsbCwic3dpbW1pbmciOi0xLjIzNDU2OCwidGhpZXZpbmciOm51bGwsInRvdWdobmVzcyI6LTEuMjM0NTY4LCJ0dXJyZXRzIjpudWxsfSwidG93bl9hc3NpZ25tZW50IjpudWxsfV0sImNsb2NrIjp7ImRheSI6MiwiZWxhcHNlZF9zZWNvbmRzIjoyMTYwMDAsImhvdXIiOjEyLCJwYXVzZWQiOnRydWUsInNwZWVkIjowfSwiZmFjdGlvbnMiOlt7ImlkIjoiZml4dHVyZS1mYWN0aW9uIiwibmFtZSI6IkZpeHR1cmUgZmFjdGlvbiJ9XSwicmVsYXRpb25zIjpbXSwic2NoZW1hX3ZlcnNpb24iOiIwLjQiLCJzcXVhZHMiOlt7ImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJpZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJsZWFkZXJfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwibWVtYmVycyI6WyJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaGFuZDoxOjc6MTAxOjI6MTAwMiJdLCJtb25leSI6MTIzNDU2LCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
+      "expected_sha256": "c9848379d8e2c96817c612214fe8fe857643a7503bc891c6b4ee1c656c6793f9"
+    },
+    {
+      "name": "state-04-nulls-other-and-nothing",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.4",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": null,
+                "splint": null,
+                "wear": null
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "not_slave",
+            "slave_owner_faction_id": null,
+            "medical": null,
+            "stats": null,
+            "in_something": null,
+            "carrying": "other",
+            "carrying_id": null,
+            "being_carried": null
+          },
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": null,
+                "splint": null,
+                "wear": null
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "ex_slave",
+            "slave_owner_faction_id": "fixture-faction",
+            "medical": {
+              "blood": null,
+              "bleed_rate": -5e-07,
+              "hunger": 0,
+              "fed": null,
+              "coma": null,
+              "blood_loss_trauma": false
+            },
+            "stats": {
+              "assassination": -1.2345675,
+              "athletics": null,
+              "blunt": -1.2345675,
+              "cooking": null,
+              "crossbows": -1.2345675,
+              "dexterity": null,
+              "dodge": -1.2345675,
+              "engineering": null,
+              "farming": -1.2345675,
+              "friendly_fire": null,
+              "hackers": -1.2345675,
+              "heavyweapons": null,
+              "katanas": -1.2345675,
+              "labouring": null,
+              "lockpicking": -1.2345675,
+              "martialarts": null,
+              "masscombat": -1.2345675,
+              "medic": null,
+              "melee_attack": -1.2345675,
+              "melee_defence": null,
+              "perception": -1.2345675,
+              "polearms": null,
+              "robotics": -1.2345675,
+              "sabres": null,
+              "science": -1.2345675,
+              "smithing_armour": null,
+              "smithing_bow": -1.2345675,
+              "smithing_weapon": null,
+              "stealth": -1.2345675,
+              "strength": null,
+              "swimming": -1.2345675,
+              "thieving": null,
+              "toughness": -1.2345675,
+              "turrets": null
+            },
+            "in_something": "nothing",
+            "carrying": null,
+            "carrying_id": null,
+            "being_carried": true
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:1:1001",
+              "hand:1:7:101:2:1002"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null,
+            "money": null
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im90aGVyIiwiY2FycnlpbmdfaWQiOm51bGwsImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siYmFuZGFnZSI6bnVsbCwiY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzcGxpbnQiOm51bGwsInN0dW4iOjAsIndlYXIiOm51bGx9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOm51bGwsIm1lZGljYWwiOm51bGwsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6bnVsbCwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjpudWxsLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJiYW5kYWdlIjpudWxsLCJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInNwbGludCI6bnVsbCwic3R1biI6MCwid2VhciI6bnVsbH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6Im5vdGhpbmciLCJtZWRpY2FsIjp7ImJsZWVkX3JhdGUiOi0wLjAwMDAwMSwiYmxvb2QiOm51bGwsImJsb29kX2xvc3NfdHJhdW1hIjpmYWxzZSwiY29tYSI6bnVsbCwiZmVkIjpudWxsLCJodW5nZXIiOjB9LCJuYW1lIjoiQmV0YSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzEsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJzbGF2ZV9zdGF0ZSI6ImV4X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6eyJhc3Nhc3NpbmF0aW9uIjotMS4yMzQ1NjgsImF0aGxldGljcyI6bnVsbCwiYmx1bnQiOi0xLjIzNDU2OCwiY29va2luZyI6bnVsbCwiY3Jvc3Nib3dzIjotMS4yMzQ1NjgsImRleHRlcml0eSI6bnVsbCwiZG9kZ2UiOi0xLjIzNDU2OCwiZW5naW5lZXJpbmciOm51bGwsImZhcm1pbmciOi0xLjIzNDU2OCwiZnJpZW5kbHlfZmlyZSI6bnVsbCwiaGFja2VycyI6LTEuMjM0NTY4LCJoZWF2eXdlYXBvbnMiOm51bGwsImthdGFuYXMiOi0xLjIzNDU2OCwibGFib3VyaW5nIjpudWxsLCJsb2NrcGlja2luZyI6LTEuMjM0NTY4LCJtYXJ0aWFsYXJ0cyI6bnVsbCwibWFzc2NvbWJhdCI6LTEuMjM0NTY4LCJtZWRpYyI6bnVsbCwibWVsZWVfYXR0YWNrIjotMS4yMzQ1NjgsIm1lbGVlX2RlZmVuY2UiOm51bGwsInBlcmNlcHRpb24iOi0xLjIzNDU2OCwicG9sZWFybXMiOm51bGwsInJvYm90aWNzIjotMS4yMzQ1NjgsInNhYnJlcyI6bnVsbCwic2NpZW5jZSI6LTEuMjM0NTY4LCJzbWl0aGluZ19hcm1vdXIiOm51bGwsInNtaXRoaW5nX2JvdyI6LTEuMjM0NTY4LCJzbWl0aGluZ193ZWFwb24iOm51bGwsInN0ZWFsdGgiOi0xLjIzNDU2OCwic3RyZW5ndGgiOm51bGwsInN3aW1taW5nIjotMS4yMzQ1NjgsInRoaWV2aW5nIjpudWxsLCJ0b3VnaG5lc3MiOi0xLjIzNDU2OCwidHVycmV0cyI6bnVsbH0sInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC40Iiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwibW9uZXkiOm51bGwsIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
+      "expected_sha256": "a2fad72aa3804e235bd13d348f65186b4f451ab080984cda92b82f4e203e31b9"
+    },
+    {
+      "name": "state-04-edges",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.4",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": null,
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "not_slave",
+            "slave_owner_faction_id": null,
+            "medical": null,
+            "stats": null,
+            "in_something": "bed",
+            "carrying": "nothing",
+            "carrying_id": null,
+            "being_carried": null
+          },
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100,
+                "bandage": null,
+                "splint": null,
+                "wear": null
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "ex_slave",
+            "slave_owner_faction_id": "fixture-faction",
+            "medical": {
+              "blood": 1000000000.0,
+              "bleed_rate": -1000000000.0,
+              "hunger": null,
+              "fed": null,
+              "coma": true,
+              "blood_loss_trauma": null
+            },
+            "stats": {
+              "assassination": 0,
+              "athletics": 0,
+              "blunt": 0,
+              "cooking": 0,
+              "crossbows": 0,
+              "dexterity": 0,
+              "dodge": 0,
+              "engineering": 0,
+              "farming": 0,
+              "friendly_fire": 0,
+              "hackers": 0,
+              "heavyweapons": 0,
+              "katanas": 0,
+              "labouring": 0,
+              "lockpicking": 0,
+              "martialarts": 0,
+              "masscombat": 0,
+              "medic": 0,
+              "melee_attack": 0,
+              "melee_defence": 0,
+              "perception": 0,
+              "polearms": 0,
+              "robotics": 0,
+              "sabres": 0,
+              "science": 0,
+              "smithing_armour": 0,
+              "smithing_bow": 0,
+              "smithing_weapon": 0,
+              "stealth": 0,
+              "strength": 0,
+              "swimming": 0,
+              "thieving": 0,
+              "toughness": 0,
+              "turrets": 0
+            },
+            "in_something": "nothing",
+            "carrying": "character",
+            "carrying_id": "hand:1:7:101:1:1001",
+            "being_carried": true
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:1:1001",
+              "hand:1:7:101:2:1002"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null,
+            "money": -1000000000
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpudWxsLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOm51bGwsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6bnVsbCwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoiY2hhcmFjdGVyIiwiY2FycnlpbmdfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJiYW5kYWdlIjpudWxsLCJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInNwbGludCI6bnVsbCwic3R1biI6MCwid2VhciI6bnVsbH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6Im5vdGhpbmciLCJtZWRpY2FsIjp7ImJsZWVkX3JhdGUiOi0xMDAwMDAwMDAwLCJibG9vZCI6MTAwMDAwMDAwMCwiYmxvb2RfbG9zc190cmF1bWEiOm51bGwsImNvbWEiOnRydWUsImZlZCI6bnVsbCwiaHVuZ2VyIjpudWxsfSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwic2xhdmVfc3RhdGUiOiJleF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MCwiYXRobGV0aWNzIjowLCJibHVudCI6MCwiY29va2luZyI6MCwiY3Jvc3Nib3dzIjowLCJkZXh0ZXJpdHkiOjAsImRvZGdlIjowLCJlbmdpbmVlcmluZyI6MCwiZmFybWluZyI6MCwiZnJpZW5kbHlfZmlyZSI6MCwiaGFja2VycyI6MCwiaGVhdnl3ZWFwb25zIjowLCJrYXRhbmFzIjowLCJsYWJvdXJpbmciOjAsImxvY2twaWNraW5nIjowLCJtYXJ0aWFsYXJ0cyI6MCwibWFzc2NvbWJhdCI6MCwibWVkaWMiOjAsIm1lbGVlX2F0dGFjayI6MCwibWVsZWVfZGVmZW5jZSI6MCwicGVyY2VwdGlvbiI6MCwicG9sZWFybXMiOjAsInJvYm90aWNzIjowLCJzYWJyZXMiOjAsInNjaWVuY2UiOjAsInNtaXRoaW5nX2FybW91ciI6MCwic21pdGhpbmdfYm93IjowLCJzbWl0aGluZ193ZWFwb24iOjAsInN0ZWFsdGgiOjAsInN0cmVuZ3RoIjowLCJzd2ltbWluZyI6MCwidGhpZXZpbmciOjAsInRvdWdobmVzcyI6MCwidHVycmV0cyI6MH0sInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC40Iiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwibW9uZXkiOi0xMDAwMDAwMDAwLCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
+      "expected_sha256": "f17fce9a40f59dc51a737d632cba9147e5d206fa30aa714a84b74154c2d2fb52"
     }
   ]
 }

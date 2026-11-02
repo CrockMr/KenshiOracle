@@ -132,7 +132,7 @@ class FakeProbe(FakePlugin):
         self.build_commit = '0123456789abcdef0123456789abcdef01234567'
         # The contract's ping value. The fake's own schema_version and dump_state
         # stay 0.1; tests that need another answer set this attribute.
-        self.state_schema_version = '0.3'
+        self.state_schema_version = '0.4'
         self.autosave_enabled = False
         self.autosave_configured = False
         self.player_faction_id = 'fixture-faction'

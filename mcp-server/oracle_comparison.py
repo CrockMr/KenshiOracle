@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import re
 
-from oracle_compare import classify_metric, saved_metrics, saved_observations
+from oracle_compare import _saved_id, classify_metric, saved_metrics, saved_observations
 from oracle_identity import validate_origin_fingerprint
 from oracle_schema import COMPARABLE_STATE_SCHEMA_VERSIONS, canonical_bytes, validate_scenario
 from oracle_scope import (BACKGROUND_PREFIX, COMMIT_NOT_RECORDED, RECEIPT_FORMAT, background_baseline,
@@ -188,7 +188,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
     checkpoints = {point['name']: point['at'] for point in scenario['checkpoints']}
     grouped = defaultdict(list)
     seeds, identities = [], set()
-    # One campaign uses one state schema (0.2 or 0.3); the runner records it.
+    # One campaign uses one state schema (0.2, 0.3 or 0.4); the runner records it.
     state_schema = report.get('state_schema')
     for execution in executions:
         repetition = execution.get('execution')
@@ -283,8 +283,11 @@ def escaped(value):
     return str(value).replace('~', '~0').replace('/', '~1')
 
 
-def snapshot_metrics(state, baseline):
-    """Loaded populations and fixed starting cohorts; absence never means death."""
+def snapshot_metrics(state, baseline, excluded_squads=frozenset()):
+    """Loaded populations and fixed starting cohorts; absence never means death.
+
+    ``excluded_squads`` (scene scope: the setup alias ids) gets no per-squad metric.
+    """
     values = {'/population/loaded/total': len(state['characters'])}
     for field, value in state['clock'].items():
         values['/clock/' + field] = value
@@ -324,6 +327,11 @@ def snapshot_metrics(state, baseline):
         ids = {row['id'] for row in state['characters']}
         values[prefix + '/loaded_members'] = (len({member for squad in squads for member in squad['members']} & ids)
                                                if template_coverage else None)
+    # State 0.4 only (the key is absent before): money of squads with a
+    # producer-proven saved identity. Null is unknown coverage, never 0.
+    for squad in state['squads']:
+        if 'money' in squad and _saved_id(squad, 34) and squad['id'] not in excluded_squads:
+            values['/squads/' + escaped(squad['id']) + '/money'] = squad['money']
     now = {row['id']: row for row in state['characters']}
     cohort = defaultdict(list)
     for row in baseline['characters']:
@@ -421,7 +429,9 @@ def scene_comparison(original, meitou, scope, tolerances=None, known_deviations=
             values = {}
             for row in side:
                 reference = background_baseline(baseline[row['repetition']], row['alias_map'], scope)
-                values[row['repetition']] = {key: value for key, value in snapshot_metrics(row['state'], reference).items()
+                aliased = frozenset(row['alias_map'].values())
+                values[row['repetition']] = {key: value for key, value
+                                             in snapshot_metrics(row['state'], reference, aliased).items()
                                              if not is_pair_relation_metric(key, scope)}
             unscoped.append(values)
         for key, left_rows, right_rows in metric_observations(*rows, *unscoped):
@@ -507,7 +517,7 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
     if scenario != other or original['fingerprint'] != meitou['fingerprint']:
         raise ValueError('Campaigns must use the same scenario and unchanged starting-save fingerprint')
     if original['state_schema'] != meitou['state_schema']:
-        # Never project one version onto another: a 0.2 campaign lacks the 0.3 fields.
+        # Never project one version onto another: an earlier campaign lacks the later fields.
         raise ValueError('Campaigns must use the same state schema version')
     scope = scene_scope(scenario)
     extra = {}

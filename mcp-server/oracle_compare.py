@@ -14,7 +14,7 @@ from statistics import median
 from urllib.parse import urlsplit
 
 from oracle_identity import validate_saved_handles
-from oracle_schema import validate_state
+from oracle_schema import MEDICAL_KEYS, STATS_KEYS, validate_state
 
 
 CLASSES = ('stable_identical', 'stable_divergent', 'variable_compatible',
@@ -204,13 +204,28 @@ def _fields(state, row, labels=None):
     for key in ('slave_state', 'slave_owner_faction_id'):
         if key in row:
             fields[key] = row[key]
+    # State 0.4 only, by the same rule. A null medical or stats object gives every
+    # key a null (non-comparable) value, never 0 or false. The carried character is
+    # a reference, kept exactly like order/target_id.
+    for group, keys in (('medical', MEDICAL_KEYS), ('stats', STATS_KEYS)):
+        if group in row:
+            values = row[group] or {}
+            for key in keys:
+                fields[f'{group}/{key}'] = values.get(key)
+    for key in ('in_something', 'carrying', 'being_carried'):
+        if key in row:
+            fields[key] = row[key]
+    if 'carrying_id' in row:
+        fields['carrying_id'] = _reference(row['carrying_id'], saved_characters, labels)
     for index in range(3):
         fields[f'position/{index}'] = row['position'][index] if row.get('position') is not None else None
     health = row.get('health')
     fields['health/count'] = len(health) if health is not None else None
     for part in health or []:
-        for field in ('current', 'stun', 'maximum'):
-            fields[f'health/{_escape(part["id"])}/{field}'] = part[field]
+        # bandage, splint and wear exist in 0.4 parts only.
+        for field in ('current', 'stun', 'maximum', 'bandage', 'splint', 'wear'):
+            if field in part:
+                fields[f'health/{_escape(part["id"])}/{field}'] = part[field]
     order = row.get('order')
     fields['order/type'] = order['type'] if order is not None else None
     fields['order/target_id'] = _reference(order['target_id'], saved_characters, labels) if order is not None else None

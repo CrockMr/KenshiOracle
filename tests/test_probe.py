@@ -771,7 +771,7 @@ def test_fake_setup_ping_reports_capability_and_mutation_state(tmp_path):
     fake = setup_fake(tmp_path)
     status = asyncio.run(fake.call('ping'))
     assert status['capabilities'] == ['scene_setup'] and status['world_mutated'] is False
-    assert status['state_schema_version'] == '0.3' and len(status['build_commit']) == 40
+    assert status['state_schema_version'] == '0.4' and len(status['build_commit']) == 40
     assert status['world_readiness']['world_ready'] is True and 'window' not in status['world_readiness']
     asyncio.run(fake.call('setup_heal', **HEAL))
     assert asyncio.run(fake.call('ping'))['world_mutated'] is True

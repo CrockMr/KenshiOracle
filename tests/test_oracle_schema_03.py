@@ -61,9 +61,9 @@ def test_schema_03_is_self_contained_valid_and_only_adds_two_character_fields_to
 
 
 def test_versions_and_comparable_versions():
-    assert STATE_SCHEMA_VERSIONS == ('0.1', '0.2', '0.3')
-    assert LATEST_STATE_SCHEMA_VERSION == '0.3'
-    assert COMPARABLE_STATE_SCHEMA_VERSIONS == ('0.2', '0.3')
+    assert STATE_SCHEMA_VERSIONS == ('0.1', '0.2', '0.3', '0.4')
+    assert LATEST_STATE_SCHEMA_VERSION == '0.4'
+    assert COMPARABLE_STATE_SCHEMA_VERSIONS == ('0.2', '0.3', '0.4')
     assert validate_state(state_03())['schema_version'] == '0.3'
     assert validate_state(state_02())['schema_version'] == '0.2'
 
@@ -90,7 +90,7 @@ def test_every_added_field_is_required_even_when_unknown(name):
         validate_state(state)
 
 
-@pytest.mark.parametrize('version', ['0.4', '0.30', ' 0.3', 0.3, None])
+@pytest.mark.parametrize('version', ['0.5', '0.30', ' 0.3', 0.3, None])
 def test_unknown_versions_fail_the_01_constant(version):
     state = state_03()
     state['schema_version'] = version
@@ -286,10 +286,10 @@ def test_01_snapshots_are_still_refused_by_the_comparator(tmp_path):
         compare_campaigns(original, meitou, tmp_path / 'out')
 
 
-def test_meitou_target_defaults_to_03_and_keeps_an_explicit_02(tmp_path):
+def test_meitou_target_keeps_an_explicit_03_or_02(tmp_path):
     from test_meitou_targets import target_files
     from oracle_targets import target_config
-    assert target_config(target_files(tmp_path), 'meitou')['state_schema'] == '0.3'
+    assert target_config(target_files(tmp_path, state_schema='0.3'), 'meitou')['state_schema'] == '0.3'
     pinned = tmp_path / 'pinned'
     pinned.mkdir()
     assert target_config(target_files(pinned, state_schema='0.2'), 'meitou')['state_schema'] == '0.2'

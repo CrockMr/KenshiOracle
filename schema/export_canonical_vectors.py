@@ -17,7 +17,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / 'mcp-server'), str(ROOT / 'tests')]
 from fake_probe import sample_state
-from oracle_schema import _check_json_values, _encode, canonical_bytes
+from oracle_schema import STATS_KEYS, _check_json_values, _encode, canonical_bytes, validate_state
 
 
 def vectors():
@@ -75,6 +75,52 @@ def vectors():
     state['characters'][0].update(slave_state='not_slave', slave_owner_faction_id=None)
     state['characters'][1].update(slave_state='ex_slave', slave_owner_faction_id='fixture-faction')
     cases.append(('state-03-not-slave-and-ex-slave', 'state', state))
+    # State 0.4: the last 0.3 case plus medical, stats, use-stuff, carrying, part
+    # bandage/splint/wear and squad money; null is unknown coverage.
+    state = deepcopy(state)
+    state['schema_version'] = '0.4'
+    first, second = state['characters'][0]['id'], state['characters'][1]['id']
+    state['characters'][0].update(
+        medical=dict(blood=97.5, bleed_rate=0.125, hunger=2.25, fed=1.5, coma=False, blood_loss_trauma=True),
+        stats={key: index + 0.5 for index, key in enumerate(STATS_KEYS)},
+        in_something='bed', carrying='character', carrying_id=second, being_carried=False)
+    state['characters'][1].update(
+        medical=dict(blood=None, bleed_rate=-0.0000005, hunger=0, fed=None, coma=None, blood_loss_trauma=False),
+        stats={key: None if index % 2 else -1.2345675 for index, key in enumerate(STATS_KEYS)},
+        in_something='prison', carrying='nothing', carrying_id=None, being_carried=True)
+    for row in state['characters']:
+        for part in row['health']:
+            part.update(bandage=12.5, splint=0, wear=3.000001)
+    for row in state['squads']:
+        row.update(money=123456)
+    cases.append(('additive-state-04', 'state', state))
+    permuted = deepcopy(state)
+    for key in ('characters', 'squads', 'factions', 'relations'):
+        permuted[key].reverse()
+    for row in permuted['squads']:
+        row['members'].reverse()
+    for row in permuted['characters']:
+        row['stats'] = {key: value for key, value in reversed(list((row['stats'] or {}).items()))}
+        row['medical'] = {key: value for key, value in reversed(list(row['medical'].items()))}
+    cases.append(('state-04-permutation', 'state', permuted))
+    state = deepcopy(state)
+    state['characters'][0].update(medical=None, stats=None, in_something=None, carrying='other', carrying_id=None,
+                                  being_carried=None)
+    state['characters'][1].update(in_something='nothing', carrying=None, carrying_id=None)
+    for row in state['characters']:
+        for part in row['health']:
+            part.update(bandage=None, splint=None, wear=None)
+    for row in state['squads']:
+        row.update(money=None)
+    cases.append(('state-04-nulls-other-and-nothing', 'state', state))
+    state = deepcopy(state)
+    state['characters'][0].update(health=None, carrying='nothing', in_something='bed')
+    state['characters'][1].update(medical=dict(blood=1e9, bleed_rate=-1e9, hunger=None, fed=None, coma=True,
+                                               blood_loss_trauma=None),
+                                  stats={key: 0 for key in STATS_KEYS}, carrying='character', carrying_id=first)
+    for row in state['squads']:
+        row.update(money=-1000000000)
+    cases.append(('state-04-edges', 'state', state))
     return cases
 
 
@@ -82,6 +128,8 @@ def main():
     rows, legacy = [], bytearray()
     for index, (name, kind, value) in enumerate(vectors()):
         _check_json_values(value)
+        if kind == 'state' and value['schema_version'] == '0.4':
+            validate_state(value)
         encoded = canonical_bytes(value) if kind == 'state' else (_encode(value) + '\n').encode('utf-8')
         if index < 59:
             legacy.extend(encoded)

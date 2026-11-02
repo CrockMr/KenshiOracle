@@ -104,7 +104,7 @@ class OracleSession:
         if self.requested_target is not None and self.requested_target not in ('original', 'meitou'):
             raise ValueError('target must be original or meitou')
         if self.requested_schema is not None and self.requested_schema not in STATE_SCHEMA_VERSIONS:
-            raise ValueError('state_schema must be 0.1, 0.2 or 0.3')
+            raise ValueError('state_schema must be 0.1, 0.2, 0.3 or 0.4')
         self.deadline = None
         self.identity_source = None
         # Optional callable(command, params) -> record dict; each reply is stored in record['reply'].
