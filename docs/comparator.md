@@ -273,10 +273,22 @@ checkpoints, and proves no cause.
 6. A whole-scenario trace member (checkpoint `whole_scenario`: trajectories, moves, engagement)
    has no checkpoint of its own: it joins its entity's simulation key whose set
    contains its own, else its metric family's key.
+7. Two or more squad groups whose members are all one field (the metric with
+   its squad or character id replaced by `*`, for example
+   `/characters/*/position/1`), with the same onset and known-deviation status,
+   form one `field:<pattern>` group whose disagreeing set is the union of
+   theirs. A squad group holding any other field stays alone.
 
 Rules 4 to 6 relax a key that held the exact first checkpoint: on real
 campaigns that key split one squad's drift over every checkpoint, every
-subset of repetitions that left a variable range and every trajectory. The
+subset of repetitions that left a variable range and every trajectory.
+Rule 7 stops one field repeated across squads from filling the list; it
+explains nothing. On the ville-calme phase 2 campaigns, 17 load groups held
+only saved characters' height (`position/1`), with original-minus-Meitou
+medians from about -30 to +10 world units (**Observed**). That is not the
+one-sided paused-load offset recorded in the
+[open questions](research/open-questions.md), so these divergences stay
+classified and drafted, not marked as a known deviation. The
 headline of a group is its member with the lowest p-value, then the earliest
 tested checkpoint, then the lexically first metric; the group's `strength` and
 `p_value` are the headline's. Groups are ordered strong before weak, then by

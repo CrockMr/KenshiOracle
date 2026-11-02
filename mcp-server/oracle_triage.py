@@ -27,10 +27,19 @@ Grouping (docs/comparator.md#root-cause-groups):
 6. A whole-scenario trace member has no checkpoint of its own: it joins its
    entity's simulation key whose set contains its set, else the key of its
    metric family.
+7. Two or more squad groups whose members are all one field (the metric with
+   its squad or character id replaced by ``*``) with the same onset and status
+   form one ``field:<pattern>`` group; its disagreeing set is the union of
+   theirs. A squad group with any other field stays alone. The divergences
+   stay classified and drafted: this only stops one field repeated across
+   squads from filling the list.
 
 Rules 4 to 6 tune the spec's key (entity, disagreeing set, first divergent
 checkpoint): on the real campaigns it split one squad's drift over every
 checkpoint, every repetition subset and every trajectory into separate groups.
+Rule 7 targets the ville-calme load height: 17 squad groups held nothing but
+``/characters/<id>/position/1``, with differences of both signs (**Observed**),
+so they are merged, not explained as a known deviation.
 
 A character's squad is the most frequent non-null original value of its
 ``/characters/<id>/squad_id`` finding; without one it is the container part of
@@ -123,6 +132,34 @@ def entity(metric, squads=None):
     return 'family:' + '/'.join(parts[:3])
 
 
+def field_pattern(metric):
+    """The metric with its squad or character id replaced by ``*``, or None outside squad entities."""
+    parts = metric.split('/')
+    if metric.startswith(('/characters/', '/squads/')) and len(parts) > 3:
+        parts[2] = '*'
+    elif metric.startswith('/trajectory/saved_squad/') and len(parts) > 4:
+        parts[3] = '*'
+    else:
+        return None
+    return '/'.join(parts)
+
+
+def _merge_fields(grouped):
+    """Rule 7 of the module docstring, on {key text: [(member, rows)]}."""
+    candidates = defaultdict(list)
+    for text, entries in grouped.items():
+        name, _, onset, known = json.loads(text)
+        fields = {field_pattern(member['metric']) for member, _ in entries}
+        if name.startswith('squad:') and len(fields) == 1 and None not in fields:
+            candidates[(fields.pop(), onset, known)].append(text)
+    for (field, onset, known), texts in sorted(candidates.items()):
+        if len(texts) < 2:
+            continue
+        entries = [entry for text in sorted(texts) for entry in grouped.pop(text)]
+        union = sorted({repetition for text in texts for repetition in json.loads(text)[1]})
+        grouped[json.dumps(['field:' + field, union, onset, known])].extend(entries)
+
+
 def _digest(key):
     return hashlib.sha256(json.dumps(key, separators=(',', ':')).encode()).hexdigest()[:8]
 
@@ -183,6 +220,7 @@ def triage(report):
                 found = root(key, keys)
                 key = found if found != key else ('family:' + '/'.join(member['metric'].split('/')[:3]),) + key[1:]
         grouped[json.dumps(roots.get(key, key))].append((member, rows))
+    _merge_fields(grouped)
     groups = []
     for text, entries in grouped.items():
         entity_name, repetitions, onset, known = json.loads(text)

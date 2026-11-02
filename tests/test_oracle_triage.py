@@ -122,6 +122,26 @@ def test_whole_scenario_trace_joins_its_squad_or_else_its_family():
     assert family['first_checkpoint'] == dict(name='whole_scenario', at=None)
 
 
+def test_one_field_repeated_across_squad_groups_merges_without_being_explained():
+    # Characters of three squads (handle containers 7, 8, 9) differ only in height at load; a fourth squad also
+    # moved in X, so it keeps its own group, and a lone single-field squad at simulation is not merged.
+    height = [finding(f'/characters/hand:1:{c}:101:1:{c}00{i}/position/1', 'zero', STABLE, reps)
+              for c, reps in ((7, SHIFTED), (8, SHIFTED), (9, [1, 1, 2, 1, 2])) for i in (1, 2)]
+    value = report(height + [
+        finding('/characters/hand:1:6:101:1:6001/position/1', 'zero', STABLE, SHIFTED),
+        finding('/characters/hand:1:6:101:1:6001/position/0', 'zero', STABLE, SHIFTED),
+        finding('/characters/hand:1:5:101:1:5001/position/2', 'mid', STABLE, SHIFTED),
+    ])
+    groups = triage(value)
+    merged = next(group for group in groups if group['entity'] == 'field:/characters/*/position/1')
+    assert merged['size'] == 6 and merged['onset'] == 'load' and merged['disagreeing_repetitions'] == [1, 2, 3, 4, 5]
+    assert merged['strength'] == 'strong' and merged['drafted'] is True
+    assert all(row['classification'] == 'stable_divergent' for row in value['findings'] if row['group'] == merged['id'])
+    entities = sorted(group['entity'] for group in groups)
+    assert entities == ['field:/characters/*/position/1', 'squad:hand:34:5:101:0:0', 'squad:hand:34:6:101:0:0']
+    assert triage(deepcopy(value)) == groups
+
+
 def test_order_strong_first_then_size_times_disagreeing_then_load_with_stable_ids():
     findings = [
         finding('/population/by_faction/W/alive', 'zero', [1, 2, 3, 4, 5], [0, 1, 2, 3, 6]),  # weak
