@@ -47,10 +47,12 @@ Loader requires:
 
 - Same scenario excluding repetition count, same save and same
   `quick.save`/indexed-platoon fingerprint; complete repetitions/checkpoints.
-- Canonical **0.2** or **0.3** snapshots, matching SHA-256, within their campaign
-  directory. All snapshots of a campaign use one state schema, equal to the
+- Canonical **0.2**, **0.3** or **0.4** snapshots, matching SHA-256, within their
+  campaign directory. All snapshots of a campaign use one state schema, equal to the
   report's `state_schema` when recorded, and both campaigns use the same one;
-  a 0.2 campaign is never compared with a 0.3 campaign.
+  a 0.2, 0.3 or 0.4 campaign is never compared with a campaign of another
+  version. The 0.4 metrics are listed in
+  [state coverage](state-coverage.md#extension-additive-04).
   Paused clock, requested time reached, `actual_at`, overshoot and snapshot
   clock consistent with repetition origin.
 - Original: audited Kenshi 1.0.65/RE_Kenshi 0.3.5 build, GUI/CRT evidence of six
@@ -101,6 +103,9 @@ remain explicit. Category compatibility uses observed values, not a numeric inte
 Characters match individually only through **complete HAND** and
 `identity_origin:"saved"`. Squad/target references must also be proven.
 Name, position, faction, index or coincident current ID does not establish identity.
+In state 0.4, a squad with a proven saved HAND also gets an individual
+`/squads/<id>/money` metric, and the carried character `carrying_id` is a
+reference handled like `order/target_id`.
 Other NPCs contribute to groups; they are never individually matched across games.
 
 <a id="groupes-et-observations-temporelles"></a>
@@ -169,7 +174,7 @@ from HAND proof, and a spawned id never appears in a metric path.
 | --- | --- | --- |
 | `/scene/` | `/scene/squads/<spawn>/present`; `/scene/cohort/<cohort>/size`, `present`, `missing`; `/scene/intruders/count` (in-radius characters outside the alias and player cohorts; null when a position is unknown); `/scene/relations/<a>/<b>/value` for each declared pair, both directions | classified, in `findings` |
 | `/scene/outcome/` | per cohort `survivors`, `dead`, `unconscious` and `health/current_total`, `stun_total`, `maximum_total`; the player's individual fields under `/scene/outcome/characters/alias:<alias>/`; engagement of each cohort over the whole scenario | `scene_outcome`, one observation per repetition, never classified |
-| `/background/` | the metrics of the sections above with this prefix: population, clock, every other relation, faction starting cohorts and faction engagement without the cohort members, saved characters other than the players, saved-squad trajectories and id-based moves outside the cohorts; and, per checkpoint, `/background/nearest_squad/distance`, `faction_id` and `faction_name` (below) | `background_metrics`, never classified |
+| `/background/` | the metrics of the sections above with this prefix: population, clock, every other relation, faction starting cohorts and faction engagement without the cohort members, saved characters other than the players, saved-squad money (state 0.4; setup alias squads excluded), saved-squad trajectories and id-based moves outside the cohorts; and, per checkpoint, `/background/nearest_squad/distance`, `faction_id` and `faction_name` (below) | `background_metrics`, never classified |
 
 Cohorts are `player` (the `player` or `player/<n>` aliases) and
 `<spawn alias>/<template>`. Spawned members are interchangeable: they are

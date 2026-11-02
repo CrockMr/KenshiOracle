@@ -1,8 +1,8 @@
 <a id="couverture-de-létat-commun-01-et-02"></a>
 
-# Shared state 0.1, 0.2 and 0.3 coverage
+# Shared state 0.1, 0.2, 0.3 and 0.4 coverage
 
-The contracts are [state.schema.json, 0.1](../schema/state.schema.json), [state-0.2.schema.json](../schema/state-0.2.schema.json) and [state-0.3.schema.json](../schema/state-0.3.schema.json). The native adapter is in [OracleState.h](../plugin/OracleState.h); shared validation and normalization are in [oracle_schema.py](../mcp-server/oracle_schema.py). This page distinguishes the existence of an API from validation of a real capture.
+The contracts are [state.schema.json, 0.1](../schema/state.schema.json), [state-0.2.schema.json](../schema/state-0.2.schema.json), [state-0.3.schema.json](../schema/state-0.3.schema.json) and [state-0.4.schema.json](../schema/state-0.4.schema.json). The native adapter is in [OracleState.h](../plugin/OracleState.h); shared validation and normalization are in [oracle_schema.py](../mcp-server/oracle_schema.py). This page distinguishes the existence of an API from validation of a real capture.
 
 - **Verified**: declaration present in the public headers used, with an explicit mapping in our code. This alone does not prove safety or completeness in every scene.
 - **Observed**: limited behavior established by the cited trials; distinguish their versions and do not extend it to other scenes.
@@ -16,7 +16,7 @@ Version **0.9.3** adds canonicalization of saved identities, retained in 0.9.5. 
 
 | Field or collection | Exact public source and conversion | Status and limits |
 | --- | --- | --- |
-| `schema_version` | Requested version `0.1`, `0.2` or `0.3`, without an engine API. | **Verified** in the schemas and serializers. The historical evidence above concerns 0.1. |
+| `schema_version` | Requested version `0.1`, `0.2`, `0.3` or `0.4`, without an engine API. | **Verified** in the schemas and serializers. The historical evidence above concerns 0.1. |
 | `clock` | `GameWorld.h:238`, `GameWorld::getTimeStamp_inGameHours()`; `util/TimeOfDay.h:23`, `TimeOfDay::getTotalHours()`. | **Verified**; progression and lack of movement while paused are **Observed** in the [clock measurements](research/simulation-clock-measurements.md). |
 | `clock.day` | `floor(total_hours / 24)`, carrying into the next day if the rounded hour reaches 24. | **Verified**: zero-based day. This is not the day displayed starting at 1 in the interface. |
 | `clock.hour` | `total_hours % 24`, with shared six-decimal rounding. | **Verified**; native code normalizes an hour rounded to 24 to zero on the following day. The schema also permits 24 for another adapter's representation of this boundary. |
@@ -120,8 +120,9 @@ also completed three snapshots and restoration. The 21 Meitou captures,
 5-versus-5 quiet-town comparison and their limits are collected in the
 [phase 2 report](phase2-validation.md).
 
-The Meitou projection leaves `order` as `null`: equivalence of the task has not
-been established. Since patch 0005 of the
+The Meitou projection leaves `order` as `null` in states 0.1 to 0.3:
+equivalence of the task has not been established (state
+[0.4](#extension-additive-04) adds a Meitou order). Since patch 0005 of the
 [Meitou series](../integrations/meitou/README.md), `health[].maximum` is
 Meitou's calculated part maximum, not the stored value, and `null` when negative
 or non-finite. In the 1 November 2026 setup heal receipts (unworn, full
@@ -157,7 +158,8 @@ fields (ready paused world, command service, captured census). Whether
 until a live read and the usual read-safety review.
 
 **Not covered** (**Unknown**, no field): shackles worn or locked, cage or
-prisoner use (`inSomething`/`inWhat`), and `Character::isChained`, whose
+prisoner use (`inWhat`; `inSomething` is `in_something` since
+[0.4](#extension-additive-04)), and `Character::isChained`, whose
 meaning is not proven equivalent to MeitouClient's worn-shackle test. Neither
 are `StateBroadcastData::isEscapedPrisoner`, `isKidnapped` or the time of the
 last slave-state change.
@@ -177,6 +179,91 @@ built from patches 0001 to 0005 does not produce 0.3, and a Meitou target on it
 needs `state_schema:"0.2"` in both targets' configurations. Three 0.3
 [canonical vectors](../schema/canonical-vectors.json) (65 cases in all, the
 earlier 62 unchanged) pass in Python and in patch 0006's C# test (**Verified**).
+
+<a id="extension-additive-04"></a>
+
+## Additive extension 0.4
+
+Versions 0.1, 0.2 and 0.3 are unchanged byte for byte, on both producers:
+every accepted 0.3 snapshot stays valid, and a producer with 0.4 writes the
+same 0.1 to 0.3 bytes as before (the Meitou `order` included). Version 0.4
+([state-0.4.schema.json](../schema/state-0.4.schema.json)) is 0.3 plus **six
+required character fields, three required keys in every health part and one
+required squad field**. Changing only `schema_version` is rejected, and a 0.3
+snapshot cannot carry any of them. Producers with 0.4 advertise `0.1` to `0.4`
+and default to `0.4`; the runner selects the highest common version (0.4, then
+0.3, 0.2, 0.1), `state_schema` is honoured exactly, and the Meitou target
+requests 0.4 unless its configuration says otherwise. Unknown is `null`, never
+0, `false`, `"nothing"` or an empty object; numbers follow the shared rule
+(finite, magnitude at most 1e9, otherwise `null`; quantization unchanged).
+
+No game run backs any 0.4 value: every in-game value below is **Unknown** until
+the live checks listed after the table. "API **Verified**" means the member
+exists at that offset in the public SDK headers read for this contract; it does
+not prove what the game stores there at run time.
+
+| Added field | Native source and Meitou projection | Certainty and limits |
+| --- | --- | --- |
+| `characters[].medical` | Native: `Character::medical`, an embedded `MedicalSystem` at 0x458 (`Character.h:711`), member reads only. Meitou: `Bodies/MedicalState.cs`. | API **Verified**; values **Unknown**. An object with all six keys below, or `null` when the medical system is unavailable; never `{}`. |
+| `medical.blood` | Native `MedicalSystem::blood` (0x70). Meitou `Blood`. Save key `blood`. | Number or `null`; values **Unknown** (live check 1). |
+| `medical.bleed_rate` | Native `currentBleedRate` (0x78). Meitou `Bleeding`. Save key `bleeding`. | Number or `null`; that both name the same rate (not a cumulative loss) is **Unknown** (live check 1). |
+| `medical.hunger` | Native `hunger` (0x60). Meitou `Hunger` (0 to 3). Save key `hung`. | Number or `null`; values and scale equivalence **Unknown** (live check 1). |
+| `medical.fed` | Native `fed` (0x64). Meitou `Fed`. Save key `fed`. | Number or `null`; values **Unknown** (live check 1). |
+| `medical.coma` | Native `sub50KO` (0x162). Meitou `Coma` (Meitou docs: +0x162, save `coma`). | Boolean or `null`; `false` means known false. Values **Unknown** (live check 2). |
+| `medical.blood_loss_trauma` | Native `bloodlossTrauma` (0x163). Meitou `BloodKo` (Meitou docs: +0x163); no save key. | Boolean or `null`; values **Unknown** (live check 2). |
+| `characters[].health[].bandage`, `splint`, `wear` | Native `MedicalSystem::HealthPartStatus` members `bandaging` (0x48), `juryRigging` (0x4C), `wearDamage` (0x50) (`MedicalSystem.h:169-171`). Meitou `HealthPart.Bandage`, `Rig`, `Wear`. | API **Verified**; values and their equivalence with the saved values **Unknown** (live check 3). Number or `null`, never 0 for unknown. `health` keeps its 0.1 rules (`null` when unavailable), and `maximum` is unchanged: whether the native stored `_maxHealth` and Meitou's calculated `MaxHp` mean the same thing stays an open question. |
+| `characters[].stats` | Native: `Character::stats` (0x450, a pointer) to `CharStats`; the 34 stored members listed in the schema (for example `_strength` 0x80, `katanas` 0xF8, `unarmed` 0x10C as `martialarts`, `bows` 0x110 as `crossbows`). Meitou: `CharacterStats[StatsEnumerated.X]`. Keys are the KenshiLib `StatsEnumerated` names without `STAT_`, in lower case. | API **Verified**: the native offsets match the stat table in the Meitou documentation ([character stats](https://github.com/VlcekM/MeitouClient/blob/master/docs/game/character-stats.md), "The stat list"), read on both sides. Values **Unknown** (live check 4). Exactly 34 keys, each the stored value (no multiplier, no effective-stat formula) or `null`; the object is `null` when the character has no stats object, never `{}`. Excluded: `hivemedic` and `vet` (stored as `medic`), `weapons` and `survival` (no storage behind the stat number in Meitou's reading of the accessor; the native `survival` member is not emitted). |
+| `characters[].in_something` | Native `Character::inSomething` (0x2F8), `UseStuffState`: `IN_NOTHING` `nothing`, `IN_BED` `bed`, `IN_PRISON` `prison`; any other raw value is `null`. Meitou `CharacterCold.InSomething` (`Locks.HeldState`: `None`, `Bed`, `Imprisoned`). | API **Verified**; values **Unknown** (live check 5: a caged prisoner and a sleeper). `null` never means `nothing`. |
+| `characters[].carrying`, `carrying_id` | Native: `isCarryingSomething` (0x348) false gives `nothing`. True with `carryingObject` (hand, 0x380) of character type gives `character`, and `carrying_id` is that handle encoded and canonicalized exactly like `order.target_id` (a reference without a proven link keeps its current HAND); true with another non-null hand gives `other`; true with a null hand gives `null`. Meitou: `CharacterCold.Carrying` `None` gives `nothing`, otherwise `character` with the carried character's id; Meitou never emits `other`. | API **Verified**; values and the type of the native `carryingObject` while carrying a body **Unknown** (live check 6). The schema enforces that `carrying_id` is a string exactly when `carrying` is `character`. Because Meitou never emits `other`, an original `other` never matches a Meitou value. |
+| `characters[].being_carried` | Native `_isBeingCarried` (0x3D4). Meitou `CharacterCold.CarriedBy != CharacterId.None`. | Boolean or `null`; values **Unknown** (live check 6). |
+| `squads[].money` | Native `Platoon::ownerships` (0x148, `Platoon.h:203`) to `Ownerships::money` (0x88, `Platoon.h:93`). Meitou `Squad.Money`. Same squad rows as 0.3. | API **Verified**; values **Unknown** (live check 7). Integer or `null`, magnitude at most 1e9; `null` never means 0. |
+
+Meitou `order` in 0.4 output only (no schema change): MeitouClient's 0.4
+adapter emits an order from its running task, named by row number through a
+copy of the native task-name table (never a C# enum name), with `target_id`
+the canonical id of a target character present in the census and `position`
+always `null`; Task_Blank goal rows give `null`. Its 0.1 to 0.3 output keeps
+`order:null`. For an attack Meitou's row is the goal while the native body
+shows the immediate task, so the two can differ by design; whether the orders
+agree on a move, a treatment and a fight is **Unknown** (live check 8).
+
+Live checks still needed (one paused native session, then the Meitou
+counterpart): (1) blood, hunger, fed and bleed rate on a bleeding character
+against the interface; (2) `coma` and `blood_loss_trauma` on a knocked-out
+character; (3) bandage, splint and wear against the saved values on an injured
+character; (4) the 34 stats against the character screen and the save; (5)
+`in_something` for a caged prisoner and a sleeper; (6) carrying a body (type of
+`carryingObject`, `_isBeingCarried`); (7) squad money against a trader's trade
+window; (8) Meitou order against native order on a move, a treatment and a
+fight.
+
+Comparison: in a 0.4 comparison, each saved character gains the individual
+metrics `medical/<key>` (six) and `stats/<key>` (34), emitted for every key
+even when the object is `null`, plus `in_something`, `carrying`,
+`carrying_id` (through the same reference handling as `order/target_id`: a
+proven saved HAND or a setup alias label, otherwise `null`) and
+`being_carried`; each health part gains `bandage`, `splint` and `wear` next to
+`current`, `stun` and `maximum`. Each squad with a producer-proven saved
+identity gains `/squads/<id>/money`. In a scene scope the player's new fields
+join its outcome fields, other saved characters and squads are background
+metrics, and setup alias squads get no money metric. A `null` in any
+repetition makes the metric not comparable: it is never a divergence and never
+matches 0, `false` or `nothing`. A 0.2 or 0.3 comparison gains no metric, and
+the comparator refuses a 0.3 campaign against a 0.4 campaign.
+
+Four 0.4 [canonical vectors](../schema/canonical-vectors.json) (every field
+filled, a permutation, nulls with `other` and `nothing`, and range edges; 69
+cases in all, the earlier 65 unchanged) pass in Python and in patch 0007's C#
+test (**Verified**). The Meitou projection is patch 0007 of the
+[Meitou series](../integrations/meitou/README.md) (**Verified** in code and in
+the adapter's tests, which also pin the unchanged 0.1 to 0.3 bytes and the
+unchanged state hash). One projection difference is by construction: a carried
+character outside the Meitou census gives `carrying` and `carrying_id` `null`
+there, while the native probe still reports `character` with the current HAND.
+An adapter without patch 0007 does not produce 0.4 and needs
+`state_schema:"0.3"` in both targets' configurations. The native probe with 0.4
+builds with every offset check above (**Verified** at compile time); it has not
+been loaded in game.
 
 <a id="identités-et-comparabilité"></a>
 

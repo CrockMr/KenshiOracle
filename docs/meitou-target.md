@@ -44,13 +44,14 @@ In the main `config.json` used by CLI and MCP, add:
 This field points to the separate configuration; replace neither the original
 target's port nor runtime. The Meitou target must declare `"target":"meitou"`,
 use a distinct port (47801 by default) and its own `runtime`, for example
-`runtime/meitou`. `state_schema` defaults to `"0.3"` and requires that
-contract; an adapter without state 0.3 (patches 0001 to 0005) needs
-`"state_schema":"0.2"` here and in `config.json`, because the comparator
-never compares two state schema versions. The same holds in two other cases:
-an adapter with patch 0006 against the released 0.11.0 probe (state 0.2 only),
-and an old `config.meitou.json` that still says `"0.2"` against a probe with
-state 0.3. The comparator refuses the mismatch only after both campaigns have
+`runtime/meitou`. `state_schema` defaults to `"0.4"` and requires that
+contract; an adapter without state 0.4 (series before patch 0007) needs
+`"state_schema":"0.3"` (`"0.2"` before patch 0006) here and in `config.json`,
+because the comparator never compares two state schema versions. The same
+holds in two other cases: an adapter against a probe that lacks its version
+(the released 0.11.0 probe has state 0.2 only), and an old
+`config.meitou.json` that still says `"0.2"` or `"0.3"` against a probe with a
+later state. The comparator refuses the mismatch only after both campaigns have
 run, so set the same `state_schema` explicitly in both files before a
 campaign.
 `game_install` supplies `KENSHI_PATH` to the child process.
@@ -155,10 +156,13 @@ Remove-Item Env:KENSHI_ORACLE_VECTORS
 ```
 
 The fixture identity is the SHA-256 of its content with CRLF normalized to LF,
-`06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170`, checked by
+`cd935563cb97f247ca7021a6bc1215d76bf21c01382e8d544783e4c138447f63`, checked by
 KenshiOracle, so CRLF and LF checkouts agree without a Git setting. Patch 0006
-carries the same 65-case fixture copy and pins this identity in its C# test;
-series before it pin the earlier 62-case identity
-`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`. The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The
-65 cases include the 59 historical ones and three state 0.3 cases; selecting another file does not authorize changing
+carries the earlier 65-case fixture copy and pins its identity
+`06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170` in its C#
+test, and series before it pin the 62-case identity
+`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`; patch
+0007 carries this 69-case copy and pins its identity. The exact name read by tests is
+`KENSHI_ORACLE_VECTORS`. The 69 cases include the 59 historical ones, three
+state 0.2 cases, three state 0.3 cases and four state 0.4 cases; selecting another file does not authorize changing
 expected bytes to make a capture pass.

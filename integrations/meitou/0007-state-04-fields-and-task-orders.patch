@@ -1,0 +1,1780 @@
+From efc2eb2ac630b25d3c35f8d251976e96e730d0d9 Mon Sep 17 00:00:00 2001
+From: KenshiOracle contributors <contributors@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 22:48:51 +0100
+Subject: [PATCH] Expose state 0.4 fields and task-row orders in the oracle
+ adapter
+
+State schema 0.4 is 0.3 plus characters[].medical, stats, in_something,
+carrying, carrying_id and being_carried, health[].bandage, splint and
+wear, and squads[].money; 0.1 to 0.3 output is unchanged, order
+included (the canonical bytes of all three are pinned on patch 0006 for
+a world that holds every 0.4 value). medical reads MedicalState Blood,
+Bleeding, Hunger, Fed, Coma and BloodKo, and is null without a medical
+state; the part keys read HealthPart Bandage, Rig and Wear. stats holds
+the 34 stored stats keyed by the lowercase KenshiLib StatsEnumerated
+name, null without a stats object; HIVEMEDIC and VET share Medic's
+storage and WEAPONS and SURVIVAL have none, so none of them is a key.
+in_something maps Locks.HeldState 0, 1 and 2 to nothing, bed and
+prison, anything else to null. carrying is nothing, or character with
+the carried character's census id; a carried character outside the
+census leaves both null, and Meitou never emits other. money is
+Squad.Money, null beyond 1e9 in magnitude. Numbers use the existing
+finite, |x| <= 1e9 guard.
+
+In 0.4 order is projected from CharacterCold.Running while it runs the
+character's task now, when its row is not 0, not one of the 147
+Task_Blank goal rows of docs/game/ai-tasks.md, and has a native name.
+The type is looked up by row number in OracleTaskNames, a copy of the
+native probe's names in KenshiLib TaskType order (291 rows), never the
+Meitou enum's spelling: Meitou's symbols differ at 0, 38, 52, 65, 223,
+245, 289 and 290. target_id is the census id of a character target,
+position stays null. A goal row reads null, so an attack (row 16) does
+not match the original's immediate task; that is documented, not a bug.
+
+dump_state, ping's supported_schema_versions and canonical ordering
+accept 0.4, and the default dump schema (ping's schema_version and
+state_schema_version) becomes 0.4. The identity-only captures keep 0.2
+and discard their output.
+
+The capture stays read-only; tests pin each field and its null cases,
+the stats key set and order, the order rule (move and treatment rows,
+Task_Blank rows, a stale provenance, row 0, a target outside the
+census), the unchanged state hash, 0.4 canonical ordering, and the name
+table against the Meitou enum numbering. The shared canonical fixture
+is the 69-case copy of KenshiOracle schema/canonical-vectors.json
+(four 0.4 cases appended, the 65 earlier cases byte-identical) with its
+pin updated.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/oracle.md                                |  37 +-
+ src/Meitou.Game/GameHost.Oracle.cs            |   4 +-
+ src/Meitou.Game/GameHost.OracleSetup.cs       |   3 +-
+ src/Meitou.Game/Oracle/OracleCanonicalJson.cs |   2 +-
+ src/Meitou.Game/Oracle/OracleState.cs         | 108 ++-
+ src/Meitou.Game/Oracle/OracleTaskNames.cs     | 310 ++++++++
+ tests/Meitou.Tests/Oracle/Fixtures/README.md  |   5 +-
+ .../Oracle/Fixtures/canonical-vectors.json    | 698 ++++++++++++++++++
+ .../Oracle/OracleCanonicalJsonTests.cs        |  36 +-
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs |   5 +-
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs | 231 +++++-
+ .../Oracle/OracleTaskNamesTests.cs            |  42 ++
+ 12 files changed, 1455 insertions(+), 26 deletions(-)
+ create mode 100644 src/Meitou.Game/Oracle/OracleTaskNames.cs
+ create mode 100644 tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs
+
+diff --git a/docs/oracle.md b/docs/oracle.md
+index cf6972dd..e70f2aaf 100644
+--- a/docs/oracle.md
++++ b/docs/oracle.md
+@@ -61,8 +61,8 @@ return `not_implemented`.
+ 
+ Ping's `plugin_version` is `OracleProtocol.AdapterVersion` (0.11.0, the
+ KenshiOracle protocol release implemented). Ping also reports
+-`capabilities:["scene_setup"]`, `state_schema_version:"0.2"` (the default
+-dump schema), `supported_schema_versions:["0.1","0.2","0.3"]`,
++`capabilities:["scene_setup"]`, `schema_version` and `state_schema_version`
++`"0.4"` (the default dump schema), `supported_schema_versions:["0.1","0.2","0.3","0.4"]`,
+ `world_readiness`, `world_mutated` and `build_commit`: the full 40-hex commit
+ from the assembly metadata `OracleBuildCommit` (`git rev-parse HEAD` at build
+ time), or `"unknown"` without git, on a git failure or with uncommitted changes
+@@ -78,8 +78,8 @@ arrival. Loads are asynchronous, end paused, and report readiness through ping.
+ 
+ ## State, identities and seed
+ 
+-`dump_state` accepts `filename` and optional `schema_version` (`0.2` default,
+-`0.1` and `0.3` supported; the runner sends the version it negotiated). Filenames are constrained to one new JSON file beneath the
++`dump_state` accepts `filename` and optional `schema_version` (`0.4` default,
++`0.1` to `0.3` supported; the runner sends the version it negotiated). Filenames are constrained to one new JSON file beneath the
+ output folder. The capture requires a ready paused world and no active advance.
+ [`OracleState`](../src/Meitou.Game/Oracle/OracleState.cs) projects loaded
+ characters/squads, factions and directional relations;
+@@ -93,8 +93,8 @@ The additive 0.2 fields expose saved-origin evidence, broad melee/ranged combat
+ mode and squad templates. Town placement/current membership/origin remain null:
+ equality of native `Town::instanceID.uid` and `TownSite.InstanceId` is unproven.
+ Names, array indexes, town definition IDs and transient HANDs are not substitutes.
+-`order` remains null: a Meitou act-out row is not proof of the original
+-running task. `health[].maximum` is Meitou's calculated `MaxHp` (base, or 5 for
++Through 0.3 `order` stays null: a Meitou act-out row is not proof of the original
++running task (0.4 below). `health[].maximum` is Meitou's calculated `MaxHp` (base, or 5 for
+ a stump, or the fitted prosthetic's HP, times multiplier and scale, minus wear),
+ null when negative or non-finite as in the native probe. It is not the
+ original's stored `_maxHealth`. In the setup heal receipts of the 1 November
+@@ -123,6 +123,31 @@ prisoner use are not exposed. Reading the fields changes no simulation state or
+ state hash (**Verified**, `OracleStateTests`). The shared canonical vectors include
+ three 0.3 cases, and `OracleCanonicalJsonTests` also checks a 0.3 copy of case 0.
+ 
++State 0.4 is 0.3 plus character `medical`, `stats`, `in_something`, `carrying`,
++`carrying_id`, `being_carried`, health part `bandage`, `splint`, `wear`, squad
++`money` and a projected `order`; 0.1 to 0.3 bytes are unchanged (**Verified**,
++hashes pinned on patch 0006 in `OracleStateTests`). Unknown is null: no
++`Medical` gives a null `medical`, no `Stats` a null `stats`. `medical` reads
++`MedicalState` `Blood`, `Bleeding`, `Hunger`, `Fed`, `Coma` and `BloodKo`;
++the part keys read `HealthPart.Bandage`, `Rig` and `Wear`; `stats` has the 34
++stored stats keyed by the lowercase KenshiLib name (HIVEMEDIC and VET share
++Medic, WEAPONS and SURVIVAL have no storage, none is a key). `in_something` maps
++`Locks.HeldState` 0, 1, 2 to `nothing`, `bed`, `prison`, other values to null.
++`carrying` is `nothing` or `character` with the carried character's census id
++(null for both when that character is outside the census); Meitou never emits
++`other`. `being_carried` is `CarriedBy` set. `money` is `Squad.Money`, null
++beyond 1e9 in magnitude. `order` comes from `CharacterCold.Running` only while
++it `Runs` the character's task now, its row is not 0 and not one of the 147
++Task_Blank goals ([ai-tasks](game/ai-tasks.md) "Factory mappings"); `type` is
++the native probe's name by row number
++([`OracleTaskNames`](../src/Meitou.Game/Oracle/OracleTaskNames.cs), the
++KenshiLib enum order; Meitou's own symbols differ at 0, 38, 52, 65, 223, 245,
++289 and 290), `target_id` the census id of a character target, `position`
++null. A goal row is no order, so an attack (Meitou row 16) reads null while the
++original reports its immediate task. In-game equivalence of every 0.4 value is
++**Unknown** (no game run backs it). Reading them changes no simulation state or
++state hash (**Verified**, `OracleStateTests`).
++
+ In Oracle mode, `--seed` is applied to the in-memory save before `SaveLoader`
+ and its first draws; it replaces the save's stored seed without rewriting that
+ file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
+diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
+index c0b50be1..edc2fbfe 100644
+--- a/src/Meitou.Game/GameHost.Oracle.cs
++++ b/src/Meitou.Game/GameHost.Oracle.cs
+@@ -212,8 +212,8 @@ sealed partial class GameHost
+         OracleKeys(p, "filename", "schema_version"); RequireOracleWorld(true);
+         string filename = OracleText(p, "filename", 105);
+         OracleHostPolicy.ValidateFilename(filename);
+-        string version = p.TryGetProperty("schema_version", out _) ? OracleText(p, "schema_version", 8) : "0.2";
+-        if (version is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("unsupported state schema_version");
++        string version = p.TryGetProperty("schema_version", out _) ? OracleText(p, "schema_version", 8) : OracleState.DefaultSchemaVersion;
++        if (!OracleState.SchemaVersions.Contains(version)) throw new ArgumentException("unsupported state schema_version");
+         var state = oracleState!.Capture(session, popData!, version);
+         byte[] bytes = OracleCanonicalJson.Serialize(state);
+         if (bytes.Length > 64 * 1024 * 1024) throw new OracleHostError("state_unavailable", "state exceeds 64 MiB");
+diff --git a/src/Meitou.Game/GameHost.OracleSetup.cs b/src/Meitou.Game/GameHost.OracleSetup.cs
+index 32c9d57f..11b2a32d 100644
+--- a/src/Meitou.Game/GameHost.OracleSetup.cs
++++ b/src/Meitou.Game/GameHost.OracleSetup.cs
+@@ -441,7 +441,8 @@ internal static partial class OracleSetupPolicy
+     internal static JsonObject PingIdentity() => new()
+     {
+         ["target"] = "meitou", ["plugin_version"] = OracleProtocol.AdapterVersion, ["game_version"] = "MeitouClient",
+-        ["schema_version"] = "0.2", ["state_schema_version"] = "0.2", ["supported_schema_versions"] = new JsonArray("0.1", "0.2", "0.3"),
++        ["schema_version"] = OracleState.DefaultSchemaVersion, ["state_schema_version"] = OracleState.DefaultSchemaVersion,
++        ["supported_schema_versions"] = new JsonArray([.. OracleState.SchemaVersions.Select(v => (JsonNode?)v)]),
+         ["capabilities"] = new JsonArray([.. Capabilities.Select(c => (JsonNode?)c)]),
+     };
+ 
+diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+index 26155d4d..c809a14c 100644
+--- a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
++++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+@@ -15,7 +15,7 @@ internal static class OracleCanonicalJson
+     {
+         ArgumentNullException.ThrowIfNull(node);
+         var copy = node.DeepClone();
+-        if (copy is JsonObject state && state["schema_version"]?.GetValue<string>() is "0.1" or "0.2" or "0.3")
++        if (copy is JsonObject state && state["schema_version"]?.GetValue<string>() is "0.1" or "0.2" or "0.3" or "0.4")
+             OrderState(state);
+         var output = new StringBuilder();
+         Append(output, copy);
+diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
+index 30fa6002..b0af38c8 100644
+--- a/src/Meitou.Game/Oracle/OracleState.cs
++++ b/src/Meitou.Game/Oracle/OracleState.cs
+@@ -4,6 +4,7 @@ using System.Security.Cryptography;
+ using System.Text;
+ using System.Text.Json;
+ using System.Text.Json.Nodes;
++using Meitou.Data.Gameplay.Ai;
+ using Meitou.Data.Gameplay.Bodies;
+ using Meitou.Data.Save;
+ using Meitou.Engine;
+@@ -35,9 +36,15 @@ internal sealed class OracleState
+     internal static string SavedHandId(Hand hand) => string.Create(CultureInfo.InvariantCulture,
+         $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.CS)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
+ 
+-    internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = "0.2")
++    /// <summary>The state schemas the adapter writes, oldest first; each adds keys to the one before and never changes them.</summary>
++    internal static readonly string[] SchemaVersions = ["0.1", "0.2", "0.3", "0.4"];
++    internal const string DefaultSchemaVersion = "0.4";
++
++    internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = DefaultSchemaVersion)
+     {
+-        if (schemaVersion is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
++        int level = Array.IndexOf(SchemaVersions, schemaVersion);
++        if (level < 0) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
++        bool v02 = level >= 1, v03 = level >= 2, v04 = level >= 3;
+         if (!ReferenceEquals(world, session.World))
+         {
+             world = session.World;
+@@ -104,9 +111,15 @@ internal sealed class OracleState
+                 {
+                     string partId = part.Template.StringId + Side(part.Template.Side);
+                     if (KnownId(part.Template.StringId) is null || !partIds.Add(partId)) { health = null; break; }
+-                    health.Add(new JsonObject { ["id"] = partId, ["current"] = Number(part.Flesh), ["stun"] = Number(part.Stun),
++                    var item = new JsonObject { ["id"] = partId, ["current"] = Number(part.Flesh), ["stun"] = Number(part.Stun),
+                         // Calculated MaxHp, not the original's stored _maxHealth. Null when negative or non-finite, as the native probe.
+-                        ["maximum"] = part.MaxHp >= 0 ? Number(part.MaxHp) : null });
++                        ["maximum"] = part.MaxHp >= 0 ? Number(part.MaxHp) : null };
++                    if (v04)
++                    {
++                        // The stored treatment values (save keys bandage<k>, rig<k>, wear<k>): native bandaging, juryRigging, wearDamage.
++                        item["bandage"] = Number(part.Bandage); item["splint"] = Number(part.Rig); item["wear"] = Number(part.Wear);
++                    }
++                    health.Add(item);
+                 }
+             }
+             var row = new JsonObject
+@@ -117,22 +130,23 @@ internal sealed class OracleState
+                 ["position"] = Position(hot[id.Slot].Position),
+                 ["state"] = medical is null ? null : medical.Dead ? "dead" : medical.Unconscious ? "unconscious" : "alive",
+                 ["health"] = health,
+-                // A Meitou movement/AI task is not by itself proof of the original TaskType.
+-                ["order"] = null,
++                // 0.1 to 0.3: a Meitou movement/AI task is not by itself proof of the original TaskType. 0.4: its task row (Order).
++                ["order"] = v04 && cold is not null ? Order(hot[id.Slot], cold) : null,
+             };
+-            if (schemaVersion != "0.1")
++            if (v02)
+             {
+                 row["identity_origin"] = savedCharacters.Contains(id) ? "saved" : null;
+                 row["current_town_id"] = null; row["town_assignment"] = null;
+                 row["in_combat"] = combat.TryGetValue(id, out bool mode) ? JsonValue.Create(mode) : null;
+             }
+-            if (schemaVersion == "0.3")
++            if (v03)
+             {
+                 // Meitou models 0..2 only (SlaveSave loads a saved 3 as free), so ex_slave is never emitted here.
+                 row["slave_state"] = cold?.SlaveState switch { 0 => "not_slave", 1 => "slave", 2 => "escaping_slave", _ => null };
+                 // The owner faction's index; the original's slaver handle is not loaded, so null does not prove there is no owner.
+                 row["slave_owner_faction_id"] = cold is null ? null : Faction(cold.SlaveOwner);
+             }
++            if (v04) AddState04(row, cold);
+             characters.Add(row);
+         }
+         var squadRows = new JsonArray();
+@@ -143,11 +157,13 @@ internal sealed class OracleState
+                          .Select(id => characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
+             var row = new JsonObject { ["id"] = squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
+                 ["leader_id"] = CharacterIdentity(squad.Leader) };
+-            if (schemaVersion != "0.1")
++            if (v02)
+             {
+                 row["identity_origin"] = savedSquads.Contains(squad.Id) ? "saved" : null;
+                 row["template_id"] = KnownId(squad.TemplateId); row["origin_town_id"] = null;
+             }
++            // The squad's purse in cats (platoon save key money): an integer, null outside the oracle's numeric range.
++            if (v04) row["money"] = Math.Abs(squad.Money) <= 1_000_000_000 ? JsonValue.Create(squad.Money) : null;
+             squadRows.Add(row);
+         }
+         var factions = new JsonArray();
+@@ -185,6 +201,80 @@ internal sealed class OracleState
+         return "local:" + kind + ":" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+     }
+ 
++    /// <summary>
++    /// The state 0.4 stat keys (KenshiLib <c>StatsEnumerated</c> name without <c>STAT_</c>, lowercase) in stat number order, each the stored value.
++    /// HIVEMEDIC and VET share Medic's storage and WEAPONS and SURVIVAL have none (<see cref="StatsInfo.StorageOf"/>), so they are not keys.
++    /// </summary>
++    internal static readonly (string Key, StatsEnumerated Stat)[] StatKeys =
++    [
++        ("strength", StatsEnumerated.Strength), ("melee_attack", StatsEnumerated.MeleeAttack), ("labouring", StatsEnumerated.Labouring),
++        ("science", StatsEnumerated.Science), ("engineering", StatsEnumerated.Engineering), ("robotics", StatsEnumerated.Robotics),
++        ("smithing_weapon", StatsEnumerated.SmithingWeapon), ("smithing_armour", StatsEnumerated.SmithingArmour), ("medic", StatsEnumerated.Medic),
++        ("thieving", StatsEnumerated.Thieving), ("turrets", StatsEnumerated.Turrets), ("farming", StatsEnumerated.Farming),
++        ("cooking", StatsEnumerated.Cooking), ("stealth", StatsEnumerated.Stealth), ("athletics", StatsEnumerated.Athletics),
++        ("dexterity", StatsEnumerated.Dexterity), ("melee_defence", StatsEnumerated.MeleeDefence), ("toughness", StatsEnumerated.Toughness),
++        ("assassination", StatsEnumerated.Assassination), ("swimming", StatsEnumerated.Swimming), ("perception", StatsEnumerated.Perception),
++        ("katanas", StatsEnumerated.Katanas), ("sabres", StatsEnumerated.Sabres), ("hackers", StatsEnumerated.Hackers),
++        ("heavyweapons", StatsEnumerated.HeavyWeapons), ("blunt", StatsEnumerated.Blunt), ("martialarts", StatsEnumerated.MartialArts),
++        ("masscombat", StatsEnumerated.MassCombat), ("dodge", StatsEnumerated.Dodge), ("polearms", StatsEnumerated.Polearms),
++        ("crossbows", StatsEnumerated.Crossbows), ("friendly_fire", StatsEnumerated.FriendlyFire), ("lockpicking", StatsEnumerated.Lockpicking),
++        ("smithing_bow", StatsEnumerated.SmithingBow),
++    ];
++
++    /// <summary>
++    /// The goal rows the original's task factory builds as <c>Task_Blank</c>, copied from docs/game/ai-tasks.md ("Factory mappings", the line
++    /// "(goal; Task_Blank)", 147 rows). Meitou's provenance of a goal names the goal while the original's body runs the immediate task under it
++    /// (an attack: Meitou 16 ATTACK_ENEMIES, the original e.g. 61), so such a row is no order.
++    /// </summary>
++    internal static readonly HashSet<int> TaskBlankRows =
++    [
++        8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 30, 32, 33, 34, 37, 38, 39, 41, 42, 43, 45, 46, 47, 48, 49, 50, 54, 55, 56,
++        57, 58, 59, 63, 66, 70, 84, 85, 86, 88, 89, 90, 91, 94, 101, 104, 105, 106, 109, 111, 112, 113, 114, 115, 117, 118, 120, 122, 125, 126,
++        131, 132, 135, 137, 138, 139, 142, 143, 144, 145, 148, 149, 151, 152, 153, 154, 155, 157, 158, 160, 167, 168, 169, 172, 173, 177, 178,
++        179, 183, 184, 187, 188, 189, 190, 191, 192, 193, 194, 195, 197, 202, 203, 204, 205, 206, 211, 212, 214, 217, 218, 222, 223, 230, 232,
++        233, 234, 237, 238, 239, 242, 243, 245, 248, 250, 251, 252, 254, 255, 259, 260, 265, 268, 270, 271, 273, 275, 276, 277, 279, 281, 282,
++        283, 288,
++    ];
++
++    /// <summary>
++    /// State 0.4's order: the row of the character's task provenance (<see cref="CharacterCold.Running"/>) while it runs the character's task now,
++    /// when the row is not 0, not a <see cref="TaskBlankRows"/> goal and has a native name. The type is that name by row number
++    /// (<see cref="OracleTaskNames"/>, never the Meitou enum's spelling), the target the census id of a character target, the position null
++    /// (whether the original reports the clicked or the floored goal is Unknown).
++    /// </summary>
++    JsonObject? Order(in CharacterHot hot, CharacterCold cold)
++    {
++        if (cold.Running is not { } run || !run.Runs((CharacterTask)hot.Task)) return null;
++        int row = (int)run.Row;
++        if (row == 0 || TaskBlankRows.Contains(row) || OracleTaskNames.Of(row) is not { } type) return null;
++        return new JsonObject { ["type"] = type, ["target_id"] = CharacterIdentity(run.Target), ["position"] = null };
++    }
++
++    /// <summary>The state 0.4 character fields; without the character's cold state each is unknown (null).</summary>
++    void AddState04(JsonObject row, CharacterCold? cold)
++    {
++        var medical = cold?.Medical;
++        row["medical"] = medical is null ? null : new JsonObject
++        {
++            ["blood"] = Number(medical.Blood), ["bleed_rate"] = Number(medical.Bleeding), ["hunger"] = Number(medical.Hunger),
++            ["fed"] = Number(medical.Fed), ["coma"] = medical.Coma, ["blood_loss_trauma"] = medical.BloodKo,
++        };
++        JsonObject? stats = null;
++        if (cold?.Stats is { } values)
++        {
++            stats = [];
++            foreach (var (key, stat) in StatKeys) stats[key] = Number(values[stat]);
++        }
++        row["stats"] = stats;
++        // Locks.HeldState is the original's UseStuffState (Character+0x2f8): None 0, Bed 1, Imprisoned 2; any other value is unknown.
++        row["in_something"] = cold is null ? null : (byte)cold.InSomething switch { 0 => "nothing", 1 => "bed", 2 => "prison", _ => null };
++        // Meitou carries characters only, so "other" is never emitted. A carried character outside this census has no id: unknown, not "character".
++        string? carried = cold is null || cold.Carrying.IsNone ? null : CharacterIdentity(cold.Carrying);
++        row["carrying"] = cold is null ? null : cold.Carrying.IsNone ? "nothing" : carried is null ? null : "character";
++        row["carrying_id"] = carried;
++        row["being_carried"] = cold is null ? null : !cold.CarriedBy.IsNone;
++    }
++
+     static string Side(BodySide side) => side switch { BodySide.Left => ":left", BodySide.Right => ":right", _ => ":neither" };
+     static string? KnownId(string? value) => !string.IsNullOrEmpty(value) && value.Length <= 512 && !value.Any(c => c < 32 || c == 127) ? value : null;
+     static JsonNode? Number(double value) => double.IsFinite(value) && Math.Abs(value) <= 1e9 ? JsonValue.Create(value) : null;
+diff --git a/src/Meitou.Game/Oracle/OracleTaskNames.cs b/src/Meitou.Game/Oracle/OracleTaskNames.cs
+new file mode 100644
+index 00000000..071d19fc
+--- /dev/null
++++ b/src/Meitou.Game/Oracle/OracleTaskNames.cs
+@@ -0,0 +1,310 @@
++namespace Meitou.Game.Oracle;
++
++/// <summary>
++/// The native probe's task names by <c>TaskType</c> NUMBER (KenshiOracle <c>plugin/OracleTaskNames.h</c>, one name per KenshiLib <c>Enums.h</c>
++/// <c>enum TaskType</c> symbol, read in that enum's order: 291 entries, 0 to 290). Meitou's <see cref="Meitou.Data.Gameplay.Ai.TaskType"/> has the
++/// same numbering, but eight of its symbol names differ (0, 38, 52, 65, 223, 245, 289, 290), so an order's type is looked up here by number and
++/// never spelled from the Meitou enum. 0 (<c>NULL_TASK</c>) is no order and maps to null, as does any number outside the table.
++/// </summary>
++internal static class OracleTaskNames
++{
++    internal const int Count = 291;
++
++    /// <summary>The native name of task row <paramref name="row"/>, else null.</summary>
++    internal static string? Of(int row) => (uint)row < (uint)Names.Length ? Names[row] : null;
++
++    static readonly string?[] Names =
++    [
++        /*   0 */ null,
++        /*   1 */ "move_on_free_will",
++        /*   2 */ "build",
++        /*   3 */ "pickup",
++        /*   4 */ "melee_attack",
++        /*   5 */ "focused_melee_attack",
++        /*   6 */ "equip_weapon",
++        /*   7 */ "unequip_weapon",
++        /*   8 */ "find_weapon",
++        /*   9 */ "choose_enemy_and_attack",
++        /*  10 */ "choose_attacker_of_ally",
++        /*  11 */ "attack_characters_attacker",
++        /*  12 */ "player_talk_to",
++        /*  13 */ "attack_attackers_of",
++        /*  14 */ "idle",
++        /*  15 */ "protect_allies",
++        /*  16 */ "attack_enemies",
++        /*  17 */ "protection",
++        /*  18 */ "raid_town",
++        /*  19 */ "go_homebuilding",
++        /*  20 */ "stand_at_shopkeeper_node",
++        /*  21 */ "attack_enemies_and_neutrals",
++        /*  22 */ "patrol",
++        /*  23 */ "attack_town",
++        /*  24 */ "wanderer",
++        /*  25 */ "first_aid_order",
++        /*  26 */ "loot_target",
++        /*  27 */ "crouch",
++        /*  28 */ "stand_up",
++        /*  29 */ "move_cus_ordered",
++        /*  30 */ "hold_position",
++        /*  31 */ "stay_close_to_target",
++        /*  32 */ "self_preservation",
++        /*  33 */ "quell_aggression",
++        /*  34 */ "attack_trouble_makers",
++        /*  35 */ "run_away",
++        /*  36 */ "patrol_town",
++        /*  37 */ "wander_town",
++        /*  38 */ "stand_at_guard_node_homebuilding_in_out",
++        /*  39 */ "wandering_trader",
++        /*  40 */ "get_near_to",
++        /*  41 */ "attack_enemies_of_my_slavemaster",
++        /*  42 */ "not_be_unarmed",
++        /*  43 */ "stay_in_home",
++        /*  44 */ "follow_player_order",
++        /*  45 */ "bodyguard",
++        /*  46 */ "chase",
++        /*  47 */ "stand_at_general_node",
++        /*  48 */ "stand_at_defensive_node",
++        /*  49 */ "stand_at_building_guard_node",
++        /*  50 */ "stand_at_building_defensive_node",
++        /*  51 */ "stand_at_node",
++        /*  52 */ "get_up_stay_down_though",
++        /*  53 */ "travel_to_target_town",
++        /*  54 */ "rest",
++        /*  55 */ "recruit_at_jobcenter",
++        /*  56 */ "switch_follow_me_mode_on",
++        /*  57 */ "job_repair_robot",
++        /*  58 */ "job_medic",
++        /*  59 */ "get_ready_for_action",
++        /*  60 */ "first_aid_robot",
++        /*  61 */ "unprovoked_focused_melee_attack",
++        /*  62 */ "stand_still",
++        /*  63 */ "squad_wait_for_me",
++        /*  64 */ "make_target_stand_still",
++        /*  65 */ "get_up_stand_up",
++        /*  66 */ "force_get_up",
++        /*  67 */ "move_on_free_will_fast",
++        /*  68 */ "lift_person",
++        /*  69 */ "put_down_object",
++        /*  70 */ "put_down_character_in_bed",
++        /*  71 */ "add_materials_to_building",
++        /*  72 */ "open_door",
++        /*  73 */ "close_door",
++        /*  74 */ "open_door_here",
++        /*  75 */ "close_door_here",
++        /*  76 */ "pick_lock",
++        /*  77 */ "lock_door",
++        /*  78 */ "unlock_door",
++        /*  79 */ "lock_door_here",
++        /*  80 */ "unlock_door_here",
++        /*  81 */ "bash_door",
++        /*  82 */ "move_to_building_door",
++        /*  83 */ "move_to_current_location_building_door",
++        /*  84 */ "open_door_for_current_location",
++        /*  85 */ "open_door_for_destination",
++        /*  86 */ "open_up_shop_doors",
++        /*  87 */ "operate_machinery",
++        /*  88 */ "deliver_resources",
++        /*  89 */ "job_keep_everything_running",
++        /*  90 */ "unjam_all_machines",
++        /*  91 */ "unjam_machine",
++        /*  92 */ "collect_output_resource",
++        /*  93 */ "fill_machine",
++        /*  94 */ "want_to_fill_machine",
++        /*  95 */ "repair",
++        /*  96 */ "dismantle",
++        /*  97 */ "use_training_dummy",
++        /*  98 */ "use_bed",
++        /*  99 */ "put_someone_in_bed",
++        /* 100 */ "get_put_in_bed",
++        /* 101 */ "defeat_squad",
++        /* 102 */ "seek_and_talk_and_send_signal",
++        /* 103 */ "make_announcement",
++        /* 104 */ "always_impossible_task",
++        /* 105 */ "find_and_rescue",
++        /* 106 */ "find_bed_and_put_in",
++        /* 107 */ "use_cage",
++        /* 108 */ "put_in_cage",
++        /* 109 */ "knockout_prisoner",
++        /* 110 */ "release_prisoner",
++        /* 111 */ "breakout_prisoner",
++        /* 112 */ "find_cage_and_put_in",
++        /* 113 */ "empty_machine_outputs",
++        /* 114 */ "get_rid_of_resources_in_my_inventory",
++        /* 115 */ "find_some_building_materials",
++        /* 116 */ "get_out_of_bed",
++        /* 117 */ "find_a_shop",
++        /* 118 */ "shopping",
++        /* 119 */ "buy_shit",
++        /* 120 */ "move_inside_building",
++        /* 121 */ "move_to_fortification_gate",
++        /* 122 */ "open_fortification_gate",
++        /* 123 */ "bash_gate",
++        /* 124 */ "operate_storage",
++        /* 125 */ "job_builder",
++        /* 126 */ "talkto_nearest_player_character",
++        /* 127 */ "run_away_hometown",
++        /* 128 */ "retreat_hometown",
++        /* 129 */ "make_announcement_fast",
++        /* 130 */ "travel_to_target_town_fast",
++        /* 131 */ "loot_food_and_stuff",
++        /* 132 */ "find_and_kidnap",
++        /* 133 */ "get_out_of_cage_legit",
++        /* 134 */ "kill_cage_occupant",
++        /* 135 */ "kill_a_random_cage_occupant",
++        /* 136 */ "feed_corpse_into_machine",
++        /* 137 */ "dead_guys_go_in_the_pot",
++        /* 138 */ "find_a_dead_guy",
++        /* 139 */ "eat_a_random_cage_occupant",
++        /* 140 */ "unlock_door_player_order",
++        /* 141 */ "follow_squadleader",
++        /* 142 */ "find_and_rescue_leader",
++        /* 143 */ "protect_own_squad",
++        /* 144 */ "territorial_aggression_but_dont_leave_home",
++        /* 145 */ "get_re_equipped",
++        /* 146 */ "use_turret",
++        /* 147 */ "stumble_task_forced",
++        /* 148 */ "find_and_rescue_if_theres_beds",
++        /* 149 */ "man_a_turret",
++        /* 150 */ "prospecting",
++        /* 151 */ "emptying_machine",
++        /* 152 */ "operate_automatic_machinery",
++        /* 153 */ "go_home_and_go_to_bed",
++        /* 154 */ "go_to_the_bar_and_drink",
++        /* 155 */ "lock_all_my_doors",
++        /* 156 */ "enter_building",
++        /* 157 */ "stand_at_guard_node_hometown_outside",
++        /* 158 */ "shoo_strangers_out_of_my_building",
++        /* 159 */ "send_dialogue_signal",
++        /* 160 */ "send_dialogue_signal_repeat",
++        /* 161 */ "send_dialogue_signal_without_moving",
++        /* 162 */ "lock_door_from_inside",
++        /* 163 */ "move_to_building_door_insidepos",
++        /* 164 */ "follow_while_talking",
++        /* 165 */ "town_stalker",
++        /* 166 */ "chain_target",
++        /* 167 */ "capture_new_slaves",
++        /* 168 */ "carry_wounded_slaves",
++        /* 169 */ "put_down_carried_dude_if_they_can_walk",
++        /* 170 */ "lift_object_but_heal_first",
++        /* 171 */ "follow_slavemaster",
++        /* 172 */ "slave_get_in_my_masters_cage",
++        /* 173 */ "gather_slaves_from_cages",
++        /* 174 */ "get_slave",
++        /* 175 */ "sleep_on_floor",
++        /* 176 */ "hunting_bloodsmell",
++        /* 177 */ "loot_the_dead",
++        /* 178 */ "loot_to_replace_missing_weapon",
++        /* 179 */ "hunt_my_thief",
++        /* 180 */ "man_the_gate",
++        /* 181 */ "strip_targets_weapons",
++        /* 182 */ "process_and_strip_new_slave",
++        /* 183 */ "slave_watching",
++        /* 184 */ "put_loot_in_storage",
++        /* 185 */ "cut_shackles",
++        /* 186 */ "brute_force_shackles",
++        /* 187 */ "_slave_obedience",
++        /* 188 */ "work_the_slaves",
++        /* 189 */ "auto_labouring_mines",
++        /* 190 */ "auto_labouring_mines_pretend",
++        /* 191 */ "go_to_nearest_hq",
++        /* 192 */ "go_to_somewhere_for_delivering_slaves",
++        /* 193 */ "capture_escaping_slaves",
++        /* 194 */ "give_all_my_slaves_to",
++        /* 195 */ "lock_all_the_cages",
++        /* 196 */ "beat_cage_occupant",
++        /* 197 */ "lock_all_my_doors_from_outside",
++        /* 198 */ "lock_door_from_outside",
++        /* 199 */ "move_to_building_door_outsidepos",
++        /* 200 */ "leave_building",
++        /* 201 */ "pick_lock_on_shackles",
++        /* 202 */ "total_escape",
++        /* 203 */ "arrest_target",
++        /* 204 */ "hunt_bounties",
++        /* 205 */ "arrest_targets_carried_person",
++        /* 206 */ "find_cage_and_put_in_if_bounty",
++        /* 207 */ "get_out_of_cage_escape",
++        /* 208 */ "get_out_of_bed_if_its_emergency",
++        /* 209 */ "investigate_alarms",
++        /* 210 */ "investigate_alarms_allies_only",
++        /* 211 */ "police_free_prisoners_when_done",
++        /* 212 */ "loot_stolen_goods",
++        /* 213 */ "lift_person_snatching_allowed",
++        /* 214 */ "relax_in_town_package",
++        /* 215 */ "travel_to_target_package",
++        /* 216 */ "run_around_town_looking_for_people",
++        /* 217 */ "gather_slaves_from_cages_if_its_an_export_town",
++        /* 218 */ "give_all_my_slaves_to_if_its_an_import_town",
++        /* 219 */ "take_off_my_shackles",
++        /* 220 */ "eat_target_alive",
++        /* 221 */ "pretend_to_operate_machinery",
++        /* 222 */ "man_a_turret_on_building",
++        /* 223 */ "pickup_intruders_building",
++        /* 224 */ "take_intruder_outside",
++        /* 225 */ "lift_person_player_order",
++        /* 226 */ "bash_door_player_order",
++        /* 227 */ "melee_attack_animal",
++        /* 228 */ "stealth_knockout",
++        /* 229 */ "stealth_kill",
++        /* 230 */ "eat_a_random_dead_body",
++        /* 231 */ "eat_crops",
++        /* 232 */ "find_crops_to_eat",
++        /* 233 */ "eat_a_random_ko_body",
++        /* 234 */ "man_a_turret_player_job",
++        /* 235 */ "shoot_at_target",
++        /* 236 */ "worship_target",
++        /* 237 */ "fogman_worship_victim",
++        /* 238 */ "loot_animals_job",
++        /* 239 */ "go_home_and_go_to_bed_secure",
++        /* 240 */ "lift_person_snatching_allowed_in_town_only",
++        /* 241 */ "loot_resource_items_we_have_storage_for",
++        /* 242 */ "ditch_all_resources",
++        /* 243 */ "aquire_food_at_homebase",
++        /* 244 */ "grab_one_food",
++        /* 245 */ "gather_prisoners_from_cages_if_female_or_beast",
++        /* 246 */ "kidnap_order",
++        /* 247 */ "collect_output_resource_build_mats",
++        /* 248 */ "defeat_squad_limit_chase_range",
++        /* 249 */ "splint_order",
++        /* 250 */ "splint_job",
++        /* 251 */ "escape_kidnap",
++        /* 252 */ "escape_kidnap_str",
++        /* 253 */ "follow_urgent_escape",
++        /* 254 */ "final_kidnapper_cage_job",
++        /* 255 */ "sit_on_throne",
++        /* 256 */ "get_out_of_cage_opportunistic",
++        /* 257 */ "get_out_of_bed_once_healed",
++        /* 258 */ "use_bed_order",
++        /* 259 */ "eat_food_on_ground",
++        /* 260 */ "new_slave_processing",
++        /* 261 */ "sleep_on_floor_fake_ambush",
++        /* 262 */ "ranged_attack",
++        /* 263 */ "ranged_attack_focused",
++        /* 264 */ "equip_crossbow",
++        /* 265 */ "unequip_crossbow",
++        /* 266 */ "ranged_attack_focused_unprovoked",
++        /* 267 */ "move_in_bow_range",
++        /* 268 */ "stand_at_guard_node_homebuilding_indoors_only",
++        /* 269 */ "heal_my_legs",
++        /* 270 */ "assault_fortifications_prefer_gates",
++        /* 271 */ "assault_fortifications_prefer_walls",
++        /* 272 */ "smash_building",
++        /* 273 */ "pickup_intruders_town",
++        /* 274 */ "take_intruder_outside_town",
++        /* 275 */ "sit_around",
++        /* 276 */ "liberate_all_the_prisoners",
++        /* 277 */ "animal_fetch_a_limb",
++        /* 278 */ "play_because_i_have_a_limb_in_mouth",
++        /* 279 */ "chase_ally_dogs_with_mouth_limbs",
++        /* 280 */ "run_away_forced",
++        /* 281 */ "find_cage_and_put_deadguy_in",
++        /* 282 */ "eat_a_random_cage_occupant_measured_rate",
++        /* 283 */ "shoo_strangers_out_of_my_building_if_private",
++        /* 284 */ "loot_container",
++        /* 285 */ "cut_lock",
++        /* 286 */ "brute_force_lock",
++        /* 287 */ "bash_door_here",
++        /* 288 */ "protect_allies_stay_in_town",
++        /* 289 */ "stay_close_to_target_animal",
++        /* 290 */ "bash_gate_player_order",
++    ];
++}
+diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
+index 08571804..2d95c186 100644
+--- a/tests/Meitou.Tests/Oracle/Fixtures/README.md
++++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
+@@ -1,7 +1,8 @@
+ The JSON is an identical synthetic copy of KenshiOracle `schema/canonical-vectors.json`.
+-SHA256 of the content with CRLF normalised to LF: `06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170`.
++SHA256 of the content with CRLF normalised to LF: `cd935563cb97f247ca7021a6bc1215d76bf21c01382e8d544783e4c138447f63`.
+ Set `KENSHI_ORACLE_VECTORS` to test the shared original directly. The first 59 cases
+ are the phase 1 Python/native numeric, string and nullable-state vectors; three
+ additional cases check scalar key order and additive state 0.2 canonicalisation,
+-and three more check the additive state 0.3 slave fields.
++three more check the additive state 0.3 slave fields, and four more check the additive
++state 0.4 fields (medical, stats, part care, holding and carrying, squad money).
+ Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
+diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
+index f1d6688b..2a753bac 100644
+--- a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
++++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
+@@ -5185,6 +5185,704 @@
+       },
+       "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9LHsiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInN0dW4iOjB9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJuYW1lIjoiQmV0YSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzEsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJzbGF2ZV9zdGF0ZSI6ImV4X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
+       "expected_sha256": "5886f22c7bc73f8262f6c9b8183055b6ff4cd3dce7ae3cbd555a923e74442c74"
++    },
++    {
++      "name": "additive-state-04",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.4",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": 12.5,
++                "splint": 0,
++                "wear": 3.000001
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": {
++              "blood": 97.5,
++              "bleed_rate": 0.125,
++              "hunger": 2.25,
++              "fed": 1.5,
++              "coma": false,
++              "blood_loss_trauma": true
++            },
++            "stats": {
++              "assassination": 0.5,
++              "athletics": 1.5,
++              "blunt": 2.5,
++              "cooking": 3.5,
++              "crossbows": 4.5,
++              "dexterity": 5.5,
++              "dodge": 6.5,
++              "engineering": 7.5,
++              "farming": 8.5,
++              "friendly_fire": 9.5,
++              "hackers": 10.5,
++              "heavyweapons": 11.5,
++              "katanas": 12.5,
++              "labouring": 13.5,
++              "lockpicking": 14.5,
++              "martialarts": 15.5,
++              "masscombat": 16.5,
++              "medic": 17.5,
++              "melee_attack": 18.5,
++              "melee_defence": 19.5,
++              "perception": 20.5,
++              "polearms": 21.5,
++              "robotics": 22.5,
++              "sabres": 23.5,
++              "science": 24.5,
++              "smithing_armour": 25.5,
++              "smithing_bow": 26.5,
++              "smithing_weapon": 27.5,
++              "stealth": 28.5,
++              "strength": 29.5,
++              "swimming": 30.5,
++              "thieving": 31.5,
++              "toughness": 32.5,
++              "turrets": 33.5
++            },
++            "in_something": "bed",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:2:1002",
++            "being_carried": false
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": 12.5,
++                "splint": 0,
++                "wear": 3.000001
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": null,
++              "bleed_rate": -5e-07,
++              "hunger": 0,
++              "fed": null,
++              "coma": null,
++              "blood_loss_trauma": false
++            },
++            "stats": {
++              "assassination": -1.2345675,
++              "athletics": null,
++              "blunt": -1.2345675,
++              "cooking": null,
++              "crossbows": -1.2345675,
++              "dexterity": null,
++              "dodge": -1.2345675,
++              "engineering": null,
++              "farming": -1.2345675,
++              "friendly_fire": null,
++              "hackers": -1.2345675,
++              "heavyweapons": null,
++              "katanas": -1.2345675,
++              "labouring": null,
++              "lockpicking": -1.2345675,
++              "martialarts": null,
++              "masscombat": -1.2345675,
++              "medic": null,
++              "melee_attack": -1.2345675,
++              "melee_defence": null,
++              "perception": -1.2345675,
++              "polearms": null,
++              "robotics": -1.2345675,
++              "sabres": null,
++              "science": -1.2345675,
++              "smithing_armour": null,
++              "smithing_bow": -1.2345675,
++              "smithing_weapon": null,
++              "stealth": -1.2345675,
++              "strength": null,
++              "swimming": -1.2345675,
++              "thieving": null,
++              "toughness": -1.2345675,
++              "turrets": null
++            },
++            "in_something": "prison",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": true
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": 123456
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpmYWxzZSwiY2FycnlpbmciOiJjaGFyYWN0ZXIiLCJjYXJyeWluZ19pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6MC4xMjUsImJsb29kIjo5Ny41LCJibG9vZF9sb3NzX3RyYXVtYSI6dHJ1ZSwiY29tYSI6ZmFsc2UsImZlZCI6MS41LCJodW5nZXIiOjIuMjV9LCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MC41LCJhdGhsZXRpY3MiOjEuNSwiYmx1bnQiOjIuNSwiY29va2luZyI6My41LCJjcm9zc2Jvd3MiOjQuNSwiZGV4dGVyaXR5Ijo1LjUsImRvZGdlIjo2LjUsImVuZ2luZWVyaW5nIjo3LjUsImZhcm1pbmciOjguNSwiZnJpZW5kbHlfZmlyZSI6OS41LCJoYWNrZXJzIjoxMC41LCJoZWF2eXdlYXBvbnMiOjExLjUsImthdGFuYXMiOjEyLjUsImxhYm91cmluZyI6MTMuNSwibG9ja3BpY2tpbmciOjE0LjUsIm1hcnRpYWxhcnRzIjoxNS41LCJtYXNzY29tYmF0IjoxNi41LCJtZWRpYyI6MTcuNSwibWVsZWVfYXR0YWNrIjoxOC41LCJtZWxlZV9kZWZlbmNlIjoxOS41LCJwZXJjZXB0aW9uIjoyMC41LCJwb2xlYXJtcyI6MjEuNSwicm9ib3RpY3MiOjIyLjUsInNhYnJlcyI6MjMuNSwic2NpZW5jZSI6MjQuNSwic21pdGhpbmdfYXJtb3VyIjoyNS41LCJzbWl0aGluZ19ib3ciOjI2LjUsInNtaXRoaW5nX3dlYXBvbiI6MjcuNSwic3RlYWx0aCI6MjguNSwic3RyZW5ndGgiOjI5LjUsInN3aW1taW5nIjozMC41LCJ0aGlldmluZyI6MzEuNSwidG91Z2huZXNzIjozMi41LCJ0dXJyZXRzIjozMy41fSwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoibm90aGluZyIsImNhcnJ5aW5nX2lkIjpudWxsLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6InByaXNvbiIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6LTAuMDAwMDAxLCJibG9vZCI6bnVsbCwiYmxvb2RfbG9zc190cmF1bWEiOmZhbHNlLCJjb21hIjpudWxsLCJmZWQiOm51bGwsImh1bmdlciI6MH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOi0xLjIzNDU2OCwiYXRobGV0aWNzIjpudWxsLCJibHVudCI6LTEuMjM0NTY4LCJjb29raW5nIjpudWxsLCJjcm9zc2Jvd3MiOi0xLjIzNDU2OCwiZGV4dGVyaXR5IjpudWxsLCJkb2RnZSI6LTEuMjM0NTY4LCJlbmdpbmVlcmluZyI6bnVsbCwiZmFybWluZyI6LTEuMjM0NTY4LCJmcmllbmRseV9maXJlIjpudWxsLCJoYWNrZXJzIjotMS4yMzQ1NjgsImhlYXZ5d2VhcG9ucyI6bnVsbCwia2F0YW5hcyI6LTEuMjM0NTY4LCJsYWJvdXJpbmciOm51bGwsImxvY2twaWNraW5nIjotMS4yMzQ1NjgsIm1hcnRpYWxhcnRzIjpudWxsLCJtYXNzY29tYmF0IjotMS4yMzQ1NjgsIm1lZGljIjpudWxsLCJtZWxlZV9hdHRhY2siOi0xLjIzNDU2OCwibWVsZWVfZGVmZW5jZSI6bnVsbCwicGVyY2VwdGlvbiI6LTEuMjM0NTY4LCJwb2xlYXJtcyI6bnVsbCwicm9ib3RpY3MiOi0xLjIzNDU2OCwic2FicmVzIjpudWxsLCJzY2llbmNlIjotMS4yMzQ1NjgsInNtaXRoaW5nX2FybW91ciI6bnVsbCwic21pdGhpbmdfYm93IjotMS4yMzQ1NjgsInNtaXRoaW5nX3dlYXBvbiI6bnVsbCwic3RlYWx0aCI6LTEuMjM0NTY4LCJzdHJlbmd0aCI6bnVsbCwic3dpbW1pbmciOi0xLjIzNDU2OCwidGhpZXZpbmciOm51bGwsInRvdWdobmVzcyI6LTEuMjM0NTY4LCJ0dXJyZXRzIjpudWxsfSwidG93bl9hc3NpZ25tZW50IjpudWxsfV0sImNsb2NrIjp7ImRheSI6MiwiZWxhcHNlZF9zZWNvbmRzIjoyMTYwMDAsImhvdXIiOjEyLCJwYXVzZWQiOnRydWUsInNwZWVkIjowfSwiZmFjdGlvbnMiOlt7ImlkIjoiZml4dHVyZS1mYWN0aW9uIiwibmFtZSI6IkZpeHR1cmUgZmFjdGlvbiJ9XSwicmVsYXRpb25zIjpbXSwic2NoZW1hX3ZlcnNpb24iOiIwLjQiLCJzcXVhZHMiOlt7ImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJpZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJsZWFkZXJfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwibWVtYmVycyI6WyJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaGFuZDoxOjc6MTAxOjI6MTAwMiJdLCJtb25leSI6MTIzNDU2LCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
++      "expected_sha256": "c9848379d8e2c96817c612214fe8fe857643a7503bc891c6b4ee1c656c6793f9"
++    },
++    {
++      "name": "state-04-permutation",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.4",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": 12.5,
++                "splint": 0,
++                "wear": 3.000001
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood_loss_trauma": false,
++              "coma": null,
++              "fed": null,
++              "hunger": 0,
++              "bleed_rate": -5e-07,
++              "blood": null
++            },
++            "stats": {
++              "turrets": null,
++              "toughness": -1.2345675,
++              "thieving": null,
++              "swimming": -1.2345675,
++              "strength": null,
++              "stealth": -1.2345675,
++              "smithing_weapon": null,
++              "smithing_bow": -1.2345675,
++              "smithing_armour": null,
++              "science": -1.2345675,
++              "sabres": null,
++              "robotics": -1.2345675,
++              "polearms": null,
++              "perception": -1.2345675,
++              "melee_defence": null,
++              "melee_attack": -1.2345675,
++              "medic": null,
++              "masscombat": -1.2345675,
++              "martialarts": null,
++              "lockpicking": -1.2345675,
++              "labouring": null,
++              "katanas": -1.2345675,
++              "heavyweapons": null,
++              "hackers": -1.2345675,
++              "friendly_fire": null,
++              "farming": -1.2345675,
++              "engineering": null,
++              "dodge": -1.2345675,
++              "dexterity": null,
++              "crossbows": -1.2345675,
++              "cooking": null,
++              "blunt": -1.2345675,
++              "athletics": null,
++              "assassination": -1.2345675
++            },
++            "in_something": "prison",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": true
++          },
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": 12.5,
++                "splint": 0,
++                "wear": 3.000001
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": {
++              "blood_loss_trauma": true,
++              "coma": false,
++              "fed": 1.5,
++              "hunger": 2.25,
++              "bleed_rate": 0.125,
++              "blood": 97.5
++            },
++            "stats": {
++              "turrets": 33.5,
++              "toughness": 32.5,
++              "thieving": 31.5,
++              "swimming": 30.5,
++              "strength": 29.5,
++              "stealth": 28.5,
++              "smithing_weapon": 27.5,
++              "smithing_bow": 26.5,
++              "smithing_armour": 25.5,
++              "science": 24.5,
++              "sabres": 23.5,
++              "robotics": 22.5,
++              "polearms": 21.5,
++              "perception": 20.5,
++              "melee_defence": 19.5,
++              "melee_attack": 18.5,
++              "medic": 17.5,
++              "masscombat": 16.5,
++              "martialarts": 15.5,
++              "lockpicking": 14.5,
++              "labouring": 13.5,
++              "katanas": 12.5,
++              "heavyweapons": 11.5,
++              "hackers": 10.5,
++              "friendly_fire": 9.5,
++              "farming": 8.5,
++              "engineering": 7.5,
++              "dodge": 6.5,
++              "dexterity": 5.5,
++              "crossbows": 4.5,
++              "cooking": 3.5,
++              "blunt": 2.5,
++              "athletics": 1.5,
++              "assassination": 0.5
++            },
++            "in_something": "bed",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:2:1002",
++            "being_carried": false
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:2:1002",
++              "hand:1:7:101:1:1001"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": 123456
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpmYWxzZSwiY2FycnlpbmciOiJjaGFyYWN0ZXIiLCJjYXJyeWluZ19pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6MC4xMjUsImJsb29kIjo5Ny41LCJibG9vZF9sb3NzX3RyYXVtYSI6dHJ1ZSwiY29tYSI6ZmFsc2UsImZlZCI6MS41LCJodW5nZXIiOjIuMjV9LCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MC41LCJhdGhsZXRpY3MiOjEuNSwiYmx1bnQiOjIuNSwiY29va2luZyI6My41LCJjcm9zc2Jvd3MiOjQuNSwiZGV4dGVyaXR5Ijo1LjUsImRvZGdlIjo2LjUsImVuZ2luZWVyaW5nIjo3LjUsImZhcm1pbmciOjguNSwiZnJpZW5kbHlfZmlyZSI6OS41LCJoYWNrZXJzIjoxMC41LCJoZWF2eXdlYXBvbnMiOjExLjUsImthdGFuYXMiOjEyLjUsImxhYm91cmluZyI6MTMuNSwibG9ja3BpY2tpbmciOjE0LjUsIm1hcnRpYWxhcnRzIjoxNS41LCJtYXNzY29tYmF0IjoxNi41LCJtZWRpYyI6MTcuNSwibWVsZWVfYXR0YWNrIjoxOC41LCJtZWxlZV9kZWZlbmNlIjoxOS41LCJwZXJjZXB0aW9uIjoyMC41LCJwb2xlYXJtcyI6MjEuNSwicm9ib3RpY3MiOjIyLjUsInNhYnJlcyI6MjMuNSwic2NpZW5jZSI6MjQuNSwic21pdGhpbmdfYXJtb3VyIjoyNS41LCJzbWl0aGluZ19ib3ciOjI2LjUsInNtaXRoaW5nX3dlYXBvbiI6MjcuNSwic3RlYWx0aCI6MjguNSwic3RyZW5ndGgiOjI5LjUsInN3aW1taW5nIjozMC41LCJ0aGlldmluZyI6MzEuNSwidG91Z2huZXNzIjozMi41LCJ0dXJyZXRzIjozMy41fSwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoibm90aGluZyIsImNhcnJ5aW5nX2lkIjpudWxsLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImJhbmRhZ2UiOjEyLjUsImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3BsaW50IjowLCJzdHVuIjowLCJ3ZWFyIjozLjAwMDAwMX1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6InByaXNvbiIsIm1lZGljYWwiOnsiYmxlZWRfcmF0ZSI6LTAuMDAwMDAxLCJibG9vZCI6bnVsbCwiYmxvb2RfbG9zc190cmF1bWEiOmZhbHNlLCJjb21hIjpudWxsLCJmZWQiOm51bGwsImh1bmdlciI6MH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOi0xLjIzNDU2OCwiYXRobGV0aWNzIjpudWxsLCJibHVudCI6LTEuMjM0NTY4LCJjb29raW5nIjpudWxsLCJjcm9zc2Jvd3MiOi0xLjIzNDU2OCwiZGV4dGVyaXR5IjpudWxsLCJkb2RnZSI6LTEuMjM0NTY4LCJlbmdpbmVlcmluZyI6bnVsbCwiZmFybWluZyI6LTEuMjM0NTY4LCJmcmllbmRseV9maXJlIjpudWxsLCJoYWNrZXJzIjotMS4yMzQ1NjgsImhlYXZ5d2VhcG9ucyI6bnVsbCwia2F0YW5hcyI6LTEuMjM0NTY4LCJsYWJvdXJpbmciOm51bGwsImxvY2twaWNraW5nIjotMS4yMzQ1NjgsIm1hcnRpYWxhcnRzIjpudWxsLCJtYXNzY29tYmF0IjotMS4yMzQ1NjgsIm1lZGljIjpudWxsLCJtZWxlZV9hdHRhY2siOi0xLjIzNDU2OCwibWVsZWVfZGVmZW5jZSI6bnVsbCwicGVyY2VwdGlvbiI6LTEuMjM0NTY4LCJwb2xlYXJtcyI6bnVsbCwicm9ib3RpY3MiOi0xLjIzNDU2OCwic2FicmVzIjpudWxsLCJzY2llbmNlIjotMS4yMzQ1NjgsInNtaXRoaW5nX2FybW91ciI6bnVsbCwic21pdGhpbmdfYm93IjotMS4yMzQ1NjgsInNtaXRoaW5nX3dlYXBvbiI6bnVsbCwic3RlYWx0aCI6LTEuMjM0NTY4LCJzdHJlbmd0aCI6bnVsbCwic3dpbW1pbmciOi0xLjIzNDU2OCwidGhpZXZpbmciOm51bGwsInRvdWdobmVzcyI6LTEuMjM0NTY4LCJ0dXJyZXRzIjpudWxsfSwidG93bl9hc3NpZ25tZW50IjpudWxsfV0sImNsb2NrIjp7ImRheSI6MiwiZWxhcHNlZF9zZWNvbmRzIjoyMTYwMDAsImhvdXIiOjEyLCJwYXVzZWQiOnRydWUsInNwZWVkIjowfSwiZmFjdGlvbnMiOlt7ImlkIjoiZml4dHVyZS1mYWN0aW9uIiwibmFtZSI6IkZpeHR1cmUgZmFjdGlvbiJ9XSwicmVsYXRpb25zIjpbXSwic2NoZW1hX3ZlcnNpb24iOiIwLjQiLCJzcXVhZHMiOlt7ImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJpZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJsZWFkZXJfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwibWVtYmVycyI6WyJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaGFuZDoxOjc6MTAxOjI6MTAwMiJdLCJtb25leSI6MTIzNDU2LCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
++      "expected_sha256": "c9848379d8e2c96817c612214fe8fe857643a7503bc891c6b4ee1c656c6793f9"
++    },
++    {
++      "name": "state-04-nulls-other-and-nothing",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.4",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": null,
++            "carrying": "other",
++            "carrying_id": null,
++            "being_carried": null
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": null,
++              "bleed_rate": -5e-07,
++              "hunger": 0,
++              "fed": null,
++              "coma": null,
++              "blood_loss_trauma": false
++            },
++            "stats": {
++              "assassination": -1.2345675,
++              "athletics": null,
++              "blunt": -1.2345675,
++              "cooking": null,
++              "crossbows": -1.2345675,
++              "dexterity": null,
++              "dodge": -1.2345675,
++              "engineering": null,
++              "farming": -1.2345675,
++              "friendly_fire": null,
++              "hackers": -1.2345675,
++              "heavyweapons": null,
++              "katanas": -1.2345675,
++              "labouring": null,
++              "lockpicking": -1.2345675,
++              "martialarts": null,
++              "masscombat": -1.2345675,
++              "medic": null,
++              "melee_attack": -1.2345675,
++              "melee_defence": null,
++              "perception": -1.2345675,
++              "polearms": null,
++              "robotics": -1.2345675,
++              "sabres": null,
++              "science": -1.2345675,
++              "smithing_armour": null,
++              "smithing_bow": -1.2345675,
++              "smithing_weapon": null,
++              "stealth": -1.2345675,
++              "strength": null,
++              "swimming": -1.2345675,
++              "thieving": null,
++              "toughness": -1.2345675,
++              "turrets": null
++            },
++            "in_something": "nothing",
++            "carrying": null,
++            "carrying_id": null,
++            "being_carried": true
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": null
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im90aGVyIiwiY2FycnlpbmdfaWQiOm51bGwsImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siYmFuZGFnZSI6bnVsbCwiY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzcGxpbnQiOm51bGwsInN0dW4iOjAsIndlYXIiOm51bGx9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOm51bGwsIm1lZGljYWwiOm51bGwsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6bnVsbCwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjpudWxsLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJiYW5kYWdlIjpudWxsLCJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInNwbGludCI6bnVsbCwic3R1biI6MCwid2VhciI6bnVsbH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6Im5vdGhpbmciLCJtZWRpY2FsIjp7ImJsZWVkX3JhdGUiOi0wLjAwMDAwMSwiYmxvb2QiOm51bGwsImJsb29kX2xvc3NfdHJhdW1hIjpmYWxzZSwiY29tYSI6bnVsbCwiZmVkIjpudWxsLCJodW5nZXIiOjB9LCJuYW1lIjoiQmV0YSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzEsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJzbGF2ZV9zdGF0ZSI6ImV4X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6eyJhc3Nhc3NpbmF0aW9uIjotMS4yMzQ1NjgsImF0aGxldGljcyI6bnVsbCwiYmx1bnQiOi0xLjIzNDU2OCwiY29va2luZyI6bnVsbCwiY3Jvc3Nib3dzIjotMS4yMzQ1NjgsImRleHRlcml0eSI6bnVsbCwiZG9kZ2UiOi0xLjIzNDU2OCwiZW5naW5lZXJpbmciOm51bGwsImZhcm1pbmciOi0xLjIzNDU2OCwiZnJpZW5kbHlfZmlyZSI6bnVsbCwiaGFja2VycyI6LTEuMjM0NTY4LCJoZWF2eXdlYXBvbnMiOm51bGwsImthdGFuYXMiOi0xLjIzNDU2OCwibGFib3VyaW5nIjpudWxsLCJsb2NrcGlja2luZyI6LTEuMjM0NTY4LCJtYXJ0aWFsYXJ0cyI6bnVsbCwibWFzc2NvbWJhdCI6LTEuMjM0NTY4LCJtZWRpYyI6bnVsbCwibWVsZWVfYXR0YWNrIjotMS4yMzQ1NjgsIm1lbGVlX2RlZmVuY2UiOm51bGwsInBlcmNlcHRpb24iOi0xLjIzNDU2OCwicG9sZWFybXMiOm51bGwsInJvYm90aWNzIjotMS4yMzQ1NjgsInNhYnJlcyI6bnVsbCwic2NpZW5jZSI6LTEuMjM0NTY4LCJzbWl0aGluZ19hcm1vdXIiOm51bGwsInNtaXRoaW5nX2JvdyI6LTEuMjM0NTY4LCJzbWl0aGluZ193ZWFwb24iOm51bGwsInN0ZWFsdGgiOi0xLjIzNDU2OCwic3RyZW5ndGgiOm51bGwsInN3aW1taW5nIjotMS4yMzQ1NjgsInRoaWV2aW5nIjpudWxsLCJ0b3VnaG5lc3MiOi0xLjIzNDU2OCwidHVycmV0cyI6bnVsbH0sInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC40Iiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwibW9uZXkiOm51bGwsIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
++      "expected_sha256": "a2fad72aa3804e235bd13d348f65186b4f451ab080984cda92b82f4e203e31b9"
++    },
++    {
++      "name": "state-04-edges",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.4",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": null,
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": "bed",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": null
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": 1000000000.0,
++              "bleed_rate": -1000000000.0,
++              "hunger": null,
++              "fed": null,
++              "coma": true,
++              "blood_loss_trauma": null
++            },
++            "stats": {
++              "assassination": 0,
++              "athletics": 0,
++              "blunt": 0,
++              "cooking": 0,
++              "crossbows": 0,
++              "dexterity": 0,
++              "dodge": 0,
++              "engineering": 0,
++              "farming": 0,
++              "friendly_fire": 0,
++              "hackers": 0,
++              "heavyweapons": 0,
++              "katanas": 0,
++              "labouring": 0,
++              "lockpicking": 0,
++              "martialarts": 0,
++              "masscombat": 0,
++              "medic": 0,
++              "melee_attack": 0,
++              "melee_defence": 0,
++              "perception": 0,
++              "polearms": 0,
++              "robotics": 0,
++              "sabres": 0,
++              "science": 0,
++              "smithing_armour": 0,
++              "smithing_bow": 0,
++              "smithing_weapon": 0,
++              "stealth": 0,
++              "strength": 0,
++              "swimming": 0,
++              "thieving": 0,
++              "toughness": 0,
++              "turrets": 0
++            },
++            "in_something": "nothing",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:1:1001",
++            "being_carried": true
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": -1000000000
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpudWxsLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOm51bGwsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6bnVsbCwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoiY2hhcmFjdGVyIiwiY2FycnlpbmdfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJiYW5kYWdlIjpudWxsLCJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInNwbGludCI6bnVsbCwic3R1biI6MCwid2VhciI6bnVsbH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6Im5vdGhpbmciLCJtZWRpY2FsIjp7ImJsZWVkX3JhdGUiOi0xMDAwMDAwMDAwLCJibG9vZCI6MTAwMDAwMDAwMCwiYmxvb2RfbG9zc190cmF1bWEiOm51bGwsImNvbWEiOnRydWUsImZlZCI6bnVsbCwiaHVuZ2VyIjpudWxsfSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwic2xhdmVfc3RhdGUiOiJleF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MCwiYXRobGV0aWNzIjowLCJibHVudCI6MCwiY29va2luZyI6MCwiY3Jvc3Nib3dzIjowLCJkZXh0ZXJpdHkiOjAsImRvZGdlIjowLCJlbmdpbmVlcmluZyI6MCwiZmFybWluZyI6MCwiZnJpZW5kbHlfZmlyZSI6MCwiaGFja2VycyI6MCwiaGVhdnl3ZWFwb25zIjowLCJrYXRhbmFzIjowLCJsYWJvdXJpbmciOjAsImxvY2twaWNraW5nIjowLCJtYXJ0aWFsYXJ0cyI6MCwibWFzc2NvbWJhdCI6MCwibWVkaWMiOjAsIm1lbGVlX2F0dGFjayI6MCwibWVsZWVfZGVmZW5jZSI6MCwicGVyY2VwdGlvbiI6MCwicG9sZWFybXMiOjAsInJvYm90aWNzIjowLCJzYWJyZXMiOjAsInNjaWVuY2UiOjAsInNtaXRoaW5nX2FybW91ciI6MCwic21pdGhpbmdfYm93IjowLCJzbWl0aGluZ193ZWFwb24iOjAsInN0ZWFsdGgiOjAsInN0cmVuZ3RoIjowLCJzd2ltbWluZyI6MCwidGhpZXZpbmciOjAsInRvdWdobmVzcyI6MCwidHVycmV0cyI6MH0sInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC40Iiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwibW9uZXkiOi0xMDAwMDAwMDAwLCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
++      "expected_sha256": "f17fce9a40f59dc51a737d632cba9147e5d206fa30aa714a84b74154c2d2fb52"
+     }
+   ]
+ }
+diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
+index 851fe462..90f541e4 100644
+--- a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
+@@ -9,7 +9,7 @@ namespace Meitou.Tests.Oracle;
+ public class OracleCanonicalJsonTests
+ {
+     // SHA-256 of the fixture with CRLF normalised to LF, so checkouts with either line ending agree.
+-    const string VectorHash = "06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170";
++    const string VectorHash = "cd935563cb97f247ca7021a6bc1215d76bf21c01382e8d544783e4c138447f63";
+ 
+     static string VectorPath([CallerFilePath] string source = "") => Environment.GetEnvironmentVariable("KENSHI_ORACLE_VECTORS")
+         ?? Path.Combine(Path.GetDirectoryName(source)!, "Fixtures", "canonical-vectors.json");
+@@ -90,6 +90,40 @@ public class OracleCanonicalJsonTests
+         Assert.Throws<System.Text.Json.JsonException>(() => OracleCanonicalJson.Serialize(state));
+     }
+ 
++    [Fact]
++    public void State_04_is_canonicalised_like_03()
++    {
++        // A 0.4 copy of case 0: rows and health parts still sort, nested 0.4 objects order their keys, duplicates still fail.
++        var document = JsonNode.Parse(File.ReadAllBytes(VectorPath()))!;
++        var state = document["cases"]![0]!["input"]!.DeepClone();
++        state["schema_version"] = "0.4";
++        foreach (var row in state["characters"]!.AsArray())
++        {
++            row!["slave_owner_faction_id"] = null; row["slave_state"] = "not_slave";
++            row["medical"] = new JsonObject { ["hunger"] = 2.25, ["blood"] = 80, ["fed"] = 0, ["bleed_rate"] = null, ["coma"] = false, ["blood_loss_trauma"] = false };
++            row["stats"] = new JsonObject { ["strength"] = 12.5, ["dexterity"] = 1 };
++            row["in_something"] = "nothing"; row["carrying"] = "nothing"; row["carrying_id"] = null; row["being_carried"] = false;
++            foreach (var part in row["health"]!.AsArray()) { part!["bandage"] = 0; part["splint"] = 0; part["wear"] = 0; }
++            row["health"]!.AsArray().Add(new JsonObject { ["id"] = "fixture-a-first:neither", ["current"] = 1, ["stun"] = 0, ["maximum"] = 1,
++                ["wear"] = 0.5, ["splint"] = null, ["bandage"] = 2 });
++        }
++        state["squads"]![0]!["money"] = 1234;
++        byte[] sorted = OracleCanonicalJson.Serialize(state);
++        var reversed = state.DeepClone();
++        var characters = reversed["characters"]!.AsArray().Select(row => row!.DeepClone()).Reverse().ToArray();
++        reversed["characters"]!.AsArray().Clear();
++        foreach (var row in characters) reversed["characters"]!.AsArray().Add(row);
++        Assert.Equal(sorted, OracleCanonicalJson.Serialize(reversed));
++        string text = Encoding.UTF8.GetString(sorted);
++        Assert.Contains("\"health\":[{\"bandage\":2,\"current\":1,\"id\":\"fixture-a-first:neither\",\"maximum\":1,\"splint\":null,\"stun\":0,\"wear\":0.5}", text);
++        Assert.Contains("\"medical\":{\"bleed_rate\":null,\"blood\":80,\"blood_loss_trauma\":false,\"coma\":false,\"fed\":0,\"hunger\":2.25}", text);
++        Assert.Contains("\"leader_id\":\"hand:1:7:101:1:1001\",\"members\":", text);
++        Assert.Contains("\"members\":[\"hand:1:7:101:1:1001\",\"hand:1:7:101:2:1002\"],\"money\":1234}", text);
++        Assert.Contains("\"stats\":{\"dexterity\":1,\"strength\":12.5}", text);
++        state["characters"]!.AsArray().Add(state["characters"]![0]!.DeepClone());
++        Assert.Throws<System.Text.Json.JsonException>(() => OracleCanonicalJson.Serialize(state));
++    }
++
+     [Fact]
+     public void Float_is_promoted_to_binary64_before_quantisation()
+     {
+diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+index b0b30342..7c4f60af 100644
+--- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+@@ -99,8 +99,9 @@ public class OracleSetupTests
+         var ping = OracleSetupPolicy.PingIdentity();
+         Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
+         Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
+-        Assert.Equal("0.2", ping["state_schema_version"]!.GetValue<string>());
+-        Assert.Equal(["0.1", "0.2", "0.3"], ping["supported_schema_versions"]!.AsArray().Select(v => v!.GetValue<string>()));
++        Assert.Equal("0.4", ping["state_schema_version"]!.GetValue<string>());
++        Assert.Equal("0.4", ping["schema_version"]!.GetValue<string>());
++        Assert.Equal(["0.1", "0.2", "0.3", "0.4"], ping["supported_schema_versions"]!.AsArray().Select(v => v!.GetValue<string>()));
+         Assert.Equal(["scene_setup"], ping["capabilities"]!.AsArray().Select(c => c!.GetValue<string>()));
+     }
+ 
+diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+index a25ece43..21d8e80d 100644
+--- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+@@ -1,10 +1,12 @@
+ using System.Numerics;
++using System.Security.Cryptography;
+ using System.Text;
+ using System.Text.Json;
+ using System.Text.Json.Nodes;
+ using Meitou.Data;
+ using Meitou.Data.Fcs;
+ using Meitou.Data.Gameplay;
++using Meitou.Data.Gameplay.Ai;
+ using Meitou.Data.Gameplay.Bodies;
+ using Meitou.Data.Save;
+ using Meitou.Engine;
+@@ -12,6 +14,7 @@ using Meitou.Engine.Time;
+ using Meitou.Game.Oracle;
+ using Meitou.Simulation;
+ using Meitou.Simulation.Bodies;
++using Meitou.Simulation.Locks;
+ using Meitou.Simulation.Saving;
+ 
+ namespace Meitou.Tests.Oracle;
+@@ -38,6 +41,49 @@ public class OracleStateTests
+         return new SavedCharacterLink { Source = character, PlatoonName = platoon.Name, Slot = 10 };
+     }
+ 
++    /// <summary>
++    /// A world holding every value state 0.4 reads (medical, part treatment, stats, a bed, a carry and a running treatment, squad money), so the
++    /// 0.1 to 0.3 pins below prove those versions ignore all of it.
++    /// </summary>
++    static (CharacterId Medic, CharacterId Patient) Rich(WorldSession session)
++    {
++        var saved = Saved();
++        static MedicalState Body(float flesh) => new([
++            new HealthPart(new BodyPartTemplate { StringId = "fixture-head" }, 1, 100) { Flesh = flesh, Stun = 5, Bandage = 12.5f, Rig = 3, Wear = 7 },
++            new HealthPart(new BodyPartTemplate { StringId = "fixture-leg", CollapsePart = 4 }, 1, 80) { Flesh = 60, Bandage = 0.25f },
++        ]) { Blood = 80.5f, Hunger = 2.25f, Fed = 0.5f };
++        var stats = new CharacterStats();
++        stats[StatsEnumerated.Strength] = 12.5f; stats[StatsEnumerated.Medic] = 40; stats[StatsEnumerated.SmithingBow] = 3;
++        var patientCold = new CharacterCold { Name = "Patient", SquadId = 4, Faction = 1, Medical = Body(-20), InSomething = HeldState.Bed };
++        var patient = session.World.Characters.Spawn(new CharacterHot { Position = new Vector3(4, 5, 6) }, patientCold, 0);
++        var medicCold = new CharacterCold
++        {
++            Name = "Medic", Save = saved, SquadId = 4, Faction = 1, Medical = Body(40), Stats = stats, SlaveState = 1, SlaveOwner = 0,
++            Carrying = patient, TreatTarget = patient,
++            Running = new RunningTask(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, TaskSource.Order, -1, patient, null, 0),
++        };
++        var medic = session.World.Characters.Spawn(new CharacterHot { Position = new Vector3(1, 2, 3), Task = (byte)CharacterTask.Treat }, medicCold, 0);
++        patientCold.CarriedBy = medic;
++        var squad = new Squad { Id = 4, TemplateId = "fixture-template", SaveName = saved.Source.Platoon.Name, Faction = 1, Leader = medic, Money = 1234 };
++        squad.Members.Add(medic); squad.Members.Add(patient); session.World.Squads.Add(squad);
++        return (medic, patient);
++    }
++
++    [Fact]
++    public void Schema_01_to_03_bytes_are_pinned_on_a_world_holding_every_04_value()
++    {
++        // Pinned on cd5a194d (patch 0006) before the 0.4 projection existed: 0.4 must leave these bytes, the order included, untouched.
++        using var session = Session();
++        Rich(session);
++        var projection = new OracleState();
++        string Hash(string version) => Convert.ToHexStringLower(SHA256.HashData(OracleCanonicalJson.Serialize(projection.Capture(session, Data(), version))));
++        Assert.Equal("8462f3099effd6426e2b56b8960faecf0f6c1d0471b7cf835698b7577ab8485f", Hash("0.1"));
++        Assert.Equal("49cb4e22b82244dc3c4576f9a7cf1b23c985e208b4d3cfd6f9804d0708a7c2c5", Hash("0.2"));
++        Assert.Equal("b550d9deb2a29d0ecc351313b2bc4dfbcf4378f5af22f71cf4d368016ae0aee4", Hash("0.3"));
++        foreach (string version in new[] { "0.1", "0.2", "0.3" })
++            foreach (var row in projection.Capture(session, Data(), version)["characters"]!.AsArray()) Assert.Null(row!["order"]);
++    }
++
+     [Fact]
+     public void Full_saved_hand_uses_all_unsigned_component_bits()
+     {
+@@ -197,7 +243,8 @@ public class OracleStateTests
+             "identity_origin", "current_town_id", "town_assignment", "in_combat"], v02["characters"]![0]!.AsObject().Select(pair => pair.Key));
+         Assert.Equal(["id", "faction_id", "members", "leader_id", "identity_origin", "template_id", "origin_town_id"],
+             v02["squads"]![0]!.AsObject().Select(pair => pair.Key));
+-        Assert.Equal(v02.ToJsonString(), projection.Capture(session, Data()).ToJsonString());
++        Assert.Equal(v02.ToJsonString(), projection.Capture(session, Data(), "0.2").ToJsonString());
++        Assert.Equal("0.4", projection.Capture(session, Data())["schema_version"]!.GetValue<string>());
+         var v03 = projection.Capture(session, Data(), "0.3");
+         string canonical03 = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(v03));
+         // Canonical scalar key order places the new keys between race_id and squad_id.
+@@ -206,7 +253,187 @@ public class OracleStateTests
+         stripped["schema_version"] = "0.2";
+         foreach (var row in stripped["characters"]!.AsArray()) { row!.AsObject().Remove("slave_state"); row.AsObject().Remove("slave_owner_faction_id"); }
+         Assert.Equal(OracleCanonicalJson.Serialize(v02), OracleCanonicalJson.Serialize(stripped));
+-        Assert.Throws<ArgumentException>(() => projection.Capture(session, Data(), "0.4"));
++        Assert.Throws<ArgumentException>(() => projection.Capture(session, Data(), "0.5"));
++    }
++
++    static void SetPrivate(object target, string property, object value) =>
++        target.GetType().GetProperty(property)!.SetValue(target, value);
++
++    [Fact]
++    public void Schema_04_projects_medical_treatment_stats_holds_carries_and_money_and_keeps_the_state_hash()
++    {
++        using var session = Session();
++        var (medic, patient) = Rich(session);
++        var medical = session.World.Characters.Cold(medic.Slot)!.Medical!;
++        SetPrivate(medical, nameof(MedicalState.Bleeding), 1.75f);
++        SetPrivate(medical, nameof(MedicalState.Coma), true);
++        ulong before = session.World.StateHash();
++        long tick = session.World.Tick;
++        var projection = new OracleState();
++        var state = projection.Capture(session, Data(), "0.4");
++        Assert.Equal(before, session.World.StateHash());
++        Assert.Equal(tick, session.World.Tick);
++        Assert.Equal("0.4", state["schema_version"]!.GetValue<string>());
++        JsonNode Row(string name) => state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!;
++        string medicId = projection.CharacterIdentity(medic)!, patientId = projection.CharacterIdentity(patient)!;
++        var m = Row("Medic");
++        Assert.Equal(80.5, m["medical"]!["blood"]!.GetValue<double>());
++        Assert.Equal(1.75, m["medical"]!["bleed_rate"]!.GetValue<double>());
++        Assert.Equal(2.25, m["medical"]!["hunger"]!.GetValue<double>());
++        Assert.Equal(0.5, m["medical"]!["fed"]!.GetValue<double>());
++        Assert.True(m["medical"]!["coma"]!.GetValue<bool>());
++        Assert.False(m["medical"]!["blood_loss_trauma"]!.GetValue<bool>());
++        Assert.Equal(["blood", "bleed_rate", "hunger", "fed", "coma", "blood_loss_trauma"], m["medical"]!.AsObject().Select(p => p.Key));
++        var head = m["health"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "fixture-head:neither")!;
++        Assert.Equal(12.5, head["bandage"]!.GetValue<double>());
++        Assert.Equal(3, head["splint"]!.GetValue<double>());
++        Assert.Equal(7, head["wear"]!.GetValue<double>());
++        Assert.Equal(93, head["maximum"]!.GetValue<double>());
++        var leg = m["health"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "fixture-leg:left")!;
++        Assert.Equal(0.25, leg["bandage"]!.GetValue<double>()); Assert.Equal(0, leg["splint"]!.GetValue<double>()); Assert.Equal(0, leg["wear"]!.GetValue<double>());
++        // Exactly the 34 stored stats in stat number order: no HIVEMEDIC, VET, WEAPONS or SURVIVAL key.
++        Assert.Equal(["strength", "melee_attack", "labouring", "science", "engineering", "robotics", "smithing_weapon", "smithing_armour", "medic",
++            "thieving", "turrets", "farming", "cooking", "stealth", "athletics", "dexterity", "melee_defence", "toughness", "assassination", "swimming",
++            "perception", "katanas", "sabres", "hackers", "heavyweapons", "blunt", "martialarts", "masscombat", "dodge", "polearms", "crossbows",
++            "friendly_fire", "lockpicking", "smithing_bow"], m["stats"]!.AsObject().Select(p => p.Key));
++        Assert.Equal(12.5, m["stats"]!["strength"]!.GetValue<double>());
++        Assert.Equal(40, m["stats"]!["medic"]!.GetValue<double>());
++        Assert.Equal(3, m["stats"]!["smithing_bow"]!.GetValue<double>());
++        Assert.Equal(0, m["stats"]!["masscombat"]!.GetValue<double>());
++        Assert.Equal(1, m["stats"]!["katanas"]!.GetValue<double>());
++        Assert.Equal("nothing", m["in_something"]!.GetValue<string>());
++        Assert.Equal("character", m["carrying"]!.GetValue<string>());
++        Assert.Equal(patientId, m["carrying_id"]!.GetValue<string>());
++        Assert.False(m["being_carried"]!.GetValue<bool>());
++        var p = Row("Patient");
++        Assert.Null(p["stats"]);
++        Assert.Equal("bed", p["in_something"]!.GetValue<string>());
++        Assert.Equal("nothing", p["carrying"]!.GetValue<string>());
++        Assert.Null(p["carrying_id"]);
++        Assert.True(p["being_carried"]!.GetValue<bool>());
++        Assert.Equal(1234, state["squads"]![0]!["money"]!.GetValue<long>());
++        Assert.Equal(medicId, state["squads"]![0]!["leader_id"]!.GetValue<string>());
++        Assert.Equal("first_aid_order", m["order"]!["type"]!.GetValue<string>());
++        Assert.Equal(patientId, m["order"]!["target_id"]!.GetValue<string>());
++        Assert.Null(m["order"]!["position"]);
++        Assert.Null(p["order"]);
++        // The 0.3 fields stay in 0.4.
++        Assert.Equal("slave", m["slave_state"]!.GetValue<string>());
++        Assert.Equal("b", m["slave_owner_faction_id"]!.GetValue<string>());
++        string canonical = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(state));
++        Assert.Contains("\"bandage\":12.5,\"current\":40,\"id\":\"fixture-head:neither\",\"maximum\":93,\"splint\":3,\"stun\":5,\"wear\":7}", canonical);
++        Assert.Contains("\"medical\":{\"bleed_rate\":1.75,\"blood\":80.5,\"blood_loss_trauma\":false,\"coma\":true,\"fed\":0.5,\"hunger\":2.25}", canonical);
++    }
++
++    [Fact]
++    public void Schema_04_unknowns_are_null_never_zero_false_or_nothing()
++    {
++        using var session = Session();
++        // No medical system, no stats, an unmapped hold state and a carried character outside the census.
++        var gone = session.World.Characters.Spawn(new CharacterHot(), new CharacterCold { Name = "gone" }, 0);
++        session.World.Characters.Remove(gone);
++        session.World.Characters.Spawn(new CharacterHot(), new CharacterCold { Name = "bare", InSomething = (HeldState)7, Carrying = gone }, 0);
++        var medical = new MedicalState([new HealthPart(new BodyPartTemplate { StringId = "fixture-head" }, 1, 100) { Bandage = float.NaN, Wear = 2e9f }])
++            { Blood = float.PositiveInfinity, Hunger = float.NaN };
++        SetPrivate(medical, nameof(MedicalState.BloodKo), true);
++        var stats = new CharacterStats(); stats[StatsEnumerated.Toughness] = float.NaN; stats[StatsEnumerated.Dodge] = 3e9f;
++        session.World.Characters.Spawn(new CharacterHot(), new CharacterCold { Name = "odd", Medical = medical, Stats = stats }, 0);
++        var squad = new Squad { Id = 9, TemplateId = "fixture-template", Money = 2_000_000_000 };
++        session.World.Squads.Add(squad);
++        session.World.Squads.Add(new Squad { Id = 10, TemplateId = "fixture-template", Money = -1_000_000_000 });
++        var state = new OracleState().Capture(session, Data(), "0.4");
++        JsonNode Row(string name) => state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!;
++        var bare = Row("bare");
++        foreach (string key in new[] { "medical", "health", "stats", "in_something", "carrying", "carrying_id", "order" })
++        {
++            Assert.True(bare.AsObject().ContainsKey(key), key);
++            Assert.Null(bare[key]);
++        }
++        Assert.False(bare["being_carried"]!.GetValue<bool>());
++        var odd = Row("odd");
++        Assert.Null(odd["medical"]!["blood"]); Assert.Null(odd["medical"]!["hunger"]);
++        Assert.Equal(0, odd["medical"]!["bleed_rate"]!.GetValue<double>());
++        Assert.True(odd["medical"]!["blood_loss_trauma"]!.GetValue<bool>());
++        Assert.Null(odd["health"]![0]!["bandage"]); Assert.Null(odd["health"]![0]!["wear"]);
++        Assert.Equal(0, odd["health"]![0]!["splint"]!.GetValue<double>());
++        Assert.Null(odd["stats"]!["toughness"]); Assert.Null(odd["stats"]!["dodge"]);
++        Assert.Equal(34, odd["stats"]!.AsObject().Count);
++        Assert.Equal("nothing", odd["in_something"]!.GetValue<string>());
++        Assert.Equal("nothing", odd["carrying"]!.GetValue<string>());
++        var moneys = state["squads"]!.AsArray().Select(s => s!["money"]?.GetValue<long>()).ToArray();
++        Assert.Contains(null, moneys); Assert.Contains(-1_000_000_000L, moneys);
++        Assert.Equal(2, moneys.Length);
++        // Every 0.4 key is present on every row; none is present before 0.4.
++        string[] keys04 = ["medical", "stats", "in_something", "carrying", "carrying_id", "being_carried"];
++        foreach (var row in state["characters"]!.AsArray())
++            foreach (string key in keys04) Assert.True(row!.AsObject().ContainsKey(key), key);
++        var v03 = new OracleState().Capture(session, Data(), "0.3");
++        foreach (var row in v03["characters"]!.AsArray())
++            foreach (string key in keys04) Assert.False(row!.AsObject().ContainsKey(key), key);
++        Assert.False(v03["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "odd")!["health"]![0]!.AsObject().ContainsKey("bandage"));
++        Assert.All(v03["squads"]!.AsArray(), s => Assert.False(s!.AsObject().ContainsKey("money")));
++    }
++
++    [Theory]
++    [InlineData(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, CharacterTask.Treat, "first_aid_order", true)]
++    [InlineData(CharacterTask.GoTo, TaskType.MOVE_CUS_ORDERED, CharacterTask.GoTo, "move_cus_ordered", false)]
++    [InlineData(CharacterTask.Treat, TaskType.SPLINT_ORDER, CharacterTask.Treat, "splint_order", true)]
++    // Task_Blank goal rows: an attack's goal (16), the medic job (58) and the splint job (250) are no order.
++    [InlineData(CharacterTask.Attack, TaskType.ATTACK_ENEMIES, CharacterTask.Attack, null, true)]
++    [InlineData(CharacterTask.Treat, TaskType.JOB_MEDIC, CharacterTask.Treat, null, true)]
++    [InlineData(CharacterTask.Treat, TaskType.SPLINT_JOB, CharacterTask.Treat, null, true)]
++    // A stale provenance (the character runs another task now) and row 0 are no order.
++    [InlineData(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, CharacterTask.Idle, null, true)]
++    [InlineData(CharacterTask.GoTo, TaskType.None, CharacterTask.GoTo, null, false)]
++    // 289 and 290 have no Meitou enum name, but the native table names them by number.
++    [InlineData(CharacterTask.Follow, TaskType.Unnamed289, CharacterTask.Follow, "stay_close_to_target_animal", true)]
++    public void Schema_04_order_is_the_running_task_row_by_native_name(CharacterTask running, TaskType taskRow, CharacterTask now, string? expected, bool targeted)
++    {
++        using var session = Session();
++        var target = session.World.Characters.Spawn(new CharacterHot(), new CharacterCold { Name = "target" }, 0);
++        var cold = new CharacterCold { Name = "actor", Running = new RunningTask(running, taskRow, TaskSource.Order, -1, targeted ? target : CharacterId.None, null, 0) };
++        session.World.Characters.Spawn(new CharacterHot { Task = (byte)now }, cold, 0);
++        ulong before = session.World.StateHash();
++        var projection = new OracleState();
++        var state = projection.Capture(session, Data(), "0.4");
++        Assert.Equal(before, session.World.StateHash());
++        var row = state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "actor")!;
++        if (expected is null) { Assert.True(row.AsObject().ContainsKey("order")); Assert.Null(row["order"]); }
++        else
++        {
++            Assert.Equal(["type", "target_id", "position"], row["order"]!.AsObject().Select(p => p.Key));
++            Assert.Equal(expected, row["order"]!["type"]!.GetValue<string>());
++            Assert.Equal(targeted ? projection.CharacterIdentity(target) : null, row["order"]!["target_id"]?.GetValue<string>());
++            Assert.Null(row["order"]!["position"]);
++        }
++        Assert.Null(state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "target")!["order"]);
++        Assert.All(projection.Capture(session, Data(), "0.3")["characters"]!.AsArray(), r => Assert.Null(r!["order"]));
++    }
++
++    [Fact]
++    public void Schema_04_order_target_outside_the_census_is_null_and_no_running_task_is_no_order()
++    {
++        using var session = Session();
++        var gone = session.World.Characters.Spawn(new CharacterHot(), new CharacterCold(), 0);
++        session.World.Characters.Remove(gone);
++        session.World.Characters.Spawn(new CharacterHot { Task = (byte)CharacterTask.Treat }, new CharacterCold { Name = "medic",
++            Running = new RunningTask(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, TaskSource.Order, -1, gone, null, 0) }, 0);
++        session.World.Characters.Spawn(new CharacterHot { Task = (byte)CharacterTask.GoTo }, new CharacterCold { Name = "walker" }, 0);
++        var state = new OracleState().Capture(session, Data(), "0.4");
++        JsonNode Row(string name) => state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!;
++        Assert.Equal("first_aid_order", Row("medic")["order"]!["type"]!.GetValue<string>());
++        Assert.Null(Row("medic")["order"]!["target_id"]);
++        Assert.Null(Row("walker")["order"]);
++    }
++
++    [Fact]
++    public void Task_blank_rows_are_the_147_documented_goals()
++    {
++        Assert.Equal(147, OracleState.TaskBlankRows.Count);
++        Assert.All(OracleState.TaskBlankRows, row => Assert.InRange(row, 1, 290));
++        Assert.Contains((int)TaskType.ATTACK_ENEMIES, OracleState.TaskBlankRows);
++        Assert.DoesNotContain((int)TaskType.FIRST_AID_ORDER, OracleState.TaskBlankRows);
++        Assert.DoesNotContain((int)TaskType.MOVE_CUS_ORDERED, OracleState.TaskBlankRows);
+     }
+ 
+     [Fact]
+diff --git a/tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs b/tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs
+new file mode 100644
+index 00000000..33cbca5f
+--- /dev/null
++++ b/tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs
+@@ -0,0 +1,42 @@
++using Meitou.Data.Gameplay.Ai;
++using Meitou.Game.Oracle;
++
++namespace Meitou.Tests.Oracle;
++
++public class OracleTaskNamesTests
++{
++    // Rows where Meitou's TaskType symbol is not the KenshiLib symbol the native table names: 0 (None / NULL_TASK, no order),
++    // 38, 52, 65, 223 and 245 (renamed symbols) and 289, 290 (Meitou's Unnamed289/Unnamed290).
++    static readonly int[] KnownDifferences = [0, 38, 52, 65, 223, 245, 289, 290];
++
++    [Fact]
++    public void Table_has_291_rows_and_names_every_row_but_null_task()
++    {
++        Assert.Equal(291, OracleTaskNames.Count);
++        Assert.Null(OracleTaskNames.Of(0));
++        Assert.Null(OracleTaskNames.Of(-1));
++        Assert.Null(OracleTaskNames.Of(291));
++        var names = Enumerable.Range(1, 290).Select(OracleTaskNames.Of).ToArray();
++        Assert.All(names, name => Assert.Matches("^[a-z_][a-z0-9_]*$", name!));
++        Assert.Equal(names.Length, names.Distinct(StringComparer.Ordinal).Count());
++    }
++
++    [Fact]
++    public void Table_agrees_with_the_meitou_enum_numbering_except_the_known_renames()
++    {
++        // Meitou's TaskType has the same numbers (0 to 290) as KenshiLib's enum; where the symbols agree, the native name is the symbol lowercased.
++        Assert.Equal(Enumerable.Range(0, 291), Enum.GetValues<TaskType>().Select(t => (int)t).Order());
++        var differences = Enumerable.Range(0, 291)
++            .Where(row => OracleTaskNames.Of(row) != ((TaskType)row).ToString().ToLowerInvariant()).ToArray();
++        Assert.Equal(KnownDifferences, differences);
++        Assert.Equal("stand_at_guard_node_homebuilding_in_out", OracleTaskNames.Of(38));
++        Assert.Equal("get_up_stay_down_though", OracleTaskNames.Of(52));
++        Assert.Equal("get_up_stand_up", OracleTaskNames.Of(65));
++        Assert.Equal("pickup_intruders_building", OracleTaskNames.Of(223));
++        Assert.Equal("gather_prisoners_from_cages_if_female_or_beast", OracleTaskNames.Of(245));
++        Assert.Equal("stay_close_to_target_animal", OracleTaskNames.Of(289));
++        Assert.Equal("bash_gate_player_order", OracleTaskNames.Of(290));
++        Assert.Equal("first_aid_order", OracleTaskNames.Of((int)TaskType.FIRST_AID_ORDER));
++        Assert.Equal("move_cus_ordered", OracleTaskNames.Of((int)TaskType.MOVE_CUS_ORDERED));
++    }
++}

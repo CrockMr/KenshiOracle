@@ -1,10 +1,10 @@
 # MeitouClient Oracle patch series
 
 This directory makes the Meitou adapter reproducible without distributing a
-Meitou binary or relying on an unpublished fork. Apply the six patches, in
+Meitou binary or relying on an unpublished fork. Apply the seven patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `cd5a194dc9013ec8a81d1b339686bda649e3cc5f`;
+correspond to the local fork tip `efc2eb2ac630b25d3c35f8d251976e96e730d0d9`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -19,6 +19,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `893114dec3a8543ade4147fb8f2f4040ac4cf365` |
 | 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `5ab88d9a8960e75241965c1e48b3760544db264e` |
 | 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5a194dc9013ec8a81d1b339686bda649e3cc5f` |
+| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `efc2eb2ac630b25d3c35f8d251976e96e730d0d9` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -43,6 +44,19 @@ same-character comparison; whether 125 comes from base HP, multiplier or scale
 is **Unknown**. Wear, prosthetics, robots, and multiplier or scale changes
 after load are **Unknown**. See [state coverage](../../docs/state-coverage.md).
 
+Patch 7 adds [state 0.4](../../docs/state-coverage.md#extension-additive-04)
+and makes it the default dump schema; 0.1 to 0.3 output is unchanged, `order`
+included (pinned by test). In 0.4, `order` is projected from the character's
+task provenance (`CharacterCold.Running`) while it runs the current task, by
+row number through a copy of the native probe's task names (KenshiLib
+`TaskType` order, 291 rows; Meitou's own symbols differ at rows 0, 38, 52, 65,
+223, 245, 289 and 290), never through the Meitou enum's spelling. Goal rows that
+the original's task factory builds as `Task_Blank` (147 rows, from MeitouClient's
+`docs/game/ai-tasks.md`) give `null`: the original's body reports the immediate
+task under a goal, so an attack (Meitou row 16) is not expected to match the
+original's immediate task. `position` stays `null`. Which of these orders match
+the original in game is **Unknown**: no live campaign has run on this patch.
+
 ## Apply and build
 
 Use a separate checkout beside this KenshiOracle checkout. MeitouClient's
@@ -64,7 +78,7 @@ same `git switch` line; your old branch stays as a backup. Then, in either case:
 ```powershell
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
 $Series = "$OracleRoot/integrations/meitou"
-git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch"
+git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch"
 dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
 dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
@@ -74,7 +88,7 @@ Build from a clean Git checkout: `build_commit` is the full commit only when
 the comparator refuses for campaigns.
 
 **Verified:** in a scratch clone at upstream `88ae71a1`, `git am` applied the
-six patches cleanly with `core.autocrlf=false` and with `core.autocrlf=true`;
+seven patches cleanly with `core.autocrlf=false` and with `core.autocrlf=true`;
 both times the resulting tree equalled the fork tip's tree (compared with
 `git rev-parse HEAD^{tree}`).
 This checks source reproduction, not a live campaign.
@@ -85,24 +99,31 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `cd5a194d` on `88ae71a1`, in the fork's own checkout
+**Verified** at fork tip `efc2eb2a` on `88ae71a1`, in the fork's own checkout
 (whose tree equals the `git am` result above), with SDK 10.0.403:
 - The Release build had 0 warnings and 0 errors.
-- The quick suite (`Category!=Slow&Category!=Bench`) had 926 passes and 0
-  failures (3 skipped).
-- The focused Oracle/camera tests (the filter above) passed 152 of 152; with
-  `GoldenHashTests` and `DeterminismTests` added, the Oracle filter passed 172
-  of 172. The golden hashes are unchanged, and tests of patches 5 and 6 check
-  that the capture leaves `World.StateHash()` unchanged.
+- The quick suite (`Category!=Slow&Category!=Bench`) had 947 passes and 0
+  failures (3 skipped); it had 926 passes and 0 failures (3 skipped) at the
+  patch 6 tip `cd5a194d`.
+- At the patch 6 tip `cd5a194d`, the focused Oracle/camera tests (the filter
+  above) passed 152 of 152; with `GoldenHashTests` and `DeterminismTests`
+  added, the Oracle filter passed 172 of 172. The golden hashes are unchanged,
+  and tests of patches 5, 6 and 7 check that the capture leaves
+  `World.StateHash()` unchanged.
 - At the earlier tip `da2b35b4` of patch 6 (before the shared 0.3 vectors were
   copied in), a first quick-suite run had 2 failures outside the adapter
   (`AiTests` and `ConstructionTests`, one a missing shared `%TEMP%` save
   folder); both passed alone and in a complete rerun. Treat them as
   environment-sensitive; they were not reproduced on `cd5a194d`.
-- The complete suite, the run with `KENSHI_ORACLE_VECTORS`, the start without
-  `--oracle` and a quick city run were not repeated on this base; the last such
-  evidence is for the `100c6cae` series (see the
-  [maintenance guide](../../docs/maintenance.md)).
+- The complete suite (Slow and Bench included) had 1094 passes, 13 failures
+  and 25 skipped at `efc2eb2a`, and 1072 passes, 14 failures and 25 skipped at
+  `cd5a194d`, run one after the other on the same machine. The 13 failures are
+  the same tests on both (GPU, texture, interface, navmesh, distant-mesh,
+  particle and one kidnap test, none in the adapter); the extra failure at
+  `cd5a194d` is the timing test named below. Patch 7 adds no failure.
+- The run with `KENSHI_ORACLE_VECTORS`, the start without `--oracle` and a
+  quick city run were not repeated on this base; the last such evidence is for
+  the `100c6cae` series (see the [maintenance guide](../../docs/maintenance.md)).
 
 **Observed:** the timing test
 `OracleServerTests.A_host_timeout_cancels_queued_work_and_late_completion_cannot_replace_the_error`
@@ -116,8 +137,8 @@ reproduce every environmental result. See the
 
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
 (fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
-**Unknown:** patches 5 and 6 in game; no live campaign has run on `5ab88d9a`
-or `cd5a194d`.
+**Unknown:** patches 5 to 7 in game; no live campaign has run on `5ab88d9a`,
+`cd5a194d` or `efc2eb2a`.
 
 ## Scope and maintenance
 
@@ -139,19 +160,20 @@ setup needs (a swap-aware relation setter, a template-squad plan and spawn, a
 paused edit bracket); the fourth adds the `setup_*` commands of the
 [scene-setup contract](../../docs/scene-setup.md), `allow_setup` on
 `load_save`, the ping additions and the `issue_order` refusals; the fifth
-fills `health[].maximum` with the calculated part maximum. Keep these
+fills `health[].maximum` with the calculated part maximum; the sixth and seventh add the
+state 0.3 and 0.4 fields. Keep these
 integration points small when updating upstream; do not copy unrelated
 upstream changes into this series. The shared canonical vectors are synthetic
 fixtures, not game data.
 
 Maintain the branch as a durable fork. Before updating, keep a local backup
 branch, record the old upstream base, then fetch the current upstream and rebase
-the six adapter commits onto the selected upstream commit. Resolve
+the seven adapter commits onto the selected upstream commit. Resolve
 host/lifecycle conflicts explicitly. Build both flag modes, rerun the focused
 tests and shared canonical vectors, and compare any complete-suite failures
 with that same unmodified upstream. Revalidate pause/loading, seed provenance,
 fresh heartbeat, cancellation, restoration and scene setup with local saves
-before claiming compatibility. Export a fresh six-patch series into a
+before claiming compatibility. Export a fresh seven-patch series into a
 temporary directory with `git format-patch -N --no-signature`, review the diff,
 then update the pinned base, source commits, hashes and validation evidence
 here. Do not publish or force-push an upstream repository as part of this
@@ -170,8 +192,8 @@ MeitouClient and this derivative patch series are distributed under
 [additional permission for specified NVIDIA libraries](LICENSE-EXCEPTION.md)
 are preserved verbatim from the pinned upstream commit. The latter permission
 does not cover unrelated non-free dependencies. Upstream work is by the
-MeitouClient contributors; the six modifications were made for KenshiOracle,
-with patches 1-2 committed as KenshiOracle contributors and patches 3-6 as
+MeitouClient contributors; the seven modifications were made for KenshiOracle,
+with patches 1-2 and 7 committed as KenshiOracle contributors and patches 3-6 as
 CrockMr (each patch's `From:` line). No proprietary executable, disassembled listing or decompiled
 game code is included. Upstream dependency notices remain in the separately
 obtained MeitouClient checkout.

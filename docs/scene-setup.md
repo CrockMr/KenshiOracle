@@ -290,7 +290,7 @@ dump.
 | Command | Change |
 | --- | --- |
 | `load_save` | Optional `allow_setup` boolean, default false, echoed in the result. The MCP tool `load_save(..., allow_setup=False)` sends the key only when true. |
-| `ping` | Adds `capabilities:["scene_setup"]`, `world_readiness`, `world_mutated` (boolean), `build_commit`, `state_schema_version` (the producer's default state schema: `"0.2"` in 0.11.0, `"0.3"` for a probe with [state 0.3](state-coverage.md#extension-additive-03)) next to the existing `schema_version`. `plugin_version` is `"0.11.0"` on both engines. |
+| `ping` | Adds `capabilities:["scene_setup"]`, `world_readiness`, `world_mutated` (boolean), `build_commit`, `state_schema_version` (the producer's default state schema: `"0.2"` in 0.11.0, `"0.3"` for a probe with [state 0.3](state-coverage.md#extension-additive-03), `"0.4"` for one with [state 0.4](state-coverage.md#extension-additive-04)) next to the existing `schema_version`. `plugin_version` is `"0.11.0"` on both engines. |
 | `save_scene_snapshot` | Native: while `world_mutated`, refused with `oracle::Error` `not_allowed` / `the world was changed by scene setup; reload it before saving`, checked before the existing `world not ready` refusal; its other texts are unchanged. MeitouClient has no such command and refuses every player save under the oracle. |
 | `issue_order` | Unchanged and id-only; aliases never reach a probe. |
 | `prepare_town_scene`, `prepare_battle_scene` | Unchanged (Q2). |
