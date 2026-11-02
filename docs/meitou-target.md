@@ -151,10 +151,9 @@ Remove-Item Env:KENSHI_ORACLE_VECTORS
 
 The fixture identity is the SHA-256 of its content with CRLF normalized to LF,
 `06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170`, checked by
-KenshiOracle, so CRLF and LF checkouts agree without a Git setting. The C# test
-of patches 0001 to 0005 pins the earlier 62-case identity
-`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`; its
-fixture copy and pin must be refreshed with the state 0.3 adapter before it
-reads this file. The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The
+KenshiOracle, so CRLF and LF checkouts agree without a Git setting. Patch 0006
+carries the same 65-case fixture copy and pins this identity in its C# test;
+series before it pin the earlier 62-case identity
+`d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`. The exact name read by tests is `KENSHI_ORACLE_VECTORS`. The
 65 cases include the 59 historical ones and three state 0.3 cases; selecting another file does not authorize changing
 expected bytes to make a capture pass.

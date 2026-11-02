@@ -1,7 +1,7 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "5ab88d9a8960e75241965c1e48b3760544db264e",
+  "fork_tip": "d3ea90506ca6fc301494731cfda951169bc40977",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
@@ -34,6 +34,12 @@
       "source_commit": "5ab88d9a8960e75241965c1e48b3760544db264e",
       "sha256": "0ad1b6d007624001f4fb2b0dfda5b04c6d09229c9f51b34d3ccfb88434530e53",
       "bytes": 7712
+    },
+    {
+      "file": "0006-slave-state-fields.patch",
+      "source_commit": "d3ea90506ca6fc301494731cfda951169bc40977",
+      "sha256": "f8ae9bd2d7c5cccfdfe380dffcd1402b2310939dd3092fc74cb36c35cc3b0fc1",
+      "bytes": 35031
     }
   ]
 }

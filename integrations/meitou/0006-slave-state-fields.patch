@@ -1,0 +1,616 @@
+From d3ea90506ca6fc301494731cfda951169bc40977 Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 08:32:24 +0100
+Subject: [PATCH] Expose slave state and owner faction in oracle state 0.3
+
+State schema 0.3 is 0.2 plus characters[].slave_state and
+characters[].slave_owner_faction_id; 0.1 and 0.2 output is unchanged.
+CharacterCold.SlaveState 0, 1 and 2 map to not_slave, slave and
+escaping_slave, anything else to null. ex_slave is never emitted:
+SlaveSave loads a saved 3 as free (Verified by code). The owner is
+PopulationData.Factions[SlaveOwner].Id for a valid index, else null;
+SlaveSave reads only Meitou's own owner key, not the original's slaver
+handle, so a slave from an original save has no owner (Verified by
+code) and null does not prove there is none.
+
+dump_state, ping's supported_schema_versions and canonical ordering
+accept 0.3. The default dump stays 0.2, as does ping's
+state_schema_version; the runner sends the negotiated version, and the
+identity-only captures discard their output.
+
+The capture stays read-only; tests pin slave, escaping slave without
+owner, free, an out-of-range owner and a raw 3, the unchanged state hash,
+the exact 0.2 keys and 0.3 canonical ordering. The shared canonical
+fixture is unchanged until the public vectors gain 0.3 cases.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/oracle.md                                |  19 +-
+ src/Meitou.Game/GameHost.Oracle.cs            |   2 +-
+ src/Meitou.Game/GameHost.OracleSetup.cs       |   2 +-
+ src/Meitou.Game/Oracle/OracleCanonicalJson.cs |   2 +-
+ src/Meitou.Game/Oracle/OracleState.cs         |  13 +-
+ tests/Meitou.Tests/Oracle/Fixtures/README.md  |   5 +-
+ .../Oracle/Fixtures/canonical-vectors.json    | 285 ++++++++++++++++++
+ .../Oracle/OracleCanonicalJsonTests.cs        |  28 +-
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs |   1 +
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs |  66 ++++
+ 10 files changed, 412 insertions(+), 11 deletions(-)
+
+diff --git a/docs/oracle.md b/docs/oracle.md
+index 6b44138d..cf6972dd 100644
+--- a/docs/oracle.md
++++ b/docs/oracle.md
+@@ -61,7 +61,8 @@ return `not_implemented`.
+ 
+ Ping's `plugin_version` is `OracleProtocol.AdapterVersion` (0.11.0, the
+ KenshiOracle protocol release implemented). Ping also reports
+-`capabilities:["scene_setup"]`, `state_schema_version:"0.2"`,
++`capabilities:["scene_setup"]`, `state_schema_version:"0.2"` (the default
++dump schema), `supported_schema_versions:["0.1","0.2","0.3"]`,
+ `world_readiness`, `world_mutated` and `build_commit`: the full 40-hex commit
+ from the assembly metadata `OracleBuildCommit` (`git rev-parse HEAD` at build
+ time), or `"unknown"` without git, on a git failure or with uncommitted changes
+@@ -78,7 +79,7 @@ arrival. Loads are asynchronous, end paused, and report readiness through ping.
+ ## State, identities and seed
+ 
+ `dump_state` accepts `filename` and optional `schema_version` (`0.2` default,
+-`0.1` supported). Filenames are constrained to one new JSON file beneath the
++`0.1` and `0.3` supported; the runner sends the version it negotiated). Filenames are constrained to one new JSON file beneath the
+ output folder. The capture requires a ready paused world and no active advance.
+ [`OracleState`](../src/Meitou.Game/Oracle/OracleState.cs) projects loaded
+ characters/squads, factions and directional relations;
+@@ -108,6 +109,20 @@ scale changes after load is **Unknown**. Reading it changes no simulation state
+ (**Verified**, `OracleStateTests`). Template fallbacks on newly created squads
+ also need their own semantic verification.
+ 
++State 0.3 is 0.2 plus two character fields; 0.1 and 0.2 output is unchanged.
++`slave_state` maps `CharacterCold.SlaveState` 0, 1 and 2 to `not_slave`,
++`slave` and `escaping_slave`, any other value to null. `ex_slave` is never
++emitted: `SlaveSave` loads a saved `slavestate` of 3 (or any value outside
++1..2) as 0, so an original ex-slave reads `not_slave` (**Verified** by code).
++`slave_owner_faction_id` is the id of `PopulationData.Factions[SlaveOwner]`
++when `SlaveOwner` is a valid index, else null. `SlaveSave` reads the owner only
++from Meitou's own `meitou slave owner` key, never the original's `slaver`
++handle, so a slave loaded from an original save has a null owner (**Verified**
++by code); null therefore does not prove there is no owner. Shackles, cages and
++prisoner use are not exposed. Reading the fields changes no simulation state or
++state hash (**Verified**, `OracleStateTests`). The shared canonical vectors include
++three 0.3 cases, and `OracleCanonicalJsonTests` also checks a 0.3 copy of case 0.
++
+ In Oracle mode, `--seed` is applied to the in-memory save before `SaveLoader`
+ and its first draws; it replaces the save's stored seed without rewriting that
+ file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
+diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
+index c97604ae..c0b50be1 100644
+--- a/src/Meitou.Game/GameHost.Oracle.cs
++++ b/src/Meitou.Game/GameHost.Oracle.cs
+@@ -213,7 +213,7 @@ sealed partial class GameHost
+         string filename = OracleText(p, "filename", 105);
+         OracleHostPolicy.ValidateFilename(filename);
+         string version = p.TryGetProperty("schema_version", out _) ? OracleText(p, "schema_version", 8) : "0.2";
+-        if (version is not ("0.1" or "0.2")) throw new ArgumentException("unsupported state schema_version");
++        if (version is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("unsupported state schema_version");
+         var state = oracleState!.Capture(session, popData!, version);
+         byte[] bytes = OracleCanonicalJson.Serialize(state);
+         if (bytes.Length > 64 * 1024 * 1024) throw new OracleHostError("state_unavailable", "state exceeds 64 MiB");
+diff --git a/src/Meitou.Game/GameHost.OracleSetup.cs b/src/Meitou.Game/GameHost.OracleSetup.cs
+index ef179b4c..32c9d57f 100644
+--- a/src/Meitou.Game/GameHost.OracleSetup.cs
++++ b/src/Meitou.Game/GameHost.OracleSetup.cs
+@@ -441,7 +441,7 @@ internal static partial class OracleSetupPolicy
+     internal static JsonObject PingIdentity() => new()
+     {
+         ["target"] = "meitou", ["plugin_version"] = OracleProtocol.AdapterVersion, ["game_version"] = "MeitouClient",
+-        ["schema_version"] = "0.2", ["state_schema_version"] = "0.2", ["supported_schema_versions"] = new JsonArray("0.1", "0.2"),
++        ["schema_version"] = "0.2", ["state_schema_version"] = "0.2", ["supported_schema_versions"] = new JsonArray("0.1", "0.2", "0.3"),
+         ["capabilities"] = new JsonArray([.. Capabilities.Select(c => (JsonNode?)c)]),
+     };
+ 
+diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+index 2fa42efb..26155d4d 100644
+--- a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
++++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+@@ -15,7 +15,7 @@ internal static class OracleCanonicalJson
+     {
+         ArgumentNullException.ThrowIfNull(node);
+         var copy = node.DeepClone();
+-        if (copy is JsonObject state && state["schema_version"]?.GetValue<string>() is "0.1" or "0.2")
++        if (copy is JsonObject state && state["schema_version"]?.GetValue<string>() is "0.1" or "0.2" or "0.3")
+             OrderState(state);
+         var output = new StringBuilder();
+         Append(output, copy);
+diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
+index 34d1b67f..30fa6002 100644
+--- a/src/Meitou.Game/Oracle/OracleState.cs
++++ b/src/Meitou.Game/Oracle/OracleState.cs
+@@ -37,7 +37,7 @@ internal sealed class OracleState
+ 
+     internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = "0.2")
+     {
+-        if (schemaVersion is not ("0.1" or "0.2")) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
++        if (schemaVersion is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
+         if (!ReferenceEquals(world, session.World))
+         {
+             world = session.World;
+@@ -120,12 +120,19 @@ internal sealed class OracleState
+                 // A Meitou movement/AI task is not by itself proof of the original TaskType.
+                 ["order"] = null,
+             };
+-            if (schemaVersion == "0.2")
++            if (schemaVersion != "0.1")
+             {
+                 row["identity_origin"] = savedCharacters.Contains(id) ? "saved" : null;
+                 row["current_town_id"] = null; row["town_assignment"] = null;
+                 row["in_combat"] = combat.TryGetValue(id, out bool mode) ? JsonValue.Create(mode) : null;
+             }
++            if (schemaVersion == "0.3")
++            {
++                // Meitou models 0..2 only (SlaveSave loads a saved 3 as free), so ex_slave is never emitted here.
++                row["slave_state"] = cold?.SlaveState switch { 0 => "not_slave", 1 => "slave", 2 => "escaping_slave", _ => null };
++                // The owner faction's index; the original's slaver handle is not loaded, so null does not prove there is no owner.
++                row["slave_owner_faction_id"] = cold is null ? null : Faction(cold.SlaveOwner);
++            }
+             characters.Add(row);
+         }
+         var squadRows = new JsonArray();
+@@ -136,7 +143,7 @@ internal sealed class OracleState
+                          .Select(id => characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
+             var row = new JsonObject { ["id"] = squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
+                 ["leader_id"] = CharacterIdentity(squad.Leader) };
+-            if (schemaVersion == "0.2")
++            if (schemaVersion != "0.1")
+             {
+                 row["identity_origin"] = savedSquads.Contains(squad.Id) ? "saved" : null;
+                 row["template_id"] = KnownId(squad.TemplateId); row["origin_town_id"] = null;
+diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
+index 77cd11ed..08571804 100644
+--- a/tests/Meitou.Tests/Oracle/Fixtures/README.md
++++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
+@@ -1,6 +1,7 @@
+ The JSON is an identical synthetic copy of KenshiOracle `schema/canonical-vectors.json`.
+-SHA256 of the content with CRLF normalised to LF: `d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad`.
++SHA256 of the content with CRLF normalised to LF: `06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170`.
+ Set `KENSHI_ORACLE_VECTORS` to test the shared original directly. The first 59 cases
+ are the phase 1 Python/native numeric, string and nullable-state vectors; three
+-additional cases check scalar key order and additive state 0.2 canonicalisation.
++additional cases check scalar key order and additive state 0.2 canonicalisation,
++and three more check the additive state 0.3 slave fields.
+ Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
+diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
+index 7115229e..f1d6688b 100644
+--- a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
++++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
+@@ -4900,6 +4900,291 @@
+       },
+       "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzdHVuIjowfV0sImlkIjoiaGFuZDoxOjc6MTAxOjI6MTAwMiIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC4yIiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwib3JpZ2luX3Rvd25faWQiOm51bGwsInRlbXBsYXRlX2lkIjoiZml4dHVyZS10ZW1wbGF0ZSJ9XX0K",
+       "expected_sha256": "78c88dadaf32cda8f8f05751f5649dfbe3356bd8273c8e86ac39851bb7cb0c25"
++    },
++    {
++      "name": "additive-state-03",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.3",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "escaping_slave",
++            "slave_owner_faction_id": "fixture-owner"
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": null,
++            "slave_owner_faction_id": null
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLW93bmVyIiwic2xhdmVfc3RhdGUiOiJlc2NhcGluZ19zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzdHVuIjowfV0sImlkIjoiaGFuZDoxOjc6MTAxOjI6MTAwMiIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6bnVsbCwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
++      "expected_sha256": "995f44f73721668ad8c3633b7421460c219a776ff170fb174ea65a0cdc1a0c81"
++    },
++    {
++      "name": "state-03-permutation",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.3",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": null,
++            "slave_owner_faction_id": null
++          },
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "escaping_slave",
++            "slave_owner_faction_id": "fixture-owner"
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:2:1002",
++              "hand:1:7:101:1:1001"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLW93bmVyIiwic2xhdmVfc3RhdGUiOiJlc2NhcGluZ19zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzdHVuIjowfV0sImlkIjoiaGFuZDoxOjc6MTAxOjI6MTAwMiIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6bnVsbCwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
++      "expected_sha256": "995f44f73721668ad8c3633b7421460c219a776ff170fb174ea65a0cdc1a0c81"
++    },
++    {
++      "name": "state-03-not-slave-and-ex-slave",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.3",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction"
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9LHsiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInN0dW4iOjB9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJuYW1lIjoiQmV0YSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzEsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJzbGF2ZV9zdGF0ZSI6ImV4X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
++      "expected_sha256": "5886f22c7bc73f8262f6c9b8183055b6ff4cd3dce7ae3cbd555a923e74442c74"
+     }
+   ]
+ }
+diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
+index 1060b5ff..851fe462 100644
+--- a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
+@@ -9,7 +9,7 @@ namespace Meitou.Tests.Oracle;
+ public class OracleCanonicalJsonTests
+ {
+     // SHA-256 of the fixture with CRLF normalised to LF, so checkouts with either line ending agree.
+-    const string VectorHash = "d41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad";
++    const string VectorHash = "06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170";
+ 
+     static string VectorPath([CallerFilePath] string source = "") => Environment.GetEnvironmentVariable("KENSHI_ORACLE_VECTORS")
+         ?? Path.Combine(Path.GetDirectoryName(source)!, "Fixtures", "canonical-vectors.json");
+@@ -64,6 +64,32 @@ public class OracleCanonicalJsonTests
+         Assert.Throws<System.Text.Json.JsonException>(() => OracleCanonicalJson.Serialize(state));
+     }
+ 
++    [Fact]
++    public void State_03_is_canonicalised_like_02()
++    {
++        // Complements the shared 0.3 vectors with a 0.3 copy of case 0 (collection sorting and duplicate rejection).
++        var document = JsonNode.Parse(File.ReadAllBytes(VectorPath()))!;
++        var state = document["cases"]![0]!["input"]!.DeepClone();
++        state["schema_version"] = "0.3";
++        foreach (var row in state["characters"]!.AsArray())
++        {
++            row!["slave_owner_faction_id"] = null; row["slave_state"] = "not_slave";
++            row["health"]!.AsArray().Add(new JsonObject { ["id"] = "fixture-a-first:neither", ["current"] = 1, ["stun"] = 0, ["maximum"] = 1 });
++        }
++        byte[] sorted = OracleCanonicalJson.Serialize(state);
++        var reversed = state.DeepClone();
++        var characters = reversed["characters"]!.AsArray().Select(row => row!.DeepClone()).Reverse().ToArray();
++        reversed["characters"]!.AsArray().Clear();
++        foreach (var row in characters) reversed["characters"]!.AsArray().Add(row);
++        Assert.Equal(sorted, OracleCanonicalJson.Serialize(reversed));
++        string text = Encoding.UTF8.GetString(sorted);
++        Assert.Contains("\"race_id\":\"fixture-race\",\"slave_owner_faction_id\":null,\"slave_state\":\"not_slave\",\"squad_id\":", text);
++        Assert.Contains("\"health\":[{\"current\":1,\"id\":\"fixture-a-first:neither\"", text);
++        Assert.True(text.IndexOf("\"name\":\"Alpha\"", StringComparison.Ordinal) < text.IndexOf("\"name\":\"Beta\"", StringComparison.Ordinal));
++        state["characters"]!.AsArray().Add(state["characters"]![0]!.DeepClone());
++        Assert.Throws<System.Text.Json.JsonException>(() => OracleCanonicalJson.Serialize(state));
++    }
++
+     [Fact]
+     public void Float_is_promoted_to_binary64_before_quantisation()
+     {
+diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+index 249b1051..b0b30342 100644
+--- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+@@ -100,6 +100,7 @@ public class OracleSetupTests
+         Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
+         Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
+         Assert.Equal("0.2", ping["state_schema_version"]!.GetValue<string>());
++        Assert.Equal(["0.1", "0.2", "0.3"], ping["supported_schema_versions"]!.AsArray().Select(v => v!.GetValue<string>()));
+         Assert.Equal(["scene_setup"], ping["capabilities"]!.AsArray().Select(c => c!.GetValue<string>()));
+     }
+ 
+diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+index a550f091..a25ece43 100644
+--- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+@@ -1,5 +1,7 @@
+ using System.Numerics;
++using System.Text;
+ using System.Text.Json;
++using System.Text.Json.Nodes;
+ using Meitou.Data;
+ using Meitou.Data.Fcs;
+ using Meitou.Data.Gameplay;
+@@ -143,6 +145,70 @@ public class OracleStateTests
+         Assert.Equal("0.1", old["schema_version"]!.GetValue<string>());
+     }
+ 
++    [Fact]
++    public void Schema_03_adds_slave_state_and_owner_faction_and_keeps_the_state_hash()
++    {
++        using var session = Session();
++        void Add(string name, byte state, int owner) =>
++            session.World.Characters.Spawn(new(), new CharacterCold { Name = name, SlaveState = state, SlaveOwner = owner }, 0);
++        Add("slave", 1, 0);
++        Add("escaping", 2, -1);
++        Add("free", 0, -1);
++        Add("unknown-owner", 1, 5);
++        Add("ex-slave-raw", 3, 1);
++        ulong before = session.World.StateHash();
++        var state = new OracleState().Capture(session, Data(), "0.3");
++        Assert.Equal(before, session.World.StateHash());
++        Assert.Equal("0.3", state["schema_version"]!.GetValue<string>());
++        JsonNode Row(string name) => state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!;
++        string? Text(JsonNode row, string key) => row[key]?.GetValue<string>();
++        Assert.Equal("slave", Text(Row("slave"), "slave_state"));
++        Assert.Equal("b", Text(Row("slave"), "slave_owner_faction_id"));
++        Assert.Equal("escaping_slave", Text(Row("escaping"), "slave_state"));
++        Assert.Null(Text(Row("escaping"), "slave_owner_faction_id"));
++        Assert.Equal("not_slave", Text(Row("free"), "slave_state"));
++        Assert.Null(Text(Row("free"), "slave_owner_faction_id"));
++        Assert.Equal("slave", Text(Row("unknown-owner"), "slave_state"));
++        Assert.Null(Text(Row("unknown-owner"), "slave_owner_faction_id"));
++        // Meitou never holds 3 after a load; a raw value outside 0..2 is unavailable, never not_slave.
++        Assert.Null(Text(Row("ex-slave-raw"), "slave_state"));
++        Assert.Equal("a", Text(Row("ex-slave-raw"), "slave_owner_faction_id"));
++        foreach (var row in state["characters"]!.AsArray())
++        {
++            var keys = row!.AsObject().Select(pair => pair.Key).ToHashSet();
++            Assert.Contains("slave_state", keys); Assert.Contains("slave_owner_faction_id", keys);
++            Assert.Contains("identity_origin", keys); Assert.Contains("in_combat", keys);
++            Assert.Contains("current_town_id", keys); Assert.Contains("town_assignment", keys);
++        }
++    }
++
++    [Fact]
++    public void Schema_02_output_is_unchanged_and_03_differs_only_by_the_two_slave_fields()
++    {
++        using var session = Session();
++        var saved = Saved();
++        var cold = new CharacterCold { Name = "Saved slave", Save = saved, SquadId = 4, Faction = 1, SlaveState = 1, SlaveOwner = 0 };
++        var id = session.World.Characters.Spawn(new CharacterHot { Position = new Vector3(1, 2, 3) }, cold, 0);
++        var squad = new Squad { Id = 4, TemplateId = "fixture-template", SaveName = saved.Source.Platoon.Name, Faction = 1, Leader = id };
++        squad.Members.Add(id); session.World.Squads.Add(squad);
++        var projection = new OracleState();
++        var v02 = projection.Capture(session, Data(), "0.2");
++        Assert.Equal(["id", "name", "race_id", "faction_id", "squad_id", "position", "state", "health", "order",
++            "identity_origin", "current_town_id", "town_assignment", "in_combat"], v02["characters"]![0]!.AsObject().Select(pair => pair.Key));
++        Assert.Equal(["id", "faction_id", "members", "leader_id", "identity_origin", "template_id", "origin_town_id"],
++            v02["squads"]![0]!.AsObject().Select(pair => pair.Key));
++        Assert.Equal(v02.ToJsonString(), projection.Capture(session, Data()).ToJsonString());
++        var v03 = projection.Capture(session, Data(), "0.3");
++        string canonical03 = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(v03));
++        // Canonical scalar key order places the new keys between race_id and squad_id.
++        Assert.Contains("\"race_id\":null,\"slave_owner_faction_id\":\"b\",\"slave_state\":\"slave\",\"squad_id\":", canonical03);
++        var stripped = v03.DeepClone();
++        stripped["schema_version"] = "0.2";
++        foreach (var row in stripped["characters"]!.AsArray()) { row!.AsObject().Remove("slave_state"); row.AsObject().Remove("slave_owner_faction_id"); }
++        Assert.Equal(OracleCanonicalJson.Serialize(v02), OracleCanonicalJson.Serialize(stripped));
++        Assert.Throws<ArgumentException>(() => projection.Capture(session, Data(), "0.4"));
++    }
++
+     [Fact]
+     public void Cache_is_invalidated_by_world_replacement_and_removed_slots_are_not_resolvable()
+     {

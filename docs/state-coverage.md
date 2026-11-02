@@ -169,12 +169,14 @@ fields, and in a scene scope they join the player's outcome fields. A `null`
 in any repetition makes the metric not comparable; it never matches
 `not_slave`. A 0.2 comparison gains no metric.
 
-The Meitou projection is planned as patch 0006 of the
-[Meitou series](../integrations/meitou/README.md); patches 0001 to 0005 do not
-produce 0.3, and a Meitou target on them needs `state_schema:"0.2"` in both
-targets' configurations. Three 0.3 [canonical vectors](../schema/canonical-vectors.json)
-(65 cases in all, the earlier 62 unchanged) pass in Python (**Verified**); the
-C# test of patches 0001 to 0005 pins the earlier 62-case fixture.
+The Meitou projection is patch 0006 of the
+[Meitou series](../integrations/meitou/README.md): `CharacterCold.SlaveState`
+0, 1, 2 give `not_slave`, `slave`, `escaping_slave`, and `SlaveOwner` gives the
+owner faction's id (**Verified** in code and in the adapter's tests). An adapter
+built from patches 0001 to 0005 does not produce 0.3, and a Meitou target on it
+needs `state_schema:"0.2"` in both targets' configurations. Three 0.3
+[canonical vectors](../schema/canonical-vectors.json) (65 cases in all, the
+earlier 62 unchanged) pass in Python and in patch 0006's C# test (**Verified**).
 
 <a id="identités-et-comparabilité"></a>
 
