@@ -65,6 +65,12 @@ inline void appendCanonical(std::string& out,const json::Value& v){
 }
 inline std::string canonical(const json::Value& v){std::string out;out.reserve(16384);appendCanonical(out,v);out+='\n';return out;}
 inline json::Value finiteOrNull(double value){return _finite(value)&&fabs(value)<=1e9?json::Value(value):json::Value();}
+// State 0.3 slave_state. KenshiLib Enums.h SlaveStateEnum: 0 NOT_SLAVE,
+// 1 IS_SLAVE, 2 ESCAPING_SLAVE, 3 EX_SLAVE. Any other raw value is unknown and
+// gives null, never not_slave.
+inline json::Value slaveStateName(int raw){
+    switch(raw){case 0:return json::Value(std::string("not_slave"));case 1:return json::Value(std::string("slave"));case 2:return json::Value(std::string("escaping_slave"));case 3:return json::Value(std::string("ex_slave"));default:return json::Value();}
+}
 inline void validateFilename(const std::string& name){
     if(name.size()<6||name.size()>105||name.substr(name.size()-5)!=".json"||name.substr(0,name.size()-5).find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")!=std::string::npos)
         throw Error("invalid_request","filename must be a simple name ending in .json");

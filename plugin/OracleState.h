@@ -6,6 +6,8 @@
 #include <kenshi/Platoon.h>
 #include <kenshi/CharBody.h>
 #include <kenshi/Tasker.h>
+#include <kenshi/Enums.h>
+#include <kenshi/StateBroadcastData.h>
 #include <ogre/OgreSceneNode.h>
 #include <set>
 #include "OracleTaskNames.h"
@@ -16,11 +18,16 @@
 // All functions that accept engine objects run exclusively in drainCommands or
 // loopHook. publishFile below receives only an owned JSON tree, never pointers.
 namespace oracle {
-static const char* schemaVersion="0.2";
-inline Value supportedSchemaVersions(){Value out=Value::arr();out.array.push_back(Value(std::string("0.1")));out.array.push_back(Value(std::string("0.2")));return out;}
+static const char* schemaVersion="0.3";
+static const char* const stateSchemaVersions[]={"0.1","0.2","0.3"};
+inline Value supportedSchemaVersions(){Value out=Value::arr();for(size_t i=0;i<3;++i)out.array.push_back(Value(std::string(stateSchemaVersions[i])));return out;}
+inline void requireStateSchemaVersion(const std::string& version){
+    for(size_t i=0;i<3;++i)if(version==stateSchemaVersions[i])return;
+    throw Error("invalid_request","schema_version must be 0.1, 0.2 or 0.3");
+}
 inline std::string requestedSchemaVersion(const Value& params){
     std::string version=params.object.count("schema_version")?text(params,"schema_version",8):std::string(schemaVersion);
-    if(version!="0.1"&&version!="0.2")throw Error("invalid_request","schema_version must be 0.1 or 0.2");return version;
+    requireStateSchemaVersion(version);return version;
 }
 static std::string instanceId;
 static unsigned long operationSequence=0;
@@ -217,13 +224,31 @@ inline Value order(Character* c){
     // named movement actions expose it; unrelated dormant values stay null.
     if(key==MOVE_CUS_ORDERED||key==MOVE_ON_FREE_WILL||key==MOVE_ON_FREE_WILL_FAST){Ogre::Vector3 location=task->getLocation();if(_finite(location.x)&&_finite(location.y)&&_finite(location.z)&&fabs(location.x)<=1e9&&fabs(location.y)<=1e9&&fabs(location.z)<=1e9)out.object["position"]=vectorJSON(location);}return out;
 }
+// State 0.3: member reads only, no engine call on the character or its
+// StateBroadcastData (Character.h stateBroadcast 0x1A0; StateBroadcastData.h
+// _slaveState 0x0, isSlaveOf 0xE0). The owner pointer is dereferenced only
+// after it is found, by pointer comparison, among the census's registered
+// factions; the id then comes from factionId exactly as factions[].id does.
+inline void addSlaveFields(Value& row,Character* c,const std::set<Faction*>& registered){
+    // The SDK headers must keep the documented layout; this does not prove it against the game binary.
+    typedef char BroadcastAt1A0[offsetof(Character,stateBroadcast)==0x1A0?1:-1];
+    typedef char SlaveStateAt0[offsetof(StateBroadcastData,_slaveState)==0&&sizeof(SlaveStateEnum)==4?1:-1];
+    typedef char SlaveOwnerAtE0[offsetof(StateBroadcastData,isSlaveOf)==0xE0?1:-1];
+    row.object["slave_state"]=Value();row.object["slave_owner_faction_id"]=Value();
+    StateBroadcastData* broadcast=c->stateBroadcast;if(!broadcast)return;
+    row.object["slave_state"]=slaveStateName((int)broadcast->_slaveState);
+    Faction* owner=broadcast->isSlaveOf;
+    if(owner&&registered.count(owner))row.object["slave_owner_faction_id"]=optionalId(factionId(owner));
+}
 inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
-    if(version!="0.1"&&version!="0.2")throw Error("invalid_request","schema_version must be 0.1 or 0.2");
+    requireStateSchemaVersion(version);
     requireWorld(world);if(active())throw Error("busy","wait for run_until to complete before taking a checkpoint");
     if(!world->isPaused())throw Error("invalid_request","pause the game before dump_state");savedOrigins.requirePrepared();Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);Value out=Value::obj();out.object["schema_version"]=Value(version);out.object["clock"]=clock(world);
     Value characters=Value::arr(),squads=Value::arr(),factions=Value::arr(),relations=Value::arr();std::map<std::string,std::vector<std::string> > memberIds;
+    const bool additive=version!="0.1",slaves=version=="0.3";std::set<Faction*> registered;
+    if(slaves)for(Factions::const_iterator i=loaded.factions.begin();i!=loaded.factions.end();++i)registered.insert(i->second);
     for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c);row.object["order"]=order(c);
-        if(version=="0.2"){
+        if(additive){
             row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
             // An unresolved saved origin never proves generation. The town's
             // data ID/active HAND does not prove its level placement identity.
@@ -231,10 +256,12 @@ inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
             // the saved placement collection before assigning cross-engine IDs.
             row.object["current_town_id"]=Value();row.object["town_assignment"]=Value();
             row.object["in_combat"]=Value::flag(c->isInCombatMode(true,true));
-        }characters.array.push_back(row);
+        }
+        if(slaves)addSlaveFields(row,c,registered);
+        characters.array.push_back(row);
     }
     for(Squads::const_iterator i=loaded.squads.begin();i!=loaded.squads.end();++i){Value row=Value::obj(),members=Value::arr();row.object["id"]=Value(i->first);row.object["faction_id"]=optionalId(factionId(i->second->getFaction()));const std::vector<std::string>& ids=memberIds[i->first];for(size_t j=0;j<ids.size();++j)members.array.push_back(Value(ids[j]));row.object["members"]=members;row.object["leader_id"]=optionalId(handleId(i->second->getSquadLeader_theRealOne()));
-        if(version=="0.2"){
+        if(additive){
             row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
             row.object["template_id"]=optionalId(dataId(i->second->squadTemplate));
             row.object["origin_town_id"]=Value();

@@ -35,6 +35,12 @@ int main(int argc,char** argv){try{
     require(oracle::canonical(json::Value(999999999.999999))=="999999999.999999\n");
     require(oracle::canonical(json::Value(1000000000.0))=="1000000000\n");
     require(oracle::canonical(json::Value(-1000000000.0))=="-1000000000\n");
+    // State 0.3 slave_state: the four SlaveStateEnum names; any other raw value is null, never not_slave.
+    require(oracle::canonical(oracle::slaveStateName(0))=="\"not_slave\"\n");
+    require(oracle::canonical(oracle::slaveStateName(1))=="\"slave\"\n");
+    require(oracle::canonical(oracle::slaveStateName(2))=="\"escaping_slave\"\n");
+    require(oracle::canonical(oracle::slaveStateName(3))=="\"ex_slave\"\n");
+    {const int outside[]={-1,4,5,255,0x7fffffff,(int)0x80000000};for(int i=0;i<6;++i)require(oracle::slaveStateName(outside[i]).type==json::Value::NIL&&oracle::canonical(oracle::slaveStateName(outside[i]))=="null\n");}
     require(oracle::canonical(json::Parser("{\"z\":-0.0,\"a\":[true,null,\"line\\n\\u00e9\",1.1234567]}").parse())=="{\"a\":[true,null,\"line\\n\xc3\xa9\",1.123457],\"z\":0}\n");
     const double invalid[]={1000000000.1,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()};
     for(int i=0;i<3;++i){bool failed=false;try{oracle::canonical(json::Value(invalid[i]));}catch(const oracle::Error& e){failed=e.code=="state_unavailable";}require(failed);}
