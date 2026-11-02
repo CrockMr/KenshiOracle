@@ -8,6 +8,7 @@
 #include <kenshi/Tasker.h>
 #include <kenshi/Enums.h>
 #include <kenshi/StateBroadcastData.h>
+#include <kenshi/CharStats.h>
 #include <ogre/OgreSceneNode.h>
 #include <set>
 #include "OracleTaskNames.h"
@@ -18,12 +19,13 @@
 // All functions that accept engine objects run exclusively in drainCommands or
 // loopHook. publishFile below receives only an owned JSON tree, never pointers.
 namespace oracle {
-static const char* schemaVersion="0.3";
-static const char* const stateSchemaVersions[]={"0.1","0.2","0.3"};
-inline Value supportedSchemaVersions(){Value out=Value::arr();for(size_t i=0;i<3;++i)out.array.push_back(Value(std::string(stateSchemaVersions[i])));return out;}
+static const char* schemaVersion="0.4";
+static const char* const stateSchemaVersions[]={"0.1","0.2","0.3","0.4"};
+static const size_t stateSchemaVersionCount=sizeof(stateSchemaVersions)/sizeof(stateSchemaVersions[0]);
+inline Value supportedSchemaVersions(){Value out=Value::arr();for(size_t i=0;i<stateSchemaVersionCount;++i)out.array.push_back(Value(std::string(stateSchemaVersions[i])));return out;}
 inline void requireStateSchemaVersion(const std::string& version){
-    for(size_t i=0;i<3;++i)if(version==stateSchemaVersions[i])return;
-    throw Error("invalid_request","schema_version must be 0.1, 0.2 or 0.3");
+    for(size_t i=0;i<stateSchemaVersionCount;++i)if(version==stateSchemaVersions[i])return;
+    throw Error("invalid_request","schema_version must be 0.1, 0.2, 0.3 or 0.4");
 }
 inline std::string requestedSchemaVersion(const Value& params){
     std::string version=params.object.count("schema_version")?text(params,"schema_version",8):std::string(schemaVersion);
@@ -208,11 +210,19 @@ inline std::string loadedInputId(const Loaded& loaded,const std::string& id,unsi
     return resolved;
 }
 inline const char* sideName(LeftRight side){switch(side){case SIDE_NEITHER:return "neither";case SIDE_LEFT:return "left";case SIDE_RIGHT:return "right";case SIDE_BOTH:return "both";default:return 0;}}
-inline Value health(Character* c){
+// State 0.4 health parts add bandage, splint and wear (MedicalSystem.h
+// HealthPartStatus bandaging 0x48, juryRigging 0x4C, wearDamage 0x50), member
+// reads on the part the existing 0.1 path already resolved. The SDK headers must
+// keep the documented layout; this does not prove it against the game binary.
+typedef char PartBandagingAt48[offsetof(MedicalSystem::HealthPartStatus,bandaging)==0x48&&sizeof(((MedicalSystem::HealthPartStatus*)0)->bandaging)==4?1:-1];
+typedef char PartJuryRiggingAt4C[offsetof(MedicalSystem::HealthPartStatus,juryRigging)==0x4C&&sizeof(((MedicalSystem::HealthPartStatus*)0)->juryRigging)==4?1:-1];
+typedef char PartWearDamageAt50[offsetof(MedicalSystem::HealthPartStatus,wearDamage)==0x50&&sizeof(((MedicalSystem::HealthPartStatus*)0)->wearDamage)==4?1:-1];
+inline Value health(Character* c,bool partCare=false){
     MedicalSystem* med=c->getMedical();if(!med)return Value();int count=med->getPartCount();if(count<0||count>256)throw Error("state_unavailable","invalid health part count");
     std::map<std::string,Value> parts;for(int i=0;i<count;++i){MedicalSystem::HealthPartStatus* part=med->getPart((unsigned __int64)i);if(!part||!part->data)return Value();
         const char* side=sideName(part->side);std::string id=dataId(part->data);if(!side||id.empty())return Value();id+=":";id+=side;
-        if(parts.count(id))throw Error("state_unavailable","duplicate health-part identity");Value row=Value::obj();row.object["id"]=Value(id);row.object["current"]=finiteOrNull(part->flesh);row.object["stun"]=finiteOrNull(part->fleshStun);row.object["maximum"]=part->_maxHealth>=0?finiteOrNull(part->_maxHealth):Value();parts[id]=row;
+        if(parts.count(id))throw Error("state_unavailable","duplicate health-part identity");Value row=Value::obj();row.object["id"]=Value(id);row.object["current"]=finiteOrNull(part->flesh);row.object["stun"]=finiteOrNull(part->fleshStun);row.object["maximum"]=part->_maxHealth>=0?finiteOrNull(part->_maxHealth):Value();
+        if(partCare){row.object["bandage"]=finiteOrNull(part->bandaging);row.object["splint"]=finiteOrNull(part->juryRigging);row.object["wear"]=finiteOrNull(part->wearDamage);}parts[id]=row;
     }
     Value out=Value::arr();for(std::map<std::string,Value>::const_iterator i=parts.begin();i!=parts.end();++i)out.array.push_back(i->second);return out;
 }
@@ -241,13 +251,104 @@ inline void addSlaveFields(Value& row,Character* c,const std::set<Faction*>& reg
     Faction* owner=broadcast->isSlaveOf;
     if(owner&&registered.count(owner))row.object["slave_owner_faction_id"]=optionalId(factionId(owner));
 }
+// State 0.4: member reads only, no engine call on the character, its
+// MedicalSystem, its CharStats or the squad's Ownerships. Offsets are the SDK
+// headers' (Character.h, MedicalSystem.h, CharStats.h, Platoon.h); the checks
+// below do not prove them against the game binary and no value has been read in
+// game (Unknown).
+#define ORACLE_MEMBER_AT(check,type,member,offset,size) typedef char check[offsetof(type,member)==(offset)&&sizeof(((type*)0)->member)==(size)?1:-1]
+ORACLE_MEMBER_AT(StatsAt450,Character,stats,0x450,8);
+ORACLE_MEMBER_AT(MedicalAt458,Character,medical,0x458,sizeof(MedicalSystem));
+ORACLE_MEMBER_AT(InSomethingAt2F8,Character,inSomething,0x2F8,4);
+ORACLE_MEMBER_AT(IsCarryingAt348,Character,isCarryingSomething,0x348,1);
+ORACLE_MEMBER_AT(CarryingObjectAt380,Character,carryingObject,0x380,sizeof(hand));
+ORACLE_MEMBER_AT(BeingCarriedAt3D4,Character,_isBeingCarried,0x3D4,1);
+ORACLE_MEMBER_AT(HungerAt60,MedicalSystem,hunger,0x60,4);
+ORACLE_MEMBER_AT(FedAt64,MedicalSystem,fed,0x64,4);
+ORACLE_MEMBER_AT(BloodAt70,MedicalSystem,blood,0x70,4);
+ORACLE_MEMBER_AT(BleedRateAt78,MedicalSystem,currentBleedRate,0x78,4);
+ORACLE_MEMBER_AT(Sub50KOAt162,MedicalSystem,sub50KO,0x162,1);
+ORACLE_MEMBER_AT(BloodlossTraumaAt163,MedicalSystem,bloodlossTrauma,0x163,1);
+ORACLE_MEMBER_AT(OwnershipsAt148,Platoon,ownerships,0x148,sizeof(Ownerships));
+ORACLE_MEMBER_AT(MoneyAt88,Ownerships,money,0x88,4);
+// One entry per statKeys entry (OracleFormat.h), same order; each member's
+// offset is checked below against the contract table.
+struct StatMember {float CharStats::* member;};
+static const StatMember statMembers[]={
+    {&CharStats::_strength},{&CharStats::__meleeAttack},{&CharStats::labouring},{&CharStats::science},{&CharStats::engineer},{&CharStats::robotics},
+    {&CharStats::weaponSmith},{&CharStats::armourSmith},{&CharStats::medic},{&CharStats::thieving},{&CharStats::turrets},{&CharStats::farming},
+    {&CharStats::cooking},{&CharStats::stealth},{&CharStats::_athletics},{&CharStats::_dexterity},{&CharStats::_meleeDefence},{&CharStats::_toughness},
+    {&CharStats::assassin},{&CharStats::swimming},{&CharStats::perception},{&CharStats::katanas},{&CharStats::sabres},{&CharStats::hackers},
+    {&CharStats::heavyWeapons},{&CharStats::blunt},{&CharStats::unarmed},{&CharStats::massCombat},{&CharStats::dodging},{&CharStats::polearms},
+    {&CharStats::bows},{&CharStats::friendlyFire},{&CharStats::lockpicking},{&CharStats::bowSmith}};
+typedef char StatMembersMatchKeys[sizeof(statMembers)/sizeof(statMembers[0])==statKeyCount?1:-1];
+ORACLE_MEMBER_AT(StrengthAt80,CharStats,_strength,0x80,4);
+ORACLE_MEMBER_AT(MeleeAttackAt120,CharStats,__meleeAttack,0x120,4);
+ORACLE_MEMBER_AT(LabouringAtE4,CharStats,labouring,0xE4,4);
+ORACLE_MEMBER_AT(ScienceAtE0,CharStats,science,0xE0,4);
+ORACLE_MEMBER_AT(EngineerAtCC,CharStats,engineer,0xCC,4);
+ORACLE_MEMBER_AT(RoboticsAtDC,CharStats,robotics,0xDC,4);
+ORACLE_MEMBER_AT(WeaponSmithAtD0,CharStats,weaponSmith,0xD0,4);
+ORACLE_MEMBER_AT(ArmourSmithAtD4,CharStats,armourSmith,0xD4,4);
+ORACLE_MEMBER_AT(MedicAt98,CharStats,medic,0x98,4);
+ORACLE_MEMBER_AT(ThievingAtAC,CharStats,thieving,0xAC,4);
+ORACLE_MEMBER_AT(TurretsAt114,CharStats,turrets,0x114,4);
+ORACLE_MEMBER_AT(FarmingAtE8,CharStats,farming,0xE8,4);
+ORACLE_MEMBER_AT(CookingAtEC,CharStats,cooking,0xEC,4);
+ORACLE_MEMBER_AT(StealthAtA4,CharStats,stealth,0xA4,4);
+ORACLE_MEMBER_AT(AthleticsAt94,CharStats,_athletics,0x94,4);
+ORACLE_MEMBER_AT(DexterityAt88,CharStats,_dexterity,0x88,4);
+ORACLE_MEMBER_AT(MeleeDefenceAt124,CharStats,_meleeDefence,0x124,4);
+ORACLE_MEMBER_AT(ToughnessAt90,CharStats,_toughness,0x90,4);
+ORACLE_MEMBER_AT(AssassinAtB8,CharStats,assassin,0xB8,4);
+ORACLE_MEMBER_AT(SwimmingAtA8,CharStats,swimming,0xA8,4);
+ORACLE_MEMBER_AT(PerceptionAt8C,CharStats,perception,0x8C,4);
+ORACLE_MEMBER_AT(KatanasAtF8,CharStats,katanas,0xF8,4);
+ORACLE_MEMBER_AT(SabresAtFC,CharStats,sabres,0xFC,4);
+ORACLE_MEMBER_AT(HackersAt100,CharStats,hackers,0x100,4);
+ORACLE_MEMBER_AT(HeavyWeaponsAt108,CharStats,heavyWeapons,0x108,4);
+ORACLE_MEMBER_AT(BluntAt104,CharStats,blunt,0x104,4);
+ORACLE_MEMBER_AT(UnarmedAt10C,CharStats,unarmed,0x10C,4);
+ORACLE_MEMBER_AT(MassCombatAt9C,CharStats,massCombat,0x9C,4);
+ORACLE_MEMBER_AT(DodgingAtF0,CharStats,dodging,0xF0,4);
+ORACLE_MEMBER_AT(PolearmsAt118,CharStats,polearms,0x118,4);
+ORACLE_MEMBER_AT(BowsAt110,CharStats,bows,0x110,4);
+ORACLE_MEMBER_AT(FriendlyFireAtF4,CharStats,friendlyFire,0xF4,4);
+ORACLE_MEMBER_AT(LockpickingAtB0,CharStats,lockpicking,0xB0,4);
+ORACLE_MEMBER_AT(BowSmithAtD8,CharStats,bowSmith,0xD8,4);
+#undef ORACLE_MEMBER_AT
+inline Value statsObject(const CharStats* stats){
+    if(!stats)return Value();Value out=Value::obj();
+    for(size_t i=0;i<statKeyCount;++i)out.object[statKeys[i]]=finiteOrNull(stats->*statMembers[i].member);return out;
+}
+inline Value medicalObject(const MedicalSystem& medical){
+    Value out=Value::obj();out.object["blood"]=finiteOrNull(medical.blood);out.object["bleed_rate"]=finiteOrNull(medical.currentBleedRate);
+    out.object["hunger"]=finiteOrNull(medical.hunger);out.object["fed"]=finiteOrNull(medical.fed);
+    out.object["coma"]=Value::flag(medical.sub50KO);out.object["blood_loss_trauma"]=Value::flag(medical.bloodlossTrauma);return out;
+}
+inline void addState04Fields(Value& row,Character* c){
+    // Character::medical is embedded, so it is present whenever the character is.
+    row.object["medical"]=medicalObject(c->medical);
+    row.object["stats"]=statsObject(c->stats);
+    row.object["in_something"]=inSomethingName((int)c->inSomething);
+    // carrying_id is encoded by handleId exactly as order.target_id is, and
+    // canonicalizeSnapshotOrigins applies the same saved-origin rule to both.
+    const hand& carried=c->carryingObject;const std::string carriedId=handleId(carried);
+    row.object["carrying"]=carryingName(c->isCarryingSomething,carriedId.empty(),carried.type==CHARACTER);
+    const Value& kind=row.object["carrying"];
+    row.object["carrying_id"]=kind.type==Value::STRING&&kind.str=="character"?Value(carriedId):Value();
+    row.object["being_carried"]=Value::flag(c->_isBeingCarried);
+}
+inline Value squadMoney(Platoon* squad){
+    const int money=squad->ownerships.money;return money>=-1000000000&&money<=1000000000?Value((double)money):Value();
+}
 inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
     requireStateSchemaVersion(version);
     requireWorld(world);if(active())throw Error("busy","wait for run_until to complete before taking a checkpoint");
     if(!world->isPaused())throw Error("invalid_request","pause the game before dump_state");savedOrigins.requirePrepared();Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);Value out=Value::obj();out.object["schema_version"]=Value(version);out.object["clock"]=clock(world);
     Value characters=Value::arr(),squads=Value::arr(),factions=Value::arr(),relations=Value::arr();std::map<std::string,std::vector<std::string> > memberIds;
-    const bool additive=version!="0.1",slaves=version=="0.3";const std::set<Faction*>& registered=loaded.seenFactions;
-    for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c);row.object["order"]=order(c);
+    const bool additive=version!="0.1",v04=version=="0.4",slaves=version=="0.3"||v04;const std::set<Faction*>& registered=loaded.seenFactions;
+    for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c,v04);row.object["order"]=order(c);
         if(additive){
             row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
             // An unresolved saved origin never proves generation. The town's
@@ -258,6 +359,7 @@ inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
             row.object["in_combat"]=Value::flag(c->isInCombatMode(true,true));
         }
         if(slaves)addSlaveFields(row,c,registered);
+        if(v04)addState04Fields(row,c);
         characters.array.push_back(row);
     }
     for(Squads::const_iterator i=loaded.squads.begin();i!=loaded.squads.end();++i){Value row=Value::obj(),members=Value::arr();row.object["id"]=Value(i->first);row.object["faction_id"]=optionalId(factionId(i->second->getFaction()));const std::vector<std::string>& ids=memberIds[i->first];for(size_t j=0;j<ids.size();++j)members.array.push_back(Value(ids[j]));row.object["members"]=members;row.object["leader_id"]=optionalId(handleId(i->second->getSquadLeader_theRealOne()));
@@ -265,7 +367,9 @@ inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
             row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
             row.object["template_id"]=optionalId(dataId(i->second->squadTemplate));
             row.object["origin_town_id"]=Value();
-        }squads.array.push_back(row);
+        }
+        if(v04)row.object["money"]=squadMoney(i->second);
+        squads.array.push_back(row);
     }
     for(Factions::const_iterator i=loaded.factions.begin();i!=loaded.factions.end();++i){Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(i->second->getName());factions.array.push_back(row);
         for(Factions::const_iterator j=loaded.factions.begin();j!=loaded.factions.end();++j){if(i==j)continue;Value relation=Value::obj();relation.object["source_id"]=Value(i->first);relation.object["target_id"]=Value(j->first);relation.object["value"]=i->second->relations?finiteOrNull(i->second->relations->getFactionRelation(j->second)):Value();relations.array.push_back(relation);}

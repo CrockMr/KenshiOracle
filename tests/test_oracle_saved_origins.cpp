@@ -95,6 +95,17 @@ static void snapshotChecks(){
     require(characters[0].at("race_id").str==rawA&&characters[0].at("faction_id").str==rawA&&squads[0].at("faction_id").str==rawA);
     require(oracle::canonical(characters[0].at("health"))==unchangedHealth&&oracle::canonical(snapshot.at("factions"))==unchangedFactions&&oracle::canonical(snapshot.at("relations"))==unchangedRelations);
     std::string once=oracle::canonical(snapshot);oracle::canonicalizeSnapshotOrigins(snapshot,registry);require(oracle::canonical(snapshot)==once);
+    // A 0.1-0.3 row has no carrying_id and must not gain one.
+    for(size_t i=0;i<characters.size();++i)require(!characters[i].object.count("carrying_id"));
+    // State 0.4 carrying_id follows order.target_id: a proved alias becomes the
+    // saved HAND, an unproved runtime HAND is kept and null stays null.
+    {json::Value carried=json::Value::obj();carried.object["characters"]=json::Value::arr();carried.object["squads"]=json::Value::arr();
+     json::Value a=fixtureCharacter(rawA,rawSquadA,std::string());a.object["carrying_id"]=json::Value(rawB);carried.object["characters"].array.push_back(a);
+     json::Value b=fixtureCharacter(rawB,rawSquadB,std::string());b.object["carrying_id"]=json::Value();carried.object["characters"].array.push_back(b);
+     json::Value r=fixtureCharacter(runtimeOnly,rawSquadA,std::string());r.object["carrying_id"]=json::Value(runtimeOnly);carried.object["characters"].array.push_back(r);
+     oracle::canonicalizeSnapshotOrigins(carried,registry);const std::vector<json::Value>& rows=carried.at("characters").array;
+     require(rows.size()==3&&rows[0].at("id").str==savedA&&rows[0].at("carrying_id").str==savedB&&rows[1].at("carrying_id").type==json::Value::NIL&&rows[2].at("carrying_id").str==runtimeOnly);
+     std::string carriedOnce=oracle::canonical(carried);oracle::canonicalizeSnapshotOrigins(carried,registry);require(oracle::canonical(carried)==carriedOnce);}
     json::Value duplicate=snapshot;duplicate.object["characters"].array.push_back(fixtureCharacter(rawA,rawSquadA,rawB));badSnapshot(duplicate,registry);
     duplicate=snapshot;duplicate.object["squads"].array.push_back(fixtureSquad(rawSquadA,rawA,members));badSnapshot(duplicate,registry);
     duplicate=snapshot;duplicate.object["squads"].array[0].object["members"].array.push_back(json::Value(rawA));badSnapshot(duplicate,registry);

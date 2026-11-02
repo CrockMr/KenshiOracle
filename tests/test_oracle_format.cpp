@@ -3,6 +3,7 @@
 #include "../plugin/OracleSpeedControl.h"
 #include <iostream>
 #include <limits>
+#include <set>
 #include <io.h>
 #include <fcntl.h>
 static unsigned int checks=0;
@@ -41,6 +42,21 @@ int main(int argc,char** argv){try{
     require(oracle::canonical(oracle::slaveStateName(2))=="\"escaping_slave\"\n");
     require(oracle::canonical(oracle::slaveStateName(3))=="\"ex_slave\"\n");
     {const int outside[]={-1,4,5,255,0x7fffffff,(int)0x80000000};for(int i=0;i<6;++i)require(oracle::slaveStateName(outside[i]).type==json::Value::NIL&&oracle::canonical(oracle::slaveStateName(outside[i]))=="null\n");}
+    // State 0.4 in_something: the three UseStuffState names; any other raw value is null, never nothing.
+    require(oracle::canonical(oracle::inSomethingName(0))=="\"nothing\"\n");
+    require(oracle::canonical(oracle::inSomethingName(1))=="\"bed\"\n");
+    require(oracle::canonical(oracle::inSomethingName(2))=="\"prison\"\n");
+    {const int outside[]={-1,3,4,255,0x7fffffff,(int)0x80000000};for(int i=0;i<6;++i)require(oracle::inSomethingName(outside[i]).type==json::Value::NIL&&oracle::canonical(oracle::inSomethingName(outside[i]))=="null\n");}
+    // State 0.4 carrying: not carrying is nothing whatever the hand; a null hand while carrying is null.
+    for(int hand=0;hand<4;++hand)require(oracle::canonical(oracle::carryingName(false,(hand&1)!=0,(hand&2)!=0))=="\"nothing\"\n");
+    require(oracle::carryingName(true,true,false).type==json::Value::NIL&&oracle::carryingName(true,true,true).type==json::Value::NIL);
+    require(oracle::canonical(oracle::carryingName(true,false,true))=="\"character\"\n");
+    require(oracle::canonical(oracle::carryingName(true,false,false))=="\"other\"\n");
+    // State 0.4 stats: exactly 34 distinct keys in StatsEnumerated order.
+    {const char* expected[]={"strength","melee_attack","labouring","science","engineering","robotics","smithing_weapon","smithing_armour","medic","thieving","turrets","farming","cooking","stealth","athletics","dexterity","melee_defence","toughness","assassination","swimming","perception","katanas","sabres","hackers","heavyweapons","blunt","martialarts","masscombat","dodge","polearms","crossbows","friendly_fire","lockpicking","smithing_bow"};
+     require(oracle::statKeyCount==34&&sizeof(expected)/sizeof(expected[0])==34&&sizeof(oracle::statKeys)/sizeof(oracle::statKeys[0])==34);std::set<std::string> distinct;
+     for(size_t i=0;i<34;++i){require(std::string(oracle::statKeys[i])==expected[i]);distinct.insert(oracle::statKeys[i]);}require(distinct.size()==34);
+     const char* excluded[]={"hivemedic","vet","weapons","survival","none","end"};for(int i=0;i<6;++i)require(!distinct.count(excluded[i]));}
     require(oracle::canonical(json::Parser("{\"z\":-0.0,\"a\":[true,null,\"line\\n\\u00e9\",1.1234567]}").parse())=="{\"a\":[true,null,\"line\\n\xc3\xa9\",1.123457],\"z\":0}\n");
     const double invalid[]={1000000000.1,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()};
     for(int i=0;i<3;++i){bool failed=false;try{oracle::canonical(json::Value(invalid[i]));}catch(const oracle::Error& e){failed=e.code=="state_unavailable";}require(failed);}

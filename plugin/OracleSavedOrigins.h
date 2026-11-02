@@ -114,6 +114,9 @@ inline void canonicalizeSnapshotOrigins(json::Value& state,const SavedOrigins& o
     origins.requirePrepared();json::Value& characters=state.object["characters"];json::Value& squads=state.object["squads"];
     for(size_t i=0;i<characters.array.size();++i){json::Value& row=characters.array[i];canonicalizeHandleReference(row.object["id"],origins);canonicalizeHandleReference(row.object["squad_id"],origins);
         if(row.object["order"].type==json::Value::OBJECT)canonicalizeHandleReference(row.object["order"].object["target_id"],origins);
+        // State 0.4 carrying_id uses the order.target_id rule. Only a row that
+        // already has the key is touched, so 0.1-0.3 rows gain no key.
+        if(row.object.count("carrying_id"))canonicalizeHandleReference(row.object["carrying_id"],origins);
     }
     for(size_t i=0;i<squads.array.size();++i){json::Value& row=squads.array[i];canonicalizeHandleReference(row.object["id"],origins);canonicalizeHandleReference(row.object["leader_id"],origins);json::Value& members=row.object["members"];
         for(size_t j=0;j<members.array.size();++j)canonicalizeHandleReference(members.array[j],origins);

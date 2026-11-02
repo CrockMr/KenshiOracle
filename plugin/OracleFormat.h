@@ -71,6 +71,27 @@ inline json::Value finiteOrNull(double value){return _finite(value)&&fabs(value)
 inline json::Value slaveStateName(int raw){
     switch(raw){case 0:return json::Value(std::string("not_slave"));case 1:return json::Value(std::string("slave"));case 2:return json::Value(std::string("escaping_slave"));case 3:return json::Value(std::string("ex_slave"));default:return json::Value();}
 }
+// State 0.4 in_something. KenshiLib Character.h UseStuffState: 0 IN_NOTHING,
+// 1 IN_BED, 2 IN_PRISON. Any other raw value is unknown and gives null.
+inline json::Value inSomethingName(int raw){
+    switch(raw){case 0:return json::Value(std::string("nothing"));case 1:return json::Value(std::string("bed"));case 2:return json::Value(std::string("prison"));default:return json::Value();}
+}
+// State 0.4 carrying. Not carrying gives nothing whatever the hand holds. A
+// carrying flag with a null hand is unknown (null); a character hand gives
+// character and any other non-null hand gives other.
+inline json::Value carryingName(bool carrying,bool handNull,bool characterHand){
+    if(!carrying)return json::Value(std::string("nothing"));if(handNull)return json::Value();
+    return json::Value(std::string(characterHand?"character":"other"));
+}
+// State 0.4 stats keys: KenshiLib Enums.h StatsEnumerated order, name without
+// STAT_ in lowercase, without STAT_HIVEMEDIC and STAT_VET (they share medic)
+// and STAT_WEAPONS and STAT_SURVIVAL (no stored stat behind the number).
+static const size_t statKeyCount=34;
+static const char* const statKeys[statKeyCount]={
+    "strength","melee_attack","labouring","science","engineering","robotics","smithing_weapon","smithing_armour",
+    "medic","thieving","turrets","farming","cooking","stealth","athletics","dexterity","melee_defence","toughness",
+    "assassination","swimming","perception","katanas","sabres","hackers","heavyweapons","blunt","martialarts",
+    "masscombat","dodge","polearms","crossbows","friendly_fire","lockpicking","smithing_bow"};
 inline void validateFilename(const std::string& name){
     if(name.size()<6||name.size()>105||name.substr(name.size()-5)!=".json"||name.substr(0,name.size()-5).find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")!=std::string::npos)
         throw Error("invalid_request","filename must be a simple name ending in .json");
