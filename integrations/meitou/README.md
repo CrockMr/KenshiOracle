@@ -4,7 +4,7 @@ This directory makes the Meitou adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the six patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `d3ea90506ca6fc301494731cfda951169bc40977`;
+correspond to the local fork tip `cd5a194dc9013ec8a81d1b339686bda649e3cc5f`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -18,7 +18,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `8b255b96d877094e184edce14b212afbd893ada4` |
 | 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `893114dec3a8543ade4147fb8f2f4040ac4cf365` |
 | 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `5ab88d9a8960e75241965c1e48b3760544db264e` |
-| 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `d3ea90506ca6fc301494731cfda951169bc40977` |
+| 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5a194dc9013ec8a81d1b339686bda649e3cc5f` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -85,7 +85,7 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `d3ea9050` on `88ae71a1`, in the fork's own checkout
+**Verified** at fork tip `cd5a194d` on `88ae71a1`, in the fork's own checkout
 (whose tree equals the `git am` result above), with SDK 10.0.403:
 - The Release build had 0 warnings and 0 errors.
 - The quick suite (`Category!=Slow&Category!=Bench`) had 926 passes and 0
@@ -98,7 +98,7 @@ process ownership, scenario execution and restoration.
   copied in), a first quick-suite run had 2 failures outside the adapter
   (`AiTests` and `ConstructionTests`, one a missing shared `%TEMP%` save
   folder); both passed alone and in a complete rerun. Treat them as
-  environment-sensitive; they were not reproduced on `d3ea9050`.
+  environment-sensitive; they were not reproduced on `cd5a194d`.
 - The complete suite, the run with `KENSHI_ORACLE_VECTORS`, the start without
   `--oracle` and a quick city run were not repeated on this base; the last such
   evidence is for the `100c6cae` series (see the
@@ -117,7 +117,7 @@ reproduce every environmental result. See the
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
 (fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
 **Unknown:** patches 5 and 6 in game; no live campaign has run on `5ab88d9a`
-or `d3ea9050`.
+or `cd5a194d`.
 
 ## Scope and maintenance
 

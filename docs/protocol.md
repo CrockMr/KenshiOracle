@@ -100,7 +100,7 @@ highest version that both sides support and sends it as `dump_state`'s
 gives 0.1. The configuration key `state_schema` requests one version exactly:
 a producer that does not advertise it is refused, never downgraded. The
 snapshot's `schema_version` must equal the negotiated version, and a change
-of supported versions during an execution is refused. The comparator accepts
+of the negotiated version during an execution is refused. The comparator accepts
 0.2 and 0.3 campaigns but never compares two different versions.
 
 State-file size is bounded to 64 MiB. Python validation rejects duplicate keys, non-finite numbers, invalid Unicode, unexpected properties, and duplicate identities. MCP checks the returned path under `oracle_output`, validates schema, then writes canonical bytes. Byte identity for the same state does not promise engine determinism.

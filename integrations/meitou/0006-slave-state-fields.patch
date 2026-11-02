@@ -1,4 +1,4 @@
-From d3ea90506ca6fc301494731cfda951169bc40977 Mon Sep 17 00:00:00 2001
+From cd5a194dc9013ec8a81d1b339686bda649e3cc5f Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 08:32:24 +0100
 Subject: [PATCH] Expose slave state and owner faction in oracle state 0.3
@@ -21,7 +21,8 @@ identity-only captures discard their output.
 The capture stays read-only; tests pin slave, escaping slave without
 owner, free, an out-of-range owner and a raw 3, the unchanged state hash,
 the exact 0.2 keys and 0.3 canonical ordering. The shared canonical
-fixture is unchanged until the public vectors gain 0.3 cases.
+fixture is the public 65-case copy, three 0.3 cases included, and its
+pin is refreshed to that identity.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---

@@ -47,7 +47,12 @@ use a distinct port (47801 by default) and its own `runtime`, for example
 `runtime/meitou`. `state_schema` defaults to `"0.3"` and requires that
 contract; an adapter without state 0.3 (patches 0001 to 0005) needs
 `"state_schema":"0.2"` here and in `config.json`, because the comparator
-never compares two state schema versions.
+never compares two state schema versions. The same holds in two other cases:
+an adapter with patch 0006 against the released 0.11.0 probe (state 0.2 only),
+and an old `config.meitou.json` that still says `"0.2"` against a probe with
+state 0.3. The comparator refuses the mismatch only after both campaigns have
+run, so set the same `state_schema` explicitly in both files before a
+campaign.
 `game_install` supplies `KENSHI_PATH` to the child process.
 When `config.meitou.json` has no `engine_profile`, it uses the one from
 `config.json`: one local profile may hold both targets' entries, because

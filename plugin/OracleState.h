@@ -89,12 +89,13 @@ inline Ogre::Vector3 readPosition(const Value& p,const char* key){
 typedef std::map<std::string,Character*> Characters;
 typedef std::map<std::string,Platoon*> Squads;
 typedef std::map<std::string,Faction*> Factions;
-struct Loaded {Characters characters;Squads squads;Factions factions;};
+// seenFactions keeps every faction pointer met in the census, even when two share an id.
+struct Loaded {Characters characters;Squads squads;Factions factions;std::set<Faction*> seenFactions;};
 inline void addCharacter(Loaded& loaded,Character* c){
     if(!c)return;std::string id=objectId(c);if(id.empty())throw Error("state_unavailable","loaded character has no handle");
     Characters::iterator old=loaded.characters.find(id);if(old!=loaded.characters.end()&&old->second!=c)throw Error("state_unavailable","duplicate character identity");loaded.characters[id]=c;
     ActivePlatoon* activePlatoon=c->getPlatoon();if(activePlatoon&&activePlatoon->me){std::string sid=objectId(activePlatoon->me);if(sid.empty())throw Error("state_unavailable","loaded squad has no handle");loaded.squads[sid]=activePlatoon->me;}
-    Faction* f=c->getFaction();std::string fid=factionId(f);if(!fid.empty())loaded.factions[fid]=f;
+    Faction* f=c->getFaction();std::string fid=factionId(f);if(!fid.empty()){loaded.factions[fid]=f;loaded.seenFactions.insert(f);}
     if(loaded.characters.size()>20000)throw Error("state_unavailable","loaded character safety limit exceeded; no partial snapshot was produced");
 }
 inline Loaded loadedObjects(GameWorld* world){
@@ -106,7 +107,7 @@ inline Loaded loadedObjects(GameWorld* world){
     for(ogre_unordered_map<hand,Character*>::type::const_iterator i=world->deathParade.begin();i!=world->deathParade.end();++i)addCharacter(loaded,i->second);
     if(world->factionMgr){const lektor<Faction*>* factions=world->factionMgr->getAllFactions();
         if(factions){if(factions->size()>512)throw Error("state_unavailable","faction safety limit exceeded");
-            for(unsigned int i=0;i<factions->size();++i){Faction* f=(*factions)[i];if(!f)continue;std::string fid=factionId(f);if(!fid.empty())loaded.factions[fid]=f;
+            for(unsigned int i=0;i<factions->size();++i){Faction* f=(*factions)[i];if(!f)continue;std::string fid=factionId(f);if(!fid.empty()){loaded.factions[fid]=f;loaded.seenFactions.insert(f);}
                 const lektor<Platoon*>* squads=f->getActivePlatoons();if(!squads)continue;if(squads->size()>10000)throw Error("state_unavailable","squad safety limit exceeded");
                 for(unsigned int j=0;j<squads->size();++j){Platoon* p=(*squads)[j];if(!p)continue;ActivePlatoon* a=p->getActivePlatoon();if(!a)continue;std::string id=objectId(p);if(id.empty())throw Error("state_unavailable","active squad has no handle");loaded.squads[id]=p;
                     lektor<RootObject*>* members=a->getThings();if(!members)continue;if(members->size()>20000)throw Error("state_unavailable","squad member safety limit exceeded");
@@ -227,8 +228,8 @@ inline Value order(Character* c){
 // State 0.3: member reads only, no engine call on the character or its
 // StateBroadcastData (Character.h stateBroadcast 0x1A0; StateBroadcastData.h
 // _slaveState 0x0, isSlaveOf 0xE0). The owner pointer is dereferenced only
-// after it is found, by pointer comparison, among the census's registered
-// factions; the id then comes from factionId exactly as factions[].id does.
+// after it is found, by pointer comparison, among every faction pointer the
+// census met (two pointers sharing an id are both kept); the id then comes from factionId exactly as factions[].id does.
 inline void addSlaveFields(Value& row,Character* c,const std::set<Faction*>& registered){
     // The SDK headers must keep the documented layout; this does not prove it against the game binary.
     typedef char BroadcastAt1A0[offsetof(Character,stateBroadcast)==0x1A0?1:-1];
@@ -245,8 +246,7 @@ inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
     requireWorld(world);if(active())throw Error("busy","wait for run_until to complete before taking a checkpoint");
     if(!world->isPaused())throw Error("invalid_request","pause the game before dump_state");savedOrigins.requirePrepared();Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);Value out=Value::obj();out.object["schema_version"]=Value(version);out.object["clock"]=clock(world);
     Value characters=Value::arr(),squads=Value::arr(),factions=Value::arr(),relations=Value::arr();std::map<std::string,std::vector<std::string> > memberIds;
-    const bool additive=version!="0.1",slaves=version=="0.3";std::set<Faction*> registered;
-    if(slaves)for(Factions::const_iterator i=loaded.factions.begin();i!=loaded.factions.end();++i)registered.insert(i->second);
+    const bool additive=version!="0.1",slaves=version=="0.3";const std::set<Faction*>& registered=loaded.seenFactions;
     for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c);row.object["order"]=order(c);
         if(additive){
             row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
