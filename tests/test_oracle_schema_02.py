@@ -55,8 +55,8 @@ def test_schema_02_is_self_contained_valid_and_only_adds_to_01_contract():
 
 def test_both_versions_are_supported_without_upgrading_scenarios():
     assert SCHEMA_VERSION == '0.1'
-    assert STATE_SCHEMA_VERSIONS == ('0.1', '0.2')
-    assert LATEST_STATE_SCHEMA_VERSION == '0.2'
+    assert STATE_SCHEMA_VERSIONS == ('0.1', '0.2', '0.3')
+    assert LATEST_STATE_SCHEMA_VERSION == '0.3'
     assert validate_state(populated_state())['schema_version'] == '0.1'
     assert validate_state(state_02())['schema_version'] == '0.2'
     assert validate_scenario(scenario())['schema_version'] == '0.1'

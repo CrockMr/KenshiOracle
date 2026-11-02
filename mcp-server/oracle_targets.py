@@ -24,7 +24,11 @@ def target_config(original, target='original'):
                                   == os.path.normcase(str(Path(original['runtime']).resolve()))):
         raise ValueError('MeitouClient requires its own runtime directory')
     result['port'] = port
-    result.setdefault('state_schema', '0.2')
+    # The Meitou target must keep the additive contract: never fall back to 0.1.
+    # An adapter without state 0.3 (series before patch 0006) needs an explicit
+    # "0.2" here and in the original's configuration, or the comparison refuses
+    # the mixed versions.
+    result.setdefault('state_schema', '0.3')
     # One local profile may hold both targets' entries; lookups are keyed by target.
     if not result.get('engine_profile') and original.get('engine_profile'):
         result['engine_profile'] = original['engine_profile']

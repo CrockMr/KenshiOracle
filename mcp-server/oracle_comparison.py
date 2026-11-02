@@ -10,7 +10,7 @@ import re
 
 from oracle_compare import classify_metric, saved_metrics, saved_observations
 from oracle_identity import validate_origin_fingerprint
-from oracle_schema import canonical_bytes, validate_scenario
+from oracle_schema import COMPARABLE_STATE_SCHEMA_VERSIONS, canonical_bytes, validate_scenario
 from oracle_scope import (BACKGROUND_PREFIX, COMMIT_NOT_RECORDED, RECEIPT_FORMAT, background_baseline,
                           cohorts, is_pair_relation_metric, labels, metric_scope, nearest_squad_metrics,
                           scene_metrics, scene_scope,
@@ -188,6 +188,8 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
     checkpoints = {point['name']: point['at'] for point in scenario['checkpoints']}
     grouped = defaultdict(list)
     seeds, identities = [], set()
+    # One campaign uses one state schema (0.2 or 0.3); the runner records it.
+    state_schema = report.get('state_schema')
     for execution in executions:
         repetition = execution.get('execution')
         if type(repetition) is not int or repetition < 1 or repetition in identities or execution.get('status') != 'completed':
@@ -238,9 +240,14 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
             if len(payload) > 64 * 1024 * 1024:
                 raise ValueError('Snapshot exceeds the shared state size limit')
             state = json.loads(payload)
-            if (state['schema_version'] != '0.2' or payload != canonical_bytes(state)
+            if (state['schema_version'] not in COMPARABLE_STATE_SCHEMA_VERSIONS
+                    or payload != canonical_bytes(state)
                     or hashlib.sha256(payload).hexdigest() != capture.get('sha256')):
                 raise ValueError('Snapshot schema, canonical bytes or hash does not match its campaign')
+            if state_schema is None:
+                state_schema = state['schema_version']
+            elif state['schema_version'] != state_schema:
+                raise ValueError('Snapshots of one campaign must all use its recorded state schema')
             if capture.get('requested_at') != checkpoints[capture['name']] or state['clock']['paused'] is not True:
                 raise ValueError('Checkpoint time or paused-state evidence does not match the scenario')
             actual = state['clock']['elapsed_seconds'] - origin
@@ -269,7 +276,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
         raise ValueError('Meitou repetitions must use distinct seeds')
     return dict(report=report, path=relative(path, output), scenario=scenario, n=len(executions),
                 fingerprint=fingerprint, checkpoints=dict(grouped), seeds=seeds, build_commit=commit,
-                aliases=aliases, setup_members=members)
+                aliases=aliases, setup_members=members, state_schema=state_schema)
 
 
 def escaped(value):
@@ -499,6 +506,9 @@ def compare_campaigns(original_path, meitou_path, output, *, minimum_repetitions
     other.pop('repeat', None)
     if scenario != other or original['fingerprint'] != meitou['fingerprint']:
         raise ValueError('Campaigns must use the same scenario and unchanged starting-save fingerprint')
+    if original['state_schema'] != meitou['state_schema']:
+        # Never project one version onto another: a 0.2 campaign lacks the 0.3 fields.
+        raise ValueError('Campaigns must use the same state schema version')
     scope = scene_scope(scenario)
     extra = {}
     if scope is None:

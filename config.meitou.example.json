@@ -5,7 +5,7 @@
   "game_install": "../Kenshi",
   "arguments": ["--no-precompile"],
   "port": 47801,
-  "state_schema": "0.2",
+  "state_schema": "0.3",
   "base_seed": 0,
   "engine_profile": "runtime/engine-profile.json",
   "timeout": 10,

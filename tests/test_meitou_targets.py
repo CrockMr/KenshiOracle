@@ -173,7 +173,7 @@ def test_target_selection_and_opt_in_flags_keep_original_configuration_unchanged
     assert target_config(original) is original
     selected = target_config(original, 'meitou')
     assert selected['port'] == 53123 and selected['runtime'] != original['runtime']
-    assert selected['state_schema'] == '0.2'
+    assert selected['state_schema'] == '0.3'
     selected['arguments'] = ['--no-precompile', '--seed', '17']
     before = deepcopy(selected)
     launched = launch_config(selected)

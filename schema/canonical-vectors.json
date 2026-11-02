@@ -4900,6 +4900,291 @@
       },
       "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzdHVuIjowfV0sImlkIjoiaGFuZDoxOjc6MTAxOjI6MTAwMiIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC4yIiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwib3JpZ2luX3Rvd25faWQiOm51bGwsInRlbXBsYXRlX2lkIjoiZml4dHVyZS10ZW1wbGF0ZSJ9XX0K",
       "expected_sha256": "78c88dadaf32cda8f8f05751f5649dfbe3356bd8273c8e86ac39851bb7cb0c25"
+    },
+    {
+      "name": "additive-state-03",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.3",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "escaping_slave",
+            "slave_owner_faction_id": "fixture-owner"
+          },
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": null,
+            "slave_owner_faction_id": null
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:1:1001",
+              "hand:1:7:101:2:1002"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLW93bmVyIiwic2xhdmVfc3RhdGUiOiJlc2NhcGluZ19zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzdHVuIjowfV0sImlkIjoiaGFuZDoxOjc6MTAxOjI6MTAwMiIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6bnVsbCwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
+      "expected_sha256": "995f44f73721668ad8c3633b7421460c219a776ff170fb174ea65a0cdc1a0c81"
+    },
+    {
+      "name": "state-03-permutation",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.3",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": null,
+            "slave_owner_faction_id": null
+          },
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "escaping_slave",
+            "slave_owner_faction_id": "fixture-owner"
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:2:1002",
+              "hand:1:7:101:1:1001"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLW93bmVyIiwic2xhdmVfc3RhdGUiOiJlc2NhcGluZ19zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImhlYWx0aCI6W3siY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzdHVuIjowfV0sImlkIjoiaGFuZDoxOjc6MTAxOjI6MTAwMiIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6bnVsbCwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
+      "expected_sha256": "995f44f73721668ad8c3633b7421460c219a776ff170fb174ea65a0cdc1a0c81"
+    },
+    {
+      "name": "state-03-not-slave-and-ex-slave",
+      "kind": "state",
+      "input": {
+        "schema_version": "0.3",
+        "clock": {
+          "day": 2,
+          "hour": 12,
+          "elapsed_seconds": 216000,
+          "speed": 0,
+          "paused": true
+        },
+        "characters": [
+          {
+            "id": "hand:1:7:101:1:1001",
+            "name": "Alpha",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "not_slave",
+            "slave_owner_faction_id": null
+          },
+          {
+            "id": "hand:1:7:101:2:1002",
+            "name": "Beta",
+            "race_id": "fixture-race",
+            "faction_id": "fixture-faction",
+            "squad_id": "hand:34:7:101:0:0",
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "state": "alive",
+            "health": [
+              {
+                "id": "fixture-head:neither",
+                "current": 100,
+                "stun": 0,
+                "maximum": 100
+              }
+            ],
+            "order": null,
+            "identity_origin": "saved",
+            "current_town_id": null,
+            "town_assignment": null,
+            "in_combat": false,
+            "slave_state": "ex_slave",
+            "slave_owner_faction_id": "fixture-faction"
+          }
+        ],
+        "squads": [
+          {
+            "id": "hand:34:7:101:0:0",
+            "faction_id": "fixture-faction",
+            "members": [
+              "hand:1:7:101:1:1001",
+              "hand:1:7:101:2:1002"
+            ],
+            "leader_id": "hand:1:7:101:1:1001",
+            "identity_origin": "saved",
+            "template_id": "fixture-template",
+            "origin_town_id": null
+          }
+        ],
+        "factions": [
+          {
+            "id": "fixture-faction",
+            "name": "Fixture faction"
+          }
+        ],
+        "relations": []
+      },
+      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJoZWFsdGgiOlt7ImN1cnJlbnQiOjEwMCwiaWQiOiJmaXh0dXJlLWhlYWQ6bmVpdGhlciIsIm1heGltdW0iOjEwMCwic3R1biI6MH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9LHsiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInN0dW4iOjB9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJuYW1lIjoiQmV0YSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzEsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJzbGF2ZV9zdGF0ZSI6ImV4X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuMyIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm9yaWdpbl90b3duX2lkIjpudWxsLCJ0ZW1wbGF0ZV9pZCI6ImZpeHR1cmUtdGVtcGxhdGUifV19Cg==",
+      "expected_sha256": "5886f22c7bc73f8262f6c9b8183055b6ff4cd3dce7ae3cbd555a923e74442c74"
     }
   ]
 }

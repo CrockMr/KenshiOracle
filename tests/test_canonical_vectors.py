@@ -34,5 +34,5 @@ def test_fixture_identity_is_defined_on_lf_normalized_content():
     # The fixture identity is the SHA-256 of its LF-normalized bytes, so CRLF and
     # LF checkouts (and the MeitouClient C# adapter tests) agree on one value.
     normalized = SOURCE.read_bytes().replace(b'\r\n', b'\n')
-    pinned = 'd41b18288b8510e379ff7bcc62212d018ec75fe80edfa045f8c2df2b17a03cad'
+    pinned = '06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170'
     assert hashlib.sha256(normalized).hexdigest() == pinned

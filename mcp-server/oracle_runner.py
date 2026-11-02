@@ -17,7 +17,7 @@ import re
 import time
 import uuid
 
-from oracle_schema import canonical_bytes, load_scenario, load_state, validate_scenario
+from oracle_schema import STATE_SCHEMA_VERSIONS, canonical_bytes, load_scenario, load_state, validate_scenario
 from oracle_origins import read_saved_origins, verify_saved_origins, SavedOriginError
 from oracle_identity import validate_origin_fingerprint, validate_origin_token, validate_saved_handles
 from probe import Client, ProbeError
@@ -103,8 +103,8 @@ class OracleSession:
         self.requested_target = cfg.get('target')
         if self.requested_target is not None and self.requested_target not in ('original', 'meitou'):
             raise ValueError('target must be original or meitou')
-        if self.requested_schema is not None and self.requested_schema not in ('0.1', '0.2'):
-            raise ValueError('state_schema must be 0.1 or 0.2')
+        if self.requested_schema is not None and self.requested_schema not in STATE_SCHEMA_VERSIONS:
+            raise ValueError('state_schema must be 0.1, 0.2 or 0.3')
         self.deadline = None
         self.identity_source = None
         # Optional callable(command, params) -> record dict; each reply is stored in record['reply'].
@@ -157,13 +157,17 @@ class OracleSession:
         if (type(supported) is not list or not supported
                 or any(type(value) is not str for value in supported)):
             raise ScenarioError('Probe did not advertise valid supported state schemas')
-        selected = self.requested_schema or next((v for v in ('0.2', '0.1') if v in supported), None)
+        # Prefer the highest version both sides support; an explicit request is
+        # honoured exactly and never falls back to another version.
+        selected = self.requested_schema or next(
+            (v for v in reversed(STATE_SCHEMA_VERSIONS) if v in supported), None)
         if selected is None or selected not in supported:
             raise ScenarioError('Probe does not support the requested state schema')
         if self.state_schema is not None and self.state_schema != selected:
             raise ScenarioError('Probe changed state schema during the scenario')
         self.state_schema = selected
-        self.schema_parameter = '0.2' in supported
+        # Phase 1 probes (0.1 only) reject the parameter; every later producer takes it.
+        self.schema_parameter = any(v in supported for v in STATE_SCHEMA_VERSIONS[1:])
         return result
 
     def source_root(self, status):
@@ -864,7 +868,7 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                 raise ScenarioError('Use the original reference launcher: this probe requires a verified RE_Kenshi profile')
             if ping.get('world_ready') is not True:
                 raise ScenarioError('Load a game first so its camera/time controls can be restored')
-            if session.state_schema not in ('0.1', '0.2'):
+            if session.state_schema not in STATE_SCHEMA_VERSIONS:
                 raise ScenarioError('Probe does not support a common state schema')
             report['state_schema'] = session.state_schema
             report['target'] = ping.get('target', 'original')

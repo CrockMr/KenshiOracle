@@ -59,6 +59,22 @@ def vectors():
     for row in permuted['squads']:
         row['members'].reverse()
     cases.append(('state-02-permutation', 'state', permuted))
+    # State 0.3: the 0.2 case plus the two slave fields; null is unknown coverage.
+    state = deepcopy(state)
+    state['schema_version'] = '0.3'
+    state['characters'][0].update(slave_state='escaping_slave', slave_owner_faction_id='fixture-owner')
+    state['characters'][1].update(slave_state=None, slave_owner_faction_id=None)
+    cases.append(('additive-state-03', 'state', state))
+    permuted = deepcopy(state)
+    for key in ('characters', 'squads', 'factions', 'relations'):
+        permuted[key].reverse()
+    for row in permuted['squads']:
+        row['members'].reverse()
+    cases.append(('state-03-permutation', 'state', permuted))
+    state = deepcopy(state)
+    state['characters'][0].update(slave_state='not_slave', slave_owner_faction_id=None)
+    state['characters'][1].update(slave_state='ex_slave', slave_owner_faction_id='fixture-faction')
+    cases.append(('state-03-not-slave-and-ex-slave', 'state', state))
     return cases
 
 

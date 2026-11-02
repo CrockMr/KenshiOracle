@@ -199,6 +199,11 @@ def _fields(state, row, labels=None):
     fields = {key: row.get(key) for key in ('name', 'race_id', 'faction_id', 'state',
                                          'current_town_id', 'town_assignment', 'in_combat')}
     fields['squad_id'] = _reference(row.get('squad_id'), saved_squads, labels)
+    # State 0.3 only (its schema requires both keys; 0.2 forbids them), so a 0.2
+    # comparison gains no metric. Null stays null: never read as not_slave or no owner.
+    for key in ('slave_state', 'slave_owner_faction_id'):
+        if key in row:
+            fields[key] = row[key]
     for index in range(3):
         fields[f'position/{index}'] = row['position'][index] if row.get('position') is not None else None
     health = row.get('health')
