@@ -1,7 +1,7 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "198f4f8149aa06589c39d52f7688925591d67197",
+  "fork_tip": "9e16733617a47f647ed91ef98f62994bf3580d12",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
@@ -52,6 +52,12 @@
       "source_commit": "198f4f8149aa06589c39d52f7688925591d67197",
       "sha256": "c8891e376c1306ba1590d42275cf1f5603c874b0732446e43d764c5f52ca28fe",
       "bytes": 71535
+    },
+    {
+      "file": "0009-captive-job-goals.patch",
+      "source_commit": "9e16733617a47f647ed91ef98f62994bf3580d12",
+      "sha256": "a8a39977fff75ebc4709a02c347dfa826f2c850e20ef8d7fafd5d34e92d0dbb5",
+      "bytes": 11457
     }
   ]
 }

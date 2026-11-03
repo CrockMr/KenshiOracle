@@ -46,9 +46,10 @@ four are merged.
 
 ## Still open
 
-- **Captive jobs are not goals on Meitou.** Gathering, shouting, getting into a cage and similar slave work run as MeitouClient captive
-  jobs, outside the AI's goal. Patch 0008 reports the mind's goal, so a Meitou slaver's goal never reads `gather_slaves_from_cages`
-  or `work_the_slaves`, even when it does that work. This is a projection gap of the adapter, not a behaviour difference.
+- **Captive jobs were not goals on Meitou.** Gathering, shouting, getting into a cage and similar slave work run as MeitouClient
+  captive jobs, outside the AI's goal. Patch 0008 reported the mind's goal, so a Meitou slaver's goal never read
+  `gather_slaves_from_cages` or `work_the_slaves`, even while it did that work. This was a projection gap of the adapter, not a
+  behaviour difference. [Patch 0009](../integrations/meitou/README.md) reports the goal a running job runs. Its live check is pending.
 - **G. Shoppers:** native `shopping`, Meitou `relax_in_town_package` (106 of 136). Not diagnosed.
 - **H. Guards:** native `stand_at_guard_node_hometown_outside`, Meitou `..._homebuilding_in_out` (140; the reverse 39). Not
   diagnosed.

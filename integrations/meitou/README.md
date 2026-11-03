@@ -1,10 +1,10 @@
 # MeitouClient Oracle patch series
 
 This directory makes the Meitou adapter reproducible without distributing a
-Meitou binary or relying on an unpublished fork. Apply the eight patches, in
+Meitou binary or relying on an unpublished fork. Apply the nine patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `198f4f8149aa06589c39d52f7688925591d67197`;
+correspond to the local fork tip `9e16733617a47f647ed91ef98f62994bf3580d12`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -21,6 +21,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5a194dc9013ec8a81d1b339686bda649e3cc5f` |
 | 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `8677d68da41e8961972e387c565c0f678618e79b` |
 | 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `198f4f8149aa06589c39d52f7688925591d67197` |
+| 9 | [Captive job goals in state 0.5](0009-captive-job-goals.patch) | `9e16733617a47f647ed91ef98f62994bf3580d12` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -90,6 +91,18 @@ general is **Unknown**. Most goal differences of that run came from MeitouClient
 defects that later upstream changes address, all after the pinned base; see the
 [MeitouClient findings](../../docs/meitou-findings.md).
 
+Patch 9 changes only the 0.5 `goal` of a character that works a captive job.
+MeitouClient runs captive work (gathering slaves from cages, working them,
+getting into a cage, guarding or processing prisoners) as `CaptiveSystem` jobs,
+and the AI holds no worker of a job, so its mind keeps the goal it had before.
+The captive sweep now records on each job the AI goal it started the job for
+(`CaptiveJob.Goal`, a role list's or the race's goal). While the job runs, the
+worker's goal is that goal, by row number with its AI_TASK tier; otherwise it is
+the mind's goal as before. A job started any other way (a player animal's race
+goal) has no recorded goal and changes nothing. 0.1 to 0.4 output and the 0.5
+`order` are unchanged (pinned by test). Whether this goal is what the original's
+`currentGoal` holds during the same work is **Unknown** until a live check.
+
 ## Apply and build
 
 Use a separate checkout beside this KenshiOracle checkout. MeitouClient's
@@ -111,7 +124,7 @@ same `git switch` line; your old branch stays as a backup. Then, in either case:
 ```powershell
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
 $Series = "$OracleRoot/integrations/meitou"
-git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch"
+git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch" "$Series/0009-captive-job-goals.patch"
 dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
 dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
@@ -121,9 +134,9 @@ Build from a clean Git checkout: `build_commit` is the full commit only when
 the comparator refuses for campaigns.
 
 **Verified:** in a scratch checkout at upstream `88ae71a1`, without network
-access, `git am --3way` applied the eight patches cleanly with
+access, `git am --3way` applied the nine patches cleanly with
 `core.autocrlf=false` and with `core.autocrlf=true`; both times the resulting
-tree equalled the fork tip's tree `869275d0a302d9562dac4d34b29db5528f9b9f76`
+tree equalled the fork tip's tree `4eee259e925abeb6c1eeb9b35bb4f23b362f0fb4`
 (compared with `git rev-parse HEAD^{tree}`).
 This checks source reproduction, not a live campaign. The patch 7 results below
 ran at `efc2eb2a`, the same tree as `8677d68d` before patch 7's author was set
@@ -212,19 +225,20 @@ paused edit bracket); the fourth adds the `setup_*` commands of the
 [scene-setup contract](../../docs/scene-setup.md), `allow_setup` on
 `load_save`, the ping additions and the `issue_order` refusals; the fifth
 fills `health[].maximum` with the calculated part maximum; the sixth, seventh and
-eighth add the state 0.3, 0.4 and 0.5 fields. Keep these
+eighth add the state 0.3, 0.4 and 0.5 fields; the ninth reports a captive job's
+goal as the 0.5 goal. Keep these
 integration points small when updating upstream; do not copy unrelated
 upstream changes into this series. The shared canonical vectors are synthetic
 fixtures, not game data.
 
 Maintain the branch as a durable fork. Before updating, keep a local backup
 branch, record the old upstream base, then fetch the current upstream and rebase
-the eight adapter commits onto the selected upstream commit. Resolve
+the nine adapter commits onto the selected upstream commit. Resolve
 host/lifecycle conflicts explicitly. Build both flag modes, rerun the focused
 tests and shared canonical vectors, and compare any complete-suite failures
 with that same unmodified upstream. Revalidate pause/loading, seed provenance,
 fresh heartbeat, cancellation, restoration and scene setup with local saves
-before claiming compatibility. Export a fresh eight-patch series into a
+before claiming compatibility. Export a fresh nine-patch series into a
 temporary directory with `git format-patch -N --no-signature`, review the diff,
 then update the pinned base, source commits, hashes and validation evidence
 here. Do not publish or force-push an upstream repository as part of this
@@ -243,8 +257,8 @@ MeitouClient and this derivative patch series are distributed under
 [additional permission for specified NVIDIA libraries](LICENSE-EXCEPTION.md)
 are preserved verbatim from the pinned upstream commit. The latter permission
 does not cover unrelated non-free dependencies. Upstream work is by the
-MeitouClient contributors; the eight modifications were made for KenshiOracle,
-with patches 1-2 committed as KenshiOracle contributors and patches 3-8 as
+MeitouClient contributors; the nine modifications were made for KenshiOracle,
+with patches 1-2 committed as KenshiOracle contributors and patches 3-9 as
 CrockMr (each patch's `From:` line). No proprietary executable, disassembled listing or decompiled
 game code is included. Upstream dependency notices remain in the separately
 obtained MeitouClient checkout.
