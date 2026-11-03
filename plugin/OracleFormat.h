@@ -92,6 +92,38 @@ static const char* const statKeys[statKeyCount]={
     "medic","thieving","turrets","farming","cooking","stealth","athletics","dexterity","melee_defence","toughness",
     "assassination","swimming","perception","katanas","sabres","hackers","heavyweapons","blunt","martialarts",
     "masscombat","dodge","polearms","crossbows","friendly_fire","lockpicking","smithing_bow"};
+// State 0.5 goal priority. KenshiLib AI/AITaskSystem.h taskPriority: 0
+// TP_JUST_ACTION, 1 TP_FLUFF, 2 TP_NON_URGENT, 3 TP_URGENT, 4 TP_OBEDIENCE. Any
+// other raw value (TP_MAX_SIZE included) is unknown and gives null.
+inline json::Value goalPriorityName(int raw){
+    switch(raw){case 0:return json::Value(std::string("just_action"));case 1:return json::Value(std::string("fluff"));case 2:return json::Value(std::string("non_urgent"));case 3:return json::Value(std::string("urgent"));case 4:return json::Value(std::string("obedience"));default:return json::Value();}
+}
+// State 0.5 goal rows: KenshiLib Enums.h TaskType, NULL_TASK 0 to
+// BASH_GATE_PLAYER_ORDER 290 (OracleState.h checks both against the enum).
+static const int goalNullTaskRow=0;
+static const int goalLastTaskRow=290;
+// State 0.5 goal of one AI task system, by member reads only: currentGoal
+// (TaskMatch: taskData, subject) and currentGoalPriority. No engine function is
+// called. A null task system or taskData, a row outside 0 to 290, NULL_TASK or a
+// row without a name gives null; Task_Blank rows are goals and keep their name.
+// A priority outside 0 to 4 gives priority null and keeps the other keys. The
+// target is encoded by handId and is null for an empty id, as order.target_id.
+// Templates so that the native tests can use fake objects of the same shape.
+template<class Tasks,class Hand>
+inline json::Value goalFromTaskSystem(const Tasks* tasks,const char* (*rowName)(int),std::string (*handId)(const Hand&)){
+    if(!tasks||!tasks->currentGoal.taskData)return json::Value();
+    const int row=(int)tasks->currentGoal.taskData->key;
+    if(row<goalNullTaskRow||row>goalLastTaskRow||row==goalNullTaskRow)return json::Value();
+    const char* name=rowName(row);if(!name||!*name)return json::Value();
+    json::Value out=json::Value::obj();out.object["type"]=json::Value(std::string(name));
+    out.object["priority"]=goalPriorityName((int)tasks->currentGoalPriority);
+    const std::string target=handId(tasks->currentGoal.subject);
+    out.object["target_id"]=target.empty()?json::Value():json::Value(target);return out;
+}
+template<class Mind,class Hand>
+inline json::Value goalFromAI(const Mind* ai,const char* (*rowName)(int),std::string (*handId)(const Hand&)){
+    return ai?goalFromTaskSystem(ai->taskSystemAI,rowName,handId):json::Value();
+}
 inline void validateFilename(const std::string& name){
     if(name.size()<6||name.size()>105||name.substr(name.size()-5)!=".json"||name.substr(0,name.size()-5).find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")!=std::string::npos)
         throw Error("invalid_request","filename must be a simple name ending in .json");

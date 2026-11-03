@@ -9,6 +9,27 @@
 #include <kenshi/Enums.h>
 #include <kenshi/StateBroadcastData.h>
 #include <kenshi/CharStats.h>
+#include <kenshi/AI/AI.h>
+// KenshiLib declares the same taskPriority enum (same names and values) in
+// Tasker.h and in AI/AITaskSystem.h, so one translation unit cannot include
+// both. AITaskSystem.h is included with its copy renamed; the layout of every
+// class it declares is unchanged, and the state 0.5 checks below tie both
+// copies to the same values. The SDK checkout itself is not modified.
+#define taskPriority oracleAITaskSystemTaskPriority
+#define TP_JUST_ACTION ORACLE_AITS_TP_JUST_ACTION
+#define TP_FLUFF ORACLE_AITS_TP_FLUFF
+#define TP_NON_URGENT ORACLE_AITS_TP_NON_URGENT
+#define TP_URGENT ORACLE_AITS_TP_URGENT
+#define TP_OBEDIENCE ORACLE_AITS_TP_OBEDIENCE
+#define TP_MAX_SIZE ORACLE_AITS_TP_MAX_SIZE
+#include <kenshi/AI/AITaskSystem.h>
+#undef taskPriority
+#undef TP_JUST_ACTION
+#undef TP_FLUFF
+#undef TP_NON_URGENT
+#undef TP_URGENT
+#undef TP_OBEDIENCE
+#undef TP_MAX_SIZE
 #include <ogre/OgreSceneNode.h>
 #include <set>
 #include "OracleTaskNames.h"
@@ -19,13 +40,13 @@
 // All functions that accept engine objects run exclusively in drainCommands or
 // loopHook. publishFile below receives only an owned JSON tree, never pointers.
 namespace oracle {
-static const char* schemaVersion="0.4";
-static const char* const stateSchemaVersions[]={"0.1","0.2","0.3","0.4"};
+static const char* schemaVersion="0.5";
+static const char* const stateSchemaVersions[]={"0.1","0.2","0.3","0.4","0.5"};
 static const size_t stateSchemaVersionCount=sizeof(stateSchemaVersions)/sizeof(stateSchemaVersions[0]);
 inline Value supportedSchemaVersions(){Value out=Value::arr();for(size_t i=0;i<stateSchemaVersionCount;++i)out.array.push_back(Value(std::string(stateSchemaVersions[i])));return out;}
 inline void requireStateSchemaVersion(const std::string& version){
     for(size_t i=0;i<stateSchemaVersionCount;++i)if(version==stateSchemaVersions[i])return;
-    throw Error("invalid_request","schema_version must be 0.1, 0.2, 0.3 or 0.4");
+    throw Error("invalid_request","schema_version must be 0.1, 0.2, 0.3, 0.4 or 0.5");
 }
 inline std::string requestedSchemaVersion(const Value& params){
     std::string version=params.object.count("schema_version")?text(params,"schema_version",8):std::string(schemaVersion);
@@ -316,7 +337,28 @@ ORACLE_MEMBER_AT(BowsAt110,CharStats,bows,0x110,4);
 ORACLE_MEMBER_AT(FriendlyFireAtF4,CharStats,friendlyFire,0xF4,4);
 ORACLE_MEMBER_AT(LockpickingAtB0,CharStats,lockpicking,0xB0,4);
 ORACLE_MEMBER_AT(BowSmithAtD8,CharStats,bowSmith,0xD8,4);
+// State 0.5 goal: Character::ai (Character.h:720) -> AI::taskSystemAI
+// (AI/AI.h:115) -> currentGoal and currentGoalPriority of OrdersReceiver, the
+// base of AITaskSytem at offset 0 (AI/AITaskSystem.h:179, 181, 194), checked
+// through AITaskSytem too -> TaskMatch::taskData and subject
+// (AI/AITaskSystem.h:31, 40) -> TaskData::key (Tasker.h:94). Member reads only:
+// TaskMatch::key(), getCurrentGoal() and getAI() are not called.
+ORACLE_MEMBER_AT(AiAt650,Character,ai,0x650,8);
+ORACLE_MEMBER_AT(TaskSystemAIAt20,AI,taskSystemAI,0x20,8);
+ORACLE_MEMBER_AT(CurrentGoalAt1C0,OrdersReceiver,currentGoal,0x1C0,sizeof(TaskMatch));
+ORACLE_MEMBER_AT(CurrentGoalPriorityAt20C,OrdersReceiver,currentGoalPriority,0x20C,4);
+ORACLE_MEMBER_AT(TaskSystemGoalAt1C0,AITaskSytem,currentGoal,0x1C0,sizeof(TaskMatch));
+ORACLE_MEMBER_AT(TaskSystemGoalPriorityAt20C,AITaskSytem,currentGoalPriority,0x20C,4);
+ORACLE_MEMBER_AT(TaskDataAt0,TaskMatch,taskData,0x0,8);
+ORACLE_MEMBER_AT(SubjectAt8,TaskMatch,subject,0x8,sizeof(hand));
+ORACLE_MEMBER_AT(TaskKeyAt44,TaskData,key,0x44,4);
 #undef ORACLE_MEMBER_AT
+typedef char GoalTaskMatchLength48[sizeof(TaskMatch)==0x48?1:-1];
+typedef char GoalNullTaskRow[NULL_TASK==goalNullTaskRow?1:-1];
+typedef char GoalLastTaskRow[BASH_GATE_PLAYER_ORDER==goalLastTaskRow?1:-1];
+typedef char GoalPriorityTiers[TP_JUST_ACTION==0&&TP_FLUFF==1&&TP_NON_URGENT==2&&TP_URGENT==3&&TP_OBEDIENCE==4&&TP_MAX_SIZE==5?1:-1];
+typedef char GoalPriorityTiersAITaskSystem[ORACLE_AITS_TP_JUST_ACTION==0&&ORACLE_AITS_TP_FLUFF==1&&ORACLE_AITS_TP_NON_URGENT==2&&ORACLE_AITS_TP_URGENT==3&&ORACLE_AITS_TP_OBEDIENCE==4&&ORACLE_AITS_TP_MAX_SIZE==5?1:-1];
+typedef char GoalPriorityIsEnum4[sizeof(oracleAITaskSystemTaskPriority)==4?1:-1];
 inline Value statsObject(const CharStats* stats){
     if(!stats)return Value();Value out=Value::obj();
     for(size_t i=0;i<statKeyCount;++i)out.object[statKeys[i]]=finiteOrNull(stats->*statMembers[i].member);return out;
@@ -339,6 +381,16 @@ inline void addState04Fields(Value& row,Character* c){
     row.object["carrying_id"]=kind.type==Value::STRING&&kind.str=="character"?Value(carriedId):Value();
     row.object["being_carried"]=Value::flag(c->_isBeingCarried);
 }
+// State 0.5 goal row name through the shared table; goalFromTaskSystem
+// (OracleFormat.h) has already rejected NULL_TASK and rows outside 0 to 290.
+inline const char* goalRowName(int row){return taskName((TaskType)row);}
+inline void addState05Fields(Value& row,Character* c){
+    // goal.target_id is encoded by handleId exactly as order.target_id is, and
+    // canonicalizeSnapshotOrigins applies the same saved-origin rule to both.
+    // A dead character's AI is not read: whether its pointer stays valid after
+    // death is Unknown, so its goal is null (unknown), never a stale goal.
+    row.object["goal"]=c->isDead()?Value():goalFromAI(c->ai,goalRowName,handleId);
+}
 inline Value squadMoney(Platoon* squad){
     const int money=squad->ownerships.money;return money>=-1000000000&&money<=1000000000?Value((double)money):Value();
 }
@@ -347,7 +399,7 @@ inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
     requireWorld(world);if(active())throw Error("busy","wait for run_until to complete before taking a checkpoint");
     if(!world->isPaused())throw Error("invalid_request","pause the game before dump_state");savedOrigins.requirePrepared();Loaded loaded=loadedObjects(world);refreshSavedOriginBindings(loaded);Value out=Value::obj();out.object["schema_version"]=Value(version);out.object["clock"]=clock(world);
     Value characters=Value::arr(),squads=Value::arr(),factions=Value::arr(),relations=Value::arr();std::map<std::string,std::vector<std::string> > memberIds;
-    const bool additive=version!="0.1",v04=version=="0.4",slaves=version=="0.3"||v04;const std::set<Faction*>& registered=loaded.seenFactions;
+    const bool additive=version!="0.1",v05=version=="0.5",v04=version=="0.4"||v05,slaves=version=="0.3"||v04;const std::set<Faction*>& registered=loaded.seenFactions;
     for(Characters::const_iterator i=loaded.characters.begin();i!=loaded.characters.end();++i){Character* c=i->second;Value row=Value::obj();row.object["id"]=Value(i->first);row.object["name"]=Value(c->getName());RaceData* race=c->getRace();row.object["race_id"]=optionalId(race?dataId(race->data):std::string());row.object["faction_id"]=optionalId(factionId(c->getFaction()));std::string sid=squadId(c);row.object["squad_id"]=optionalId(sid);if(!sid.empty())memberIds[sid].push_back(i->first);row.object["position"]=position(c->getPosition());row.object["state"]=Value(std::string(c->isDead()?"dead":c->isUnconcious()?"unconscious":"alive"));row.object["health"]=health(c,v04);row.object["order"]=order(c);
         if(additive){
             row.object["identity_origin"]=savedOrigins.hasSavedOrigin(i->first)?Value(std::string("saved")):Value();
@@ -360,6 +412,7 @@ inline Value snapshot(GameWorld* world,const std::string& version="0.1"){
         }
         if(slaves)addSlaveFields(row,c,registered);
         if(v04)addState04Fields(row,c);
+        if(v05)addState05Fields(row,c);
         characters.array.push_back(row);
     }
     for(Squads::const_iterator i=loaded.squads.begin();i!=loaded.squads.end();++i){Value row=Value::obj(),members=Value::arr();row.object["id"]=Value(i->first);row.object["faction_id"]=optionalId(factionId(i->second->getFaction()));const std::vector<std::string>& ids=memberIds[i->first];for(size_t j=0;j<ids.size();++j)members.array.push_back(Value(ids[j]));row.object["members"]=members;row.object["leader_id"]=optionalId(handleId(i->second->getSquadLeader_theRealOne()));

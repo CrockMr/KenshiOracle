@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "../plugin/OracleSavedOrigins.h"
 #include <iostream>
+#include <map>
 
 static unsigned int checks=0;
 static void require(bool okay){++checks;if(!okay)throw std::runtime_error("saved origins assertion failed");}
@@ -106,6 +107,23 @@ static void snapshotChecks(){
      oracle::canonicalizeSnapshotOrigins(carried,registry);const std::vector<json::Value>& rows=carried.at("characters").array;
      require(rows.size()==3&&rows[0].at("id").str==savedA&&rows[0].at("carrying_id").str==savedB&&rows[1].at("carrying_id").type==json::Value::NIL&&rows[2].at("carrying_id").str==runtimeOnly);
      std::string carriedOnce=oracle::canonical(carried);oracle::canonicalizeSnapshotOrigins(carried,registry);require(oracle::canonical(carried)==carriedOnce);}
+    // A 0.1-0.4 row has no goal and must not gain one.
+    for(size_t i=0;i<characters.size();++i)require(!characters[i].object.count("goal"));
+    // State 0.5 goal.target_id follows order.target_id: a proved alias becomes
+    // the saved HAND, an unproved runtime HAND is kept, a null target and a null
+    // goal stay null.
+    {json::Value goals=json::Value::obj();goals.object["characters"]=json::Value::arr();goals.object["squads"]=json::Value::arr();
+     json::Value a=fixtureCharacter(rawA,rawSquadA,std::string());a.object["goal"]=json::Parser("{\"type\":\"melee_attack\",\"priority\":\"urgent\",\"target_id\":\""+rawB+"\"}").parse();goals.object["characters"].array.push_back(a);
+     json::Value b=fixtureCharacter(rawB,rawSquadB,std::string());b.object["goal"]=json::Value();goals.object["characters"].array.push_back(b);
+     json::Value r=fixtureCharacter(runtimeOnly,rawSquadA,std::string());r.object["goal"]=json::Parser("{\"type\":\"wander_town\",\"priority\":null,\"target_id\":\""+runtimeOnly+"\"}").parse();goals.object["characters"].array.push_back(r);
+     const std::string idleOnly="hand:1:998:998:8:998";json::Value n=fixtureCharacter(idleOnly,rawSquadB,std::string());n.object["goal"]=json::Parser("{\"type\":\"idle\",\"priority\":\"fluff\",\"target_id\":null}").parse();goals.object["characters"].array.push_back(n);
+     oracle::canonicalizeSnapshotOrigins(goals,registry);const std::vector<json::Value>& rows=goals.at("characters").array;require(rows.size()==4);
+     std::map<std::string,const json::Value*> byId;for(size_t i=0;i<rows.size();++i)byId[rows[i].at("id").str]=&rows[i];
+     require(byId.count(savedA)&&byId[savedA]->at("goal").at("target_id").str==savedB&&byId[savedA]->at("goal").at("type").str=="melee_attack");
+     require(byId.count(savedB)&&byId[savedB]->at("goal").type==json::Value::NIL);
+     require(byId.count(runtimeOnly)&&byId[runtimeOnly]->at("goal").at("target_id").str==runtimeOnly&&byId[runtimeOnly]->at("goal").at("priority").type==json::Value::NIL);
+     require(byId.count(idleOnly)&&byId[idleOnly]->at("goal").at("target_id").type==json::Value::NIL);
+     std::string goalsOnce=oracle::canonical(goals);oracle::canonicalizeSnapshotOrigins(goals,registry);require(oracle::canonical(goals)==goalsOnce);}
     json::Value duplicate=snapshot;duplicate.object["characters"].array.push_back(fixtureCharacter(rawA,rawSquadA,rawB));badSnapshot(duplicate,registry);
     duplicate=snapshot;duplicate.object["squads"].array.push_back(fixtureSquad(rawSquadA,rawA,members));badSnapshot(duplicate,registry);
     duplicate=snapshot;duplicate.object["squads"].array[0].object["members"].array.push_back(json::Value(rawA));badSnapshot(duplicate,registry);
