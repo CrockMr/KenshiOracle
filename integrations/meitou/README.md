@@ -55,11 +55,13 @@ row number through a copy of the native probe's task names (KenshiLib
 the original's task factory builds as `Task_Blank` (147 rows, from MeitouClient's
 `docs/game/ai-tasks.md`) give `null`: the original's body reports the immediate
 task under a goal, so an attack (Meitou row 16) is not expected to match the
-original's immediate task. `position` stays `null`. Which of these orders match
-the original in game is **Unknown**: no live campaign has run on this patch.
-In one paused run per engine on one save, every task the AI starts recorded its
-goal's row (`TaskSource.Goal`, not only attacks), so Meitou named an order for
-324 of 2338 character checkpoints and the original for 1933 (**Observed**).
+original's immediate task. `position` stays `null`. In one paused run per
+engine on one save, every 0.4 field with a save key equalled the save at load,
+and every task the AI starts recorded its goal's row (`TaskSource.Goal`, not
+only attacks), so Meitou named an order for 324 of 2338 character checkpoints
+and the original for 1933, of equal type in 70 (**Observed**). Whether
+player orders (a move, a treatment, a fight) match the original is **Unknown**:
+none was given in that run.
 
 Patch 8 adds [state 0.5](../../docs/state-coverage.md#extension-additive-05)
 and makes it the default dump schema; 0.1 to 0.4 output is unchanged, `order`
@@ -78,10 +80,13 @@ step (`AiMind.Step`) when that step is not none, differs from the goal's row,
 is one of the steps the engine carries out (`AiSystem.Carried`, made public
 for this) and has a native name; `target_id` and `position` are then `null`.
 Every other case keeps the 0.4 rule. The patch carries the 74-case canonical
-vector copy and its pin. Whether Meitou's tier is the same quantity as the
-native stored goal priority, and whether the first plan step is the step the
-original body runs at the same moment, are **Unknown**: no live campaign has
-run on this patch.
+vector copy and its pin. In one paused run per engine on the same save
+(**Observed**, N = 1), the goal types agreed in 778 of 1773 pairs where both
+were non-null, the priorities were equal in all 778, and 301 of 770 carried
+plan steps equalled the native order; see the
+[state coverage](../../docs/state-coverage.md#extension-additive-05). Whether
+Meitou's tier is the same quantity as the native stored goal priority in
+general is **Unknown**.
 
 ## Apply and build
 
@@ -133,10 +138,11 @@ process ownership, scenario execution and restoration.
 - The Release build had 0 warnings and 0 errors.
 - The Oracle tests (`FullyQualifiedName~Meitou.Tests.Oracle`) passed 180 of
   180.
-- The quick suite (`Category!=Slow&Category!=Bench`) had 957 passes and 0
-  failures (3 skipped) at `a9684066`, the patch 8 commit before the shared 0.5
-  vectors and the documentation were amended in (its source code is identical
-  to `198f4f81`). It had 947 passes and 0 failures (3 skipped) at the patch 7
+- The quick suite (`Category!=Slow&Category!=Bench`) had 962 passes and 0
+  failures (3 skipped) at the fork tip `198f4f81`, and 957 passes at
+  `a9684066`, the patch 8 commit before the five shared 0.5 vector cases and
+  the documentation were amended in (its source code is identical to
+  `198f4f81`). It had 947 passes and 0 failures (3 skipped) at the patch 7
   tip `8677d68d`, and 926 passes and 0 failures (3 skipped) at the patch 6 tip
   `cd5a194d`.
 - The complete suite (Slow and Bench included) on the `198f4f81` tree had 1109
@@ -177,8 +183,11 @@ reproduce every environmental result. See the
 
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
 (fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
-**Unknown:** patches 5 to 8 in game; no live campaign has run on `5ab88d9a`,
-`cd5a194d`, `8677d68d` or `198f4f81`.
+**Observed:** one paused state check (N = 1, one save, no scene campaign) ran
+on a build of `8677d68d` (state 0.4) and one on a build of `198f4f81` (state
+0.5); see the [state coverage](../../docs/state-coverage.md#extension-additive-04).
+**Unknown:** patches 5 to 8 in a scene campaign; no scene campaign has run on
+`5ab88d9a`, `cd5a194d`, `8677d68d` or `198f4f81`.
 
 ## Scope and maintenance
 

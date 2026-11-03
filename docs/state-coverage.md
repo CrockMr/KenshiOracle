@@ -150,8 +150,8 @@ its recorded `state_schema` or from each other. The Meitou target requests
 
 | Added field | Native source and Meitou projection | Certainty and limits |
 | --- | --- | --- |
-| `characters[].slave_state` | Native: `Character.h:217`, member `Character::stateBroadcast` (offset 0x1A0); when it is non-null, `StateBroadcastData.h`, member `StateBroadcastData::_slaveState` (offset 0x0), named after `Enums.h:269` `SlaveStateEnum`: `NOT_SLAVE` `not_slave`, `IS_SLAVE` `slave`, `ESCAPING_SLAVE` `escaping_slave`, `EX_SLAVE` `ex_slave`. Member reads only, no engine function is called. Meitou: `CharacterCold.SlaveState` 0, 1, 2 as `not_slave`, `slave`, `escaping_slave`. | API **Verified** from the headers; the three member offsets are checked at compile time against the same headers, not against the game binary. Native values **Unknown**: no live read has been made, and their equivalence with the saved `slavestate` value is **Unknown**. `null` when `stateBroadcast` is null or the raw value is outside 0 to 3; `null` never means `not_slave`. MeitouClient loads a saved 3 as 0 (`SlaveSave.cs`, **Verified** in its code), so it never emits `ex_slave`; a character the original reports as an ex-slave would compare as `ex_slave` against `not_slave`. |
-| `characters[].slave_owner_faction_id` | Native: `StateBroadcastData::isSlaveOf` (`Faction*`, offset 0xE0); when it is non-null and is one of the faction pointers met while capturing the same snapshot (found by pointer comparison before any dereference; two pointers sharing an id are both kept), `Faction::getData()->stringID`, exactly as `factions[].id`. Meitou: `SlaveOwner >= 0` gives `PopulationData.Factions[SlaveOwner].Id`, otherwise `null`. | API **Verified**; values **Unknown**. Same `GameData::stringID` namespace as `factions[].id`. `null` means that no owner faction is readable; it does not prove that the character has no owner. An owner pointer outside the captured factions also gives `null` (not observed). When MeitouClient loads an original save it ignores the original's `slaver` handle (`SlaveSave.cs`, **Verified** in its code), so such a slave has no owner (`null`) on MeitouClient; what the original holds in `isSlaveOf` at run time is **Unknown**. |
+| `characters[].slave_state` | Native: `Character.h:217`, member `Character::stateBroadcast` (offset 0x1A0); when it is non-null, `StateBroadcastData.h`, member `StateBroadcastData::_slaveState` (offset 0x0), named after `Enums.h:269` `SlaveStateEnum`: `NOT_SLAVE` `not_slave`, `IS_SLAVE` `slave`, `ESCAPING_SLAVE` `escaping_slave`, `EX_SLAVE` `ex_slave`. Member reads only, no engine function is called. Meitou: `CharacterCold.SlaveState` 0, 1, 2 as `not_slave`, `slave`, `escaping_slave`. | API **Verified** from the headers; the three member offsets are checked at compile time against the same headers, not against the game binary. Native values were read live in one load-and-hold on a slave-start save (five repetitions per engine): at load both engines report the saved escaping state (`escaping_slave`, saved `slavestate` 2) of the two player characters (**Observed**); the engines then differ, the original turning them `not_slave` within 120 s while MeitouClient keeps `escaping_slave` (**Observed**). Other values and their equivalence with the saved value stay **Unknown**. `null` when `stateBroadcast` is null or the raw value is outside 0 to 3; `null` never means `not_slave`. MeitouClient loads a saved 3 as 0 (`SlaveSave.cs`, **Verified** in its code), so it never emits `ex_slave`; a character the original reports as an ex-slave would compare as `ex_slave` against `not_slave`. |
+| `characters[].slave_owner_faction_id` | Native: `StateBroadcastData::isSlaveOf` (`Faction*`, offset 0xE0); when it is non-null and is one of the faction pointers met while capturing the same snapshot (found by pointer comparison before any dereference; two pointers sharing an id are both kept), `Faction::getData()->stringID`, exactly as `factions[].id`. Meitou: `SlaveOwner >= 0` gives `PopulationData.Factions[SlaveOwner].Id`, otherwise `null`. | API **Verified**. In the same slave-start hold, both engines report `null` at load for the two escaping player characters (**Observed**); other values **Unknown**. Same `GameData::stringID` namespace as `factions[].id`. `null` means that no owner faction is readable; it does not prove that the character has no owner. An owner pointer outside the captured factions also gives `null` (not observed). When MeitouClient loads an original save it ignores the original's `slaver` handle (`SlaveSave.cs`, **Verified** in its code), so such a slave has no owner (`null`) on MeitouClient; what the original holds in `isSlaveOf` at run time is **Unknown**. |
 
 Read safety: the fields are read under the same guard as the other character
 fields (ready paused world, command service, captured census). Whether
@@ -198,26 +198,36 @@ requests 0.4 unless its configuration says otherwise. Unknown is `null`, never
 0, `false`, `"nothing"` or an empty object; numbers follow the shared rule
 (finite, magnitude at most 1e9, otherwise `null`; quantization unchanged).
 
-No game run backs any 0.4 value: every in-game value below is **Unknown** until
-the live checks listed after the table. "API **Verified**" means the member
-exists at that offset in the public SDK headers read for this contract; it does
-not prove what the game stores there at run time.
+One paused run per engine on one save backs the load values below
+(**Observed**, N = 1 per engine): `oracle-base-cage-blesse`, the owner's local
+save with caged slaves and an injured caged prisoner (local evidence, not
+distributed). The snapshot taken at load was compared with the save for 54
+saved characters and 22 squads on the original, 128 and 44 on MeitouClient.
+Every 0.4 field that has a save key equalled the saved value at load on both
+engines (relative tolerance 1e-4), with one exception: one native bandage was
+0.5 % below its saved value, a change during the load frames rather than a
+misread (the other 377 native bandages matched). These are field checks, not
+behaviour statistics: the interface checks were not made, and the fields
+without a save key or without a case in this save stay **Unknown** (see the
+list after the table). "API **Verified**" means the member exists at that
+offset in the public SDK headers read for this contract; it does not prove what
+the game stores there at run time.
 
 | Added field | Native source and Meitou projection | Certainty and limits |
 | --- | --- | --- |
-| `characters[].medical` | Native: `Character::medical`, an embedded `MedicalSystem` at 0x458 (`Character.h:711`), member reads only. Meitou: `Bodies/MedicalState.cs`. | API **Verified**; values **Unknown**. An object with all six keys below, or `null` when the medical system is unavailable; never `{}`. |
-| `medical.blood` | Native `MedicalSystem::blood` (0x70). Meitou `Blood`. Save key `blood`. | Number or `null`; values **Unknown** (live check 1). |
-| `medical.bleed_rate` | Native `currentBleedRate` (0x78). Meitou `Bleeding`. Save key `bleeding`. | Number or `null`; that both name the same rate (not a cumulative loss) is **Unknown** (live check 1). |
-| `medical.hunger` | Native `hunger` (0x60). Meitou `Hunger` (0 to 3). Save key `hung`. | Number or `null`; values and scale equivalence **Unknown** (live check 1). |
-| `medical.fed` | Native `fed` (0x64). Meitou `Fed`. Save key `fed`. | Number or `null`; values **Unknown** (live check 1). |
-| `medical.coma` | Native `sub50KO` (0x162). Meitou `Coma` (Meitou docs: +0x162, save `coma`). | Boolean or `null`; `false` means known false. Values **Unknown** (live check 2). |
-| `medical.blood_loss_trauma` | Native `bloodlossTrauma` (0x163). Meitou `BloodKo` (Meitou docs: +0x163); no save key. | Boolean or `null`; values **Unknown** (live check 2). |
-| `characters[].health[].bandage`, `splint`, `wear` | Native `MedicalSystem::HealthPartStatus` members `bandaging` (0x48), `juryRigging` (0x4C), `wearDamage` (0x50) (`MedicalSystem.h:169-171`). Meitou `HealthPart.Bandage`, `Rig`, `Wear`. | API **Verified**; values and their equivalence with the saved values **Unknown** (live check 3). Number or `null`, never 0 for unknown. `health` keeps its 0.1 rules (`null` when unavailable), and `maximum` is unchanged: whether the native stored `_maxHealth` and Meitou's calculated `MaxHp` mean the same thing stays an open question. |
-| `characters[].stats` | Native: `Character::stats` (0x450, a pointer) to `CharStats`; the 34 stored members listed in the schema (for example `_strength` 0x80, `katanas` 0xF8, `unarmed` 0x10C as `martialarts`, `bows` 0x110 as `crossbows`). Meitou: `CharacterStats[StatsEnumerated.X]`. Keys are the KenshiLib `StatsEnumerated` names without `STAT_`, in lower case. | API **Verified**: the native offsets match the stat table in the Meitou documentation ([character stats](https://github.com/VlcekM/MeitouClient/blob/master/docs/game/character-stats.md), "The stat list"), read on both sides. Values **Unknown** (live check 4). Exactly 34 keys, each the stored value (no multiplier, no effective-stat formula) or `null`; the object is `null` when the character has no stats object, never `{}`. Excluded: `hivemedic` and `vet` (stored as `medic`), `weapons` and `survival` (no storage behind the stat number in Meitou's reading of the accessor; the native `survival` member is not emitted). |
-| `characters[].in_something` | Native `Character::inSomething` (0x2F8), `UseStuffState`: `IN_NOTHING` `nothing`, `IN_BED` `bed`, `IN_PRISON` `prison`; any other raw value is `null`. Meitou `CharacterCold.InSomething` (`Locks.HeldState`: `None`, `Bed`, `Imprisoned`). | API **Verified**; values **Unknown** (live check 5: a caged prisoner and a sleeper). `null` never means `nothing`. |
-| `characters[].carrying`, `carrying_id` | Native: `isCarryingSomething` (0x348) false gives `nothing`. True with `carryingObject` (hand, 0x380) of character type gives `character`, and `carrying_id` is that handle encoded and canonicalized exactly like `order.target_id` (a reference without a proven link keeps its current HAND); true with another non-null hand gives `other`; true with a null hand gives `null`. Meitou: `CharacterCold.Carrying` `None` gives `nothing`, otherwise `character` with the carried character's id; Meitou never emits `other`. | API **Verified**; values and the type of the native `carryingObject` while carrying a body **Unknown** (live check 6). The schema enforces that `carrying_id` is a string exactly when `carrying` is `character`. Because Meitou never emits `other`, an original `other` never matches a Meitou value. |
-| `characters[].being_carried` | Native `_isBeingCarried` (0x3D4). Meitou `CharacterCold.CarriedBy != CharacterId.None`. | Boolean or `null`; values **Unknown** (live check 6). |
-| `squads[].money` | Native `Platoon::ownerships` (0x148, `Platoon.h:203`) to `Ownerships::money` (0x88, `Platoon.h:93`). Meitou `Squad.Money`. Same squad rows as 0.3. | API **Verified**; values **Unknown** (live check 7). Integer or `null`, magnitude at most 1e9; `null` never means 0. |
+| `characters[].medical` | Native: `Character::medical`, an embedded `MedicalSystem` at 0x458 (`Character.h:711`), member reads only. Meitou: `Bodies/MedicalState.cs`. | API **Verified**; values per key below. An object with all six keys below, or `null` when the medical system is unavailable; never `{}`. |
+| `medical.blood` | Native `MedicalSystem::blood` (0x70). Meitou `Blood`. Save key `blood`. | Number or `null`; equal to the save at load on both engines (**Observed**, above); against the interface's blood panel **Unknown** (live check 1). |
+| `medical.bleed_rate` | Native `currentBleedRate` (0x78). Meitou `Bleeding`. Save key `bleeding`. | Number or `null`; equal to the save at load on both engines (**Observed**). A nonzero rate was seen on MeitouClient only, on a character outside the native census, so a nonzero native rate, and that both name the same rate (not a cumulative loss), are **Unknown** (live check 1). |
+| `medical.hunger` | Native `hunger` (0x60). Meitou `Hunger` (0 to 3). Save key `hung`. | Number or `null`; equal to the save at load on both engines, so both read the saved scale (**Observed**); against the interface **Unknown** (live check 1). |
+| `medical.fed` | Native `fed` (0x64). Meitou `Fed`. Save key `fed`. | Number or `null`; equal to the save at load on both engines (**Observed**); against the interface **Unknown** (live check 1). |
+| `medical.coma` | Native `sub50KO` (0x162). Meitou `Coma` (Meitou docs: +0x162, save `coma`). | Boolean or `null`; `false` means known false. Equal to the save at load on both engines (**Observed**). `true` was seen on MeitouClient only, on a knocked-out character outside the native census; a native `true` is **Unknown** (live check 2). |
+| `medical.blood_loss_trauma` | Native `bloodlossTrauma` (0x163). Meitou `BloodKo` (Meitou docs: +0x163); no save key. | Boolean or `null`; no save key, so not compared at load. `true` was seen on MeitouClient only (the same knocked-out character); native values are **Unknown** (live check 2). |
+| `characters[].health[].bandage`, `splint`, `wear` | Native `MedicalSystem::HealthPartStatus` members `bandaging` (0x48), `juryRigging` (0x4C), `wearDamage` (0x50) (`MedicalSystem.h:169-171`). Meitou `HealthPart.Bandage`, `Rig`, `Wear`. | API **Verified**; equal to the saved values at load on both engines, except the one native bandage noted above (**Observed**). On the original, the bandage of the injured prisoner rose while medics treated him, up to the part's maximum minus its current health (**Observed**). Number or `null`, never 0 for unknown. `health` keeps its 0.1 rules (`null` when unavailable), and `maximum` is unchanged: whether the native stored `_maxHealth` and Meitou's calculated `MaxHp` mean the same thing stays an open question. |
+| `characters[].stats` | Native: `Character::stats` (0x450, a pointer) to `CharStats`; the 34 stored members listed in the schema (for example `_strength` 0x80, `katanas` 0xF8, `unarmed` 0x10C as `martialarts`, `bows` 0x110 as `crossbows`). Meitou: `CharacterStats[StatsEnumerated.X]`. Keys are the KenshiLib `StatsEnumerated` names without `STAT_`, in lower case. | API **Verified**: the native offsets match the stat table in the Meitou documentation ([character stats](https://github.com/VlcekM/MeitouClient/blob/master/docs/game/character-stats.md), "The stat list"), read on both sides. All 34 values equal to the save at load on both engines (**Observed**); against the character screen **Unknown** (live check 4). Exactly 34 keys, each the stored value (no multiplier, no effective-stat formula) or `null`; the object is `null` when the character has no stats object, never `{}`. Excluded: `hivemedic` and `vet` (stored as `medic`), `weapons` and `survival` (no storage behind the stat number in Meitou's reading of the accessor; the native `survival` member is not emitted). |
+| `characters[].in_something` | Native `Character::inSomething` (0x2F8), `UseStuffState`: `IN_NOTHING` `nothing`, `IN_BED` `bed`, `IN_PRISON` `prison`; any other raw value is `null`. Meitou `CharacterCold.InSomething` (`Locks.HeldState`: `None`, `Bed`, `Imprisoned`). | API **Verified**; equal to the save at load on both engines, caged prisoners (`prison`) and saved sleepers (`bed`) included (**Observed**). `null` never means `nothing`. |
+| `characters[].carrying`, `carrying_id` | Native: `isCarryingSomething` (0x348) false gives `nothing`. True with `carryingObject` (hand, 0x380) of character type gives `character`, and `carrying_id` is that handle encoded and canonicalized exactly like `order.target_id` (a reference without a proven link keeps its current HAND); true with another non-null hand gives `other`; true with a null hand gives `null`. Meitou: `CharacterCold.Carrying` `None` gives `nothing`, otherwise `character` with the carried character's id; Meitou never emits `other`. | API **Verified**; equal to the save at load on both engines (**Observed**), but nobody carried anything in this save, so only `nothing` was seen: the `character` and `other` values and the type of the native `carryingObject` while carrying a body are **Unknown** (live check 6). The schema enforces that `carrying_id` is a string exactly when `carrying` is `character`. Because Meitou never emits `other`, an original `other` never matches a Meitou value. |
+| `characters[].being_carried` | Native `_isBeingCarried` (0x3D4). Meitou `CharacterCold.CarriedBy != CharacterId.None`. | Boolean or `null`; no save key, and nobody was carried in this save: values **Unknown** (live check 6). |
+| `squads[].money` | Native `Platoon::ownerships` (0x148, `Platoon.h:203`) to `Ownerships::money` (0x88, `Platoon.h:93`). Meitou `Squad.Money`. Same squad rows as 0.3. | API **Verified**; equal to the save at load on both engines (**Observed**); against a trader's trade window **Unknown** (live check 7). Integer or `null`, magnitude at most 1e9; `null` never means 0. |
 
 Meitou `order` in 0.4 output only (no schema change): MeitouClient's 0.4
 adapter emits an order from its running task, named by row number through a
@@ -231,20 +241,19 @@ characters, and 0.4 `order` compares player orders and non-blank goal rows
 only. In one paused run per engine on one save (`oracle-base-cage-blesse`, a
 local save with caged slaves; local evidence, not published), Meitou named an
 order for 324 of 2338 character checkpoints and the original for 1933
-(**Observed**). Whether the orders agree
-on a move, a treatment and a fight is **Unknown** (live check 8). In 0.5
-output, a goal's task gives its carried plan step instead
-([0.5](#extension-additive-05)).
+(**Observed**). In 0.5 output, a goal's task gives its carried plan step
+instead ([0.5](#extension-additive-05)); live check 8 is covered there by G4.
+Player orders (a move, a treatment, a fight) were not exercised, so their
+agreement stays **Unknown**.
 
 Live checks still needed (one paused native session, then the Meitou
-counterpart): (1) blood, hunger, fed and bleed rate on a bleeding character
-against the interface; (2) `coma` and `blood_loss_trauma` on a knocked-out
-character; (3) bandage, splint and wear against the saved values on an injured
-character; (4) the 34 stats against the character screen and the save; (5)
-`in_something` for a caged prisoner and a sleeper; (6) carrying a body (type of
-`carryingObject`, `_isBeingCarried`); (7) squad money against a trader's trade
-window; (8) Meitou order against native order on a move, a treatment and a
-fight.
+counterpart; the save comparisons of checks 1 to 5 and 7 are covered above,
+and check 8 by G4 in [0.5](#extension-additive-05)): (1) blood, hunger, fed and
+bleed rate against the interface, and a nonzero native bleed rate; (2) native
+`coma` and `blood_loss_trauma` on a knocked-out character inside the native
+census; (4) the 34 stats against the character screen; (6) carrying a body
+(type of `carryingObject`, `_isBeingCarried`), which needs a save where one
+character carries another; (7) squad money against a trader's trade window.
 
 Comparison: in a 0.4 comparison, each saved character gains the individual
 metrics `medical/<key>` (six) and `stats/<key>` (34), emitted for every key
@@ -272,8 +281,9 @@ character outside the Meitou census gives `carrying` and `carrying_id` `null`
 there, while the native probe still reports `character` with the current HAND.
 An adapter without patch 0007 does not produce 0.4 and needs
 `state_schema:"0.3"` in both targets' configurations. The native probe with 0.4
-builds with every offset check above (**Verified** at compile time); it has not
-been loaded in game.
+builds with every offset check above (**Verified** at compile time) and ran in
+game for the paused run above (**Observed**: no crash, 20 valid 0.4 snapshots
+per engine).
 
 <a id="extension-additive-05"></a>
 
@@ -297,8 +307,10 @@ values do not mean the same thing for AI-driven characters (see the Meitou
 `order` paragraph of [0.4](#extension-additive-04)): the goal compares the AI
 decision itself, which goal at which tier.
 
-No game run backs any 0.5 value: every in-game value below is **Unknown** until
-the live checks listed after the table. "API **Verified**" means the member
+One paused run per engine on the save of [0.4](#extension-additive-04)
+(`oracle-base-cage-blesse`, a hold of 20 snapshots) backs the results listed
+after the table (**Observed**, N = 1 per engine): field checks, not behaviour
+statistics. "API **Verified**" means the member
 exists at that offset in the public SDK headers read for this contract (the
 native offsets and sizes are checked at compile time against those headers,
 not against the game binary); it does not prove what the game stores there at
@@ -306,10 +318,10 @@ run time.
 
 | Added field | Native source and Meitou projection | Certainty and limits |
 | --- | --- | --- |
-| `characters[].goal` | Native: `Character::ai` (0x650, `Character.h:720`, `AI*`) to `AI::taskSystemAI` (0x20, `AI/AI.h:115`, `AITaskSytem*`) to `currentGoal` (0x1C0, a `TaskMatch` of length 0x48) and `currentGoalPriority` (0x20C) of `OrdersReceiver`, the base of `AITaskSytem` at offset 0 (`AI/AITaskSystem.h:179`, `:181`, `:194`). Member reads only: `TaskMatch::key()`, `getCurrentGoal()` and `getAI()` are not called. Meitou: `CharacterCold.Ai.Goal` (`AiMind`). | API **Verified**; values **Unknown** (live check G1). Native `null`: `ai`, `taskSystemAI` or `taskData` null, a key outside 0 to 290, `NULL_TASK`, a row without a name, or a dead character, whose AI is not read (whether its pointer stays valid after death is **Unknown**). Meitou `null`: no mind (`cold.Ai` null: player squads, which `AiSystem` does not attach, and characters without a mind), no goal yet (`mind.Goal` null before the first think, so right after a load), or a row without a native name. Meitou does not null a dead character's goal while the native probe does; a `null` on one side is never a divergence. An engine-routine Meitou mind (`AiMind.Engine`) still emits its combat and self-preservation goals like any goal. |
-| `goal.type` | Native `TaskMatch::taskData` (0x0, `AI/AITaskSystem.h:31`, `const TaskData*`) to `TaskData::key` (0x44, `Tasker.h:94`, `TaskType`), named by row number through the shared table ([OracleTaskNames.h](../plugin/OracleTaskNames.h)). Meitou: `mind.Goal.Task.Type` by row number through the adapter's copy `OracleTaskNames.cs`, never the C# enum spelling. | Constrained like `order.type`. Task_Blank rows (for example `wander_town` or `idle`) are **included**: they are goals, unlike in the 0.4 Meitou `order`. Values **Unknown** (live check G1). |
-| `goal.priority` | Native `currentGoalPriority`, `taskPriority` (`AI/AITaskSystem.h:87-95`): `TP_JUST_ACTION` 0 `just_action`, `TP_FLUFF` 1 `fluff`, `TP_NON_URGENT` 2 `non_urgent`, `TP_URGENT` 3 `urgent`, `TP_OBEDIENCE` 4 `obedience`. Meitou `mind.Goal.Task.Priority`, `TaskPriority` (`JustAction` 0, `Fluff` 1, `NonUrgent` 2, `Urgent` 3, `Obedience` 4, `Meitou.Data/Gameplay/Ai/AiData.cs:6`), with the same names. | The two enums number alike: **Verified** by reading both. They are not proven to hold the same quantity: native stores the tier passed when the goal was set, Meitou keeps the AI_TASK record's `classification` of the chosen goal (its think goes tier by tier). Agreement and whether a goal keeps its tier are **Unknown** (live check G2). Any other raw value gives `priority: null` and keeps the other keys. |
-| `goal.target_id` | Native `TaskMatch::subject` (0x8, `AI/AITaskSystem.h:40`, `hand`), encoded and canonicalized exactly like `order.target_id`; an empty hand gives `null`. Meitou: always `null`. `AiGoal` has no target; `FollowTarget`, `FightTarget` and `AssaultTarget` are act-out targets, and the last two are cleared within the tick, so mapping them would be a guess. | Native hand types (character, building, node or none) **Unknown** (live check G3). Because Meitou always emits `null`, `goal/target_id` is never comparable between the two engines. |
+| `characters[].goal` | Native: `Character::ai` (0x650, `Character.h:720`, `AI*`) to `AI::taskSystemAI` (0x20, `AI/AI.h:115`, `AITaskSytem*`) to `currentGoal` (0x1C0, a `TaskMatch` of length 0x48) and `currentGoalPriority` (0x20C) of `OrdersReceiver`, the base of `AITaskSytem` at offset 0 (`AI/AITaskSystem.h:179`, `:181`, `:194`). Member reads only: `TaskMatch::key()`, `getCurrentGoal()` and `getAI()` are not called. Meitou: `CharacterCold.Ai.Goal` (`AiMind`). | API **Verified**; values **Observed** (G1 below). Native `null`: `ai`, `taskSystemAI` or `taskData` null, a key outside 0 to 290, `NULL_TASK`, a row without a name, or a dead character, whose AI is not read (whether its pointer stays valid after death is **Unknown**). Meitou `null`: no mind (`cold.Ai` null: player squads, which `AiSystem` does not attach, and characters without a mind), no goal yet (`mind.Goal` null before the first think, so right after a load), or a row without a native name. Meitou does not null a dead character's goal while the native probe does; a `null` on one side is never a divergence. An engine-routine Meitou mind (`AiMind.Engine`) still emits its combat and self-preservation goals like any goal. |
+| `goal.type` | Native `TaskMatch::taskData` (0x0, `AI/AITaskSystem.h:31`, `const TaskData*`) to `TaskData::key` (0x44, `Tasker.h:94`, `TaskType`), named by row number through the shared table ([OracleTaskNames.h](../plugin/OracleTaskNames.h)). Meitou: `mind.Goal.Task.Type` by row number through the adapter's copy `OracleTaskNames.cs`, never the C# enum spelling. | Constrained like `order.type`. Task_Blank rows (for example `wander_town` or `idle`) are **included**: they are goals, unlike in the 0.4 Meitou `order`. Values **Observed** (G1 below). |
+| `goal.priority` | Native `currentGoalPriority`, `taskPriority` (`AI/AITaskSystem.h:87-95`): `TP_JUST_ACTION` 0 `just_action`, `TP_FLUFF` 1 `fluff`, `TP_NON_URGENT` 2 `non_urgent`, `TP_URGENT` 3 `urgent`, `TP_OBEDIENCE` 4 `obedience`. Meitou `mind.Goal.Task.Priority`, `TaskPriority` (`JustAction` 0, `Fluff` 1, `NonUrgent` 2, `Urgent` 3, `Obedience` 4, `Meitou.Data/Gameplay/Ai/AiData.cs:6`), with the same names. | The two enums number alike: **Verified** by reading both. They are not proven to hold the same quantity: native stores the tier passed when the goal was set, Meitou keeps the AI_TASK record's `classification` of the chosen goal (its think goes tier by tier). Agreement and whether a goal keeps its tier: **Observed** (G2 below). Any other raw value gives `priority: null` and keeps the other keys. |
+| `goal.target_id` | Native `TaskMatch::subject` (0x8, `AI/AITaskSystem.h:40`, `hand`), encoded and canonicalized exactly like `order.target_id`; an empty hand gives `null`. Meitou: always `null`. `AiGoal` has no target; `FollowTarget`, `FightTarget` and `AssaultTarget` are act-out targets, and the last two are cleared within the tick, so mapping them would be a guess. | Native hand types **Observed** (G3 below): none, building and character; no node was seen. Because Meitou always emits `null`, `goal/target_id` is never comparable between the two engines. |
 
 Save: no save key. The saved orders record (type 67, linked to every character
 instance) holds only `jobs` and the permanent jobs (`pjob0`, `pjobT0*`):
@@ -335,19 +347,41 @@ unchanged. The intended effect is that native `move_on_free_will`,
 `stand_at_node`, `use_bed`, `operate_machinery` and `buy_shit` become
 comparable: they were 1618 of the 1933 native orders in the 0.4 run above, for
 characters present on both engines (**Observed**). Whether Meitou's first plan
-step is the step the original body runs at the same moment is **Unknown** (live
-check G4).
+step is the step the original body runs at the same moment: **Observed** in
+part (G4 below).
 
-Live checks still needed (one paused native session on `oracle-base-cage-blesse`
-with a hold scenario, then the Meitou counterpart; no new save is
-needed): (G1) the native goals of residents over the hold (expected among
-`idle`, `wander_town`, `shopping`, `man_the_gate`, `job_medic` and the sleep
-goals) against Meitou's goals for the same characters; (G2) the priority values
-on both sides, and whether a goal keeps its tier; (G3) the hand types of the
-native goal target: character, building, node or none; (G4) Meitou's carried
-plan step against the native `order` on the same character and checkpoint;
-(G5) what the native probe reports as the goal of a player character (Meitou:
-`null`).
+Live check results (**Observed**, N = 1 per engine, 2338 character checkpoint
+pairs present on both engines; the save has no goal key, so nothing is checked
+against the save):
+
+- **G1 goals.** Both goals are non-null in 1773 pairs and their types agree in
+  778 (43.9 %). Null: native 364, Meitou 359, both 158. At load the native
+  probe reported a goal for 2 of the 54 common characters and Meitou for none
+  (expected before its first think), so the original also rebuilds goals after
+  a load. A native `null` goal during part of the sleep time was seen; what it
+  means is **Unknown**.
+- **G2 priority.** When the goal types are equal, the priorities are equal in
+  778 of 778 (all `non_urgent`). The native probe reported `urgent` 40 times.
+  On neither engine did a character change tier while keeping the same goal
+  type.
+- **G3 native targets.** Of 1974 native goals: no target 1860, `BUILDING` 87,
+  `CHARACTER` 27. Every character target is in the census, and 24 of them are
+  the character itself. Meitou: none, by contract.
+- **G4 orders.** On the same save, Meitou's non-null orders went from 324 in
+  the 0.4 run to 919 in the 0.5 run, and orders of equal type from 70 to 371
+  (two separate runs). 770 Meitou orders were carried plan steps, of which 301
+  equal the native order (`move_on_free_will` 268, `stand_at_node` 33).
+- **G5 player.** Neither the state nor the save marks the player. The two
+  candidates (the members of the save's player faction) are both slaves in
+  this save; the native probe reports goals for them, Meitou `null` (its AI
+  does not run player squads). The identification stays **Unknown**.
+- **Dead rule.** No native character died in the census, so the native `null`
+  goal of a dead character is unchecked. On Meitou a dead character kept its
+  goal, which the contract allows.
+
+Where the goal types differ, both producers still emit the field as the
+contract describes; the differences are recorded as questions about
+MeitouClient's behaviour, not as oracle defects, and are being diagnosed.
 
 Comparison: in a 0.5 comparison, each saved character gains the individual
 metrics `goal/type`, `goal/priority` and `goal/target_id` (through the same
@@ -371,7 +405,9 @@ patch 0008 of the [Meitou series](../integrations/meitou/README.md)
 0.1 to 0.4 bytes). An adapter without patch 0008 does not produce 0.5 and needs
 `state_schema:"0.4"` in both targets' configurations. The native goal logic is
 tested on fake objects and its offsets are checked at compile time against the
-SDK headers (**Verified**); the probe with 0.5 has not been loaded in game.
+SDK headers (**Verified**); the probe with 0.5 ran in game for the run above
+(**Observed**: no crash, 20 valid 0.5 snapshots per engine, and the 0.4 load
+values repeated the 0.4 run's result, the same native bandage included).
 
 <a id="identités-et-comparabilité"></a>
 
