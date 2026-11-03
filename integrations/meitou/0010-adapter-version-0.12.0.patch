@@ -1,0 +1,54 @@
+From 3a862bf0f5054a14bfd45f42318134402d2ef366 Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 00:04:20 +0100
+Subject: [PATCH] Raise the oracle adapter version to 0.12.0
+
+Ping's plugin_version follows the KenshiOracle protocol release the adapter implements; KenshiOracle
+0.12.0 adds states 0.3 to 0.5, which patches 0006 to 0009 implement. No other change.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/oracle.md                                | 2 +-
+ src/Meitou.Game/Oracle/OracleProtocol.cs      | 2 +-
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/docs/oracle.md b/docs/oracle.md
+index f9d3d4c3..3304a203 100644
+--- a/docs/oracle.md
++++ b/docs/oracle.md
+@@ -59,7 +59,7 @@ Supported commands: `ping`, `get_clock`, `dump_state`, `pause`,
+ the scene-setup commands below. Unknown commands and scene thread details
+ return `not_implemented`.
+ 
+-Ping's `plugin_version` is `OracleProtocol.AdapterVersion` (0.11.0, the
++Ping's `plugin_version` is `OracleProtocol.AdapterVersion` (0.12.0, the
+ KenshiOracle protocol release implemented). Ping also reports
+ `capabilities:["scene_setup"]`, `schema_version` and `state_schema_version`
+ `"0.5"` (the default dump schema), `supported_schema_versions:["0.1","0.2","0.3","0.4","0.5"]`,
+diff --git a/src/Meitou.Game/Oracle/OracleProtocol.cs b/src/Meitou.Game/Oracle/OracleProtocol.cs
+index e8116adb..716a4e9d 100644
+--- a/src/Meitou.Game/Oracle/OracleProtocol.cs
++++ b/src/Meitou.Game/Oracle/OracleProtocol.cs
+@@ -7,7 +7,7 @@ namespace Meitou.Game.Oracle;
+ internal static class OracleProtocol
+ {
+     /// <summary>The adapter version ping reports as <c>plugin_version</c>; it follows the KenshiOracle protocol release it implements.</summary>
+-    internal const string AdapterVersion = "0.11.0";
++    internal const string AdapterVersion = "0.12.0";
+     internal const int MaxLineBytes = 65536; // Includes the terminating LF.
+     internal const int QueueCapacity = 64;
+     static readonly UTF8Encoding Utf8 = new(false, true);
+diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+index 7ae109fa..6507e5e9 100644
+--- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+@@ -98,7 +98,7 @@ public class OracleSetupTests
+     {
+         var ping = OracleSetupPolicy.PingIdentity();
+         Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
+-        Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
++        Assert.Equal("0.12.0", OracleProtocol.AdapterVersion);
+         Assert.Equal("0.5", ping["state_schema_version"]!.GetValue<string>());
+         Assert.Equal("0.5", ping["schema_version"]!.GetValue<string>());
+         Assert.Equal(["0.1", "0.2", "0.3", "0.4", "0.5"], ping["supported_schema_versions"]!.AsArray().Select(v => v!.GetValue<string>()));

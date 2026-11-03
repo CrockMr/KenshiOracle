@@ -50,7 +50,7 @@ contract; an adapter without state 0.5 (series before patch 0008) needs
 here and in `config.json`,
 because the comparator never compares two state schema versions. The same
 holds in two other cases: an adapter against a probe that lacks its version
-(the released 0.11.0 probe has state 0.2 only), and an old
+(the 0.11.0 probe has state 0.2 only; 0.12.0 has 0.1 to 0.5), and an old
 `config.meitou.json` that still says `"0.2"`, `"0.3"` or `"0.4"` against a
 probe with a later state. The comparator refuses the mismatch only after both campaigns have
 run, so set the same `state_schema` explicitly in both files before a

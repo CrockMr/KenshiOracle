@@ -1,10 +1,10 @@
 # MeitouClient Oracle patch series
 
 This directory makes the Meitou adapter reproducible without distributing a
-Meitou binary or relying on an unpublished fork. Apply the nine patches, in
+Meitou binary or relying on an unpublished fork. Apply the ten patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `9e16733617a47f647ed91ef98f62994bf3580d12`;
+correspond to the local fork tip `3a862bf0f5054a14bfd45f42318134402d2ef366`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -22,6 +22,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `8677d68da41e8961972e387c565c0f678618e79b` |
 | 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `198f4f8149aa06589c39d52f7688925591d67197` |
 | 9 | [Captive job goals in state 0.5](0009-captive-job-goals.patch) | `9e16733617a47f647ed91ef98f62994bf3580d12` |
+| 10 | [Adapter version 0.12.0](0010-adapter-version-0.12.0.patch) | `3a862bf0f5054a14bfd45f42318134402d2ef366` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -29,7 +30,8 @@ Patch 2 was regenerated for this series: it now declares the adapter version
 as the constant `OracleProtocol.AdapterVersion` instead of a literal (still
 `0.10.0` there). Patch 4 raises it to `0.11.0`, the version of the
 [scene-setup contract](../../docs/scene-setup.md), and adds `build_commit` to
-ping. Evidence that reported `plugin_version` `0.10.0` from Meitou does not
+ping; patch 10 raises it to `0.12.0`, the release that adds states 0.3 to 0.5.
+Evidence that reported `plugin_version` `0.10.0` from Meitou does not
 identify one build; from this series on, a build is identified by
 `build_commit`.
 
@@ -127,7 +129,7 @@ same `git switch` line; your old branch stays as a backup. Then, in either case:
 ```powershell
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
 $Series = "$OracleRoot/integrations/meitou"
-git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch" "$Series/0009-captive-job-goals.patch"
+git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch" "$Series/0009-captive-job-goals.patch" "$Series/0010-adapter-version-0.12.0.patch"
 dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
 dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
@@ -137,9 +139,9 @@ Build from a clean Git checkout: `build_commit` is the full commit only when
 the comparator refuses for campaigns.
 
 **Verified:** in a scratch checkout at upstream `88ae71a1`, without network
-access, `git am --3way` applied the nine patches cleanly with
+access, `git am --3way` applied the ten patches cleanly with
 `core.autocrlf=false` and with `core.autocrlf=true`; both times the resulting
-tree equalled the fork tip's tree `4eee259e925abeb6c1eeb9b35bb4f23b362f0fb4`
+tree equalled the fork tip's tree `0a6623763baf3bdfa2743a0edd974ca1dcd7676d`
 (compared with `git rev-parse HEAD^{tree}`).
 This checks source reproduction, not a live campaign. The patch 7 results below
 ran at `efc2eb2a`, the same tree as `8677d68d` before patch 7's author was set
@@ -229,19 +231,19 @@ paused edit bracket); the fourth adds the `setup_*` commands of the
 `load_save`, the ping additions and the `issue_order` refusals; the fifth
 fills `health[].maximum` with the calculated part maximum; the sixth, seventh and
 eighth add the state 0.3, 0.4 and 0.5 fields; the ninth reports a captive job's
-goal as the 0.5 goal. Keep these
+goal as the 0.5 goal; the tenth raises the adapter version to 0.12.0. Keep these
 integration points small when updating upstream; do not copy unrelated
 upstream changes into this series. The shared canonical vectors are synthetic
 fixtures, not game data.
 
 Maintain the branch as a durable fork. Before updating, keep a local backup
 branch, record the old upstream base, then fetch the current upstream and rebase
-the nine adapter commits onto the selected upstream commit. Resolve
+the ten adapter commits onto the selected upstream commit. Resolve
 host/lifecycle conflicts explicitly. Build both flag modes, rerun the focused
 tests and shared canonical vectors, and compare any complete-suite failures
 with that same unmodified upstream. Revalidate pause/loading, seed provenance,
 fresh heartbeat, cancellation, restoration and scene setup with local saves
-before claiming compatibility. Export a fresh nine-patch series into a
+before claiming compatibility. Export a fresh ten-patch series into a
 temporary directory with `git format-patch -N --no-signature`, review the diff,
 then update the pinned base, source commits, hashes and validation evidence
 here. Do not publish or force-push an upstream repository as part of this
@@ -260,8 +262,8 @@ MeitouClient and this derivative patch series are distributed under
 [additional permission for specified NVIDIA libraries](LICENSE-EXCEPTION.md)
 are preserved verbatim from the pinned upstream commit. The latter permission
 does not cover unrelated non-free dependencies. Upstream work is by the
-MeitouClient contributors; the nine modifications were made for KenshiOracle,
-with patches 1-2 committed as KenshiOracle contributors and patches 3-9 as
+MeitouClient contributors; the ten modifications were made for KenshiOracle,
+with patches 1-2 committed as KenshiOracle contributors and patches 3-10 as
 CrockMr (each patch's `From:` line). No proprietary executable, disassembled listing or decompiled
 game code is included. Upstream dependency notices remain in the separately
 obtained MeitouClient checkout.

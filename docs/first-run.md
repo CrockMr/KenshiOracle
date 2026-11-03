@@ -2,8 +2,8 @@
 
 # First run
 
-These instructions target **KenshiProbe 0.11.0** and phase 2: the original
-reference controller, additive state 0.2 and the MeitouClient comparator.
+These instructions target **KenshiProbe 0.12.0** and phase 2: the original
+reference controller, additive states 0.2 to 0.5 and the MeitouClient comparator.
 The [scene-setup block](scene-setup.md) is implemented and was first run live
 on 2026-11-01 (see the release notes).
 State 0.1 remains supported. Start with the [documentation index](README.md),
@@ -20,7 +20,7 @@ python -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-For a prebuilt probe, use the [0.11.0 release instructions](../release/README.md).
+For a prebuilt probe, use the [0.12.0 release instructions](../release/README.md).
 Visual Studio is needed only to build native binaries. Install RE_Kenshi and
 matching KenshiLib separately; neither the game nor its dependencies are shipped.
 The validated environment is Kenshi 1.0.65 Steam compatibility mode,
@@ -120,7 +120,7 @@ requirement of the current original probe.
 For MCP, configure the client to launch `.venv/Scripts/python.exe` with
 `mcp-server/server.py` and a local `KENSHI_PROBE_CONFIG`. Use the client's
 resolved absolute executable/configuration paths locally, without committing
-them. `ping` must identify plugin version `0.11.0`, state 0.2 with 0.1 support,
+them. `ping` must identify plugin version `0.12.0`, state 0.5 with 0.1 to 0.4 support,
 the expected game versions and a stable instance ID. `dump_state()` validates
 its returned snapshot. The [protocol](protocol.md) describes manual tools;
 those calls alone do not certify an original reference campaign.

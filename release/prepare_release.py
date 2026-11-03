@@ -23,10 +23,10 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = '0.11.0'
+VERSION = '0.12.0'
 TAG = 'v' + VERSION
 OUTPUT = ROOT / 'dist' / TAG
-# Reviewed 0.11.0 binaries. KenshiProbe.dll was built from a clean tree and
+# Reviewed 0.12.0 binaries. KenshiProbe.dll was built from a clean tree and
 # reports its build commit through ping; the bootstrap embeds no commit.
 DLL_HASHES = {
     'KenshiProbe.dll': '18910490b028e6b84ec1c9556e4a7839df84ed8a71119d2f88f9fe923f130e7e',

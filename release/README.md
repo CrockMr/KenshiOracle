@@ -1,13 +1,13 @@
-# Preparing KenshiProbe v0.11.0
+# Preparing KenshiProbe v0.12.0
 
-This is the scene-setup probe release. Do not publish the older v0.9.5 or
-v0.10.0 packages for the current `main`. The reviewed 0.11.0 DLL hashes are
+This is the state 0.5 probe release. Do not publish the older v0.9.5 to
+v0.11.0 packages for the current `main`. The reviewed 0.12.0 DLL hashes are
 recorded in the packager, which refuses any other binary. The reviewed
 `KenshiProbe.dll` reports, through `ping`, the commit it was built from; the
 release commit can be a later commit whose native inputs are identical, as
 `source-manifest.json` and the source binding verify. The native version comes from
-[`plugin/Version.h`](../plugin/Version.h); both shared-state 0.1 and 0.2 remain
-supported. The [release notes](v0.11.0-notes.md) describe the validation scope.
+[`plugin/Version.h`](../plugin/Version.h); shared states 0.1 to 0.5 are supported,
+0.5 by default. The [release notes](v0.12.0-notes.md) describe the validation scope.
 
 ## Build and package locally
 
@@ -31,11 +31,11 @@ file. A synthetic installation verifies extraction, manifest targets and exact
 restoration of a previous synthetic mod folder. This is a layout check, not a
 real-game loading test.
 
-Generated files stay under ignored `dist/v0.11.0/`:
+Generated files stay under ignored `dist/v0.12.0/`:
 
 | File | Purpose |
 | --- | --- |
-| `KenshiProbe-v0.11.0-win-x64.zip` | Two DLLs, manifest, zero-record descriptor, installation notice and GPLv3 |
+| `KenshiProbe-v0.12.0-win-x64.zip` | Two DLLs, manifest, zero-record descriptor, installation notice and GPLv3 |
 | `SHA256SUMS` | Archive, extracted DLL and companion-record SHA-256 hashes |
 | `source-manifest.json` | Exact native/packaging inputs, with CRLF normalized to LF |
 | `build-info.json` | Version, toolset, binary hashes and corresponding source commit |
@@ -70,10 +70,10 @@ the clean public repository, whose `origin` is already configured:
 
 ```powershell
 $SourceCommit = (git rev-parse HEAD).Trim()
-git -c user.name="KenshiOracle contributors" -c user.email="contributors@users.noreply.github.com" tag -a v0.11.0 $SourceCommit -m "KenshiProbe v0.11.0"
+git -c user.name="KenshiOracle contributors" -c user.email="contributors@users.noreply.github.com" tag -a v0.12.0 $SourceCommit -m "KenshiProbe v0.12.0"
 git push origin main
-git push origin refs/tags/v0.11.0
-gh release create v0.11.0 --verify-tag --title "KenshiProbe v0.11.0" --notes-file dist/v0.11.0/release-notes.md dist/v0.11.0/KenshiProbe-v0.11.0-win-x64.zip dist/v0.11.0/SHA256SUMS dist/v0.11.0/source-manifest.json dist/v0.11.0/build-info.json dist/v0.11.0/binary-audit.json dist/v0.11.0/installation-verification.json dist/v0.11.0/release-notes.md
+git push origin refs/tags/v0.12.0
+gh release create v0.12.0 --verify-tag --title "KenshiProbe v0.12.0" --notes-file dist/v0.12.0/release-notes.md dist/v0.12.0/KenshiProbe-v0.12.0-win-x64.zip dist/v0.12.0/SHA256SUMS dist/v0.12.0/source-manifest.json dist/v0.12.0/build-info.json dist/v0.12.0/binary-audit.json dist/v0.12.0/installation-verification.json dist/v0.12.0/release-notes.md
 ```
 
 The tag is created before anything is pushed, with an explicit identity, so a
