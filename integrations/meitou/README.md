@@ -1,10 +1,10 @@
 # MeitouClient Oracle patch series
 
 This directory makes the Meitou adapter reproducible without distributing a
-Meitou binary or relying on an unpublished fork. Apply the seven patches, in
+Meitou binary or relying on an unpublished fork. Apply the eight patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `8677d68da41e8961972e387c565c0f678618e79b`;
+correspond to the local fork tip `198f4f8149aa06589c39d52f7688925591d67197`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -20,6 +20,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `5ab88d9a8960e75241965c1e48b3760544db264e` |
 | 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5a194dc9013ec8a81d1b339686bda649e3cc5f` |
 | 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `8677d68da41e8961972e387c565c0f678618e79b` |
+| 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `198f4f8149aa06589c39d52f7688925591d67197` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -56,6 +57,31 @@ the original's task factory builds as `Task_Blank` (147 rows, from MeitouClient'
 task under a goal, so an attack (Meitou row 16) is not expected to match the
 original's immediate task. `position` stays `null`. Which of these orders match
 the original in game is **Unknown**: no live campaign has run on this patch.
+In one paused run per engine on one save, every task the AI starts recorded its
+goal's row (`TaskSource.Goal`, not only attacks), so Meitou named an order for
+324 of 2338 character checkpoints and the original for 1933 (**Observed**).
+
+Patch 8 adds [state 0.5](../../docs/state-coverage.md#extension-additive-05)
+and makes it the default dump schema; 0.1 to 0.4 output is unchanged, `order`
+included (pinned by test). In 0.5 each character gets `goal` from its mind's
+current goal (`CharacterCold.Ai.Goal`): `type` is the goal row's native name by
+row number, Task_Blank rows included (they are goals); `priority` is the
+AI_TASK tier of the goal, `TaskPriority` 0 to 4 named `just_action`, `fluff`,
+`non_urgent`, `urgent` and `obedience` (the native `taskPriority` numbering,
+**Verified** by reading both enums), any other value `null`; `target_id` is
+always `null` because `AiGoal` has no target. `goal` is `null` without a mind
+(player squads), before the mind's first think (right after a load) and for a
+row without a native name. Unlike the native probe, Meitou does not null the
+goal of a dead character; `null` on one side is never a divergence. In 0.5
+only, the order of a goal's task (`TaskSource.Goal`) is the mind's first plan
+step (`AiMind.Step`) when that step is not none, differs from the goal's row,
+is one of the steps the engine carries out (`AiSystem.Carried`, made public
+for this) and has a native name; `target_id` and `position` are then `null`.
+Every other case keeps the 0.4 rule. The patch carries the 74-case canonical
+vector copy and its pin. Whether Meitou's tier is the same quantity as the
+native stored goal priority, and whether the first plan step is the step the
+original body runs at the same moment, are **Unknown**: no live campaign has
+run on this patch.
 
 ## Apply and build
 
@@ -78,7 +104,7 @@ same `git switch` line; your old branch stays as a backup. Then, in either case:
 ```powershell
 $OracleRoot = (Resolve-Path ../KenshiOracle).Path
 $Series = "$OracleRoot/integrations/meitou"
-git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch"
+git -c core.autocrlf=false am -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch"
 dotnet build -c Release src/Meitou.Game/Meitou.Game.csproj
 dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQualifiedName~Meitou.Tests.Oracle|FullyQualifiedName~Meitou.Tests.Engine.CameraTests|FullyQualifiedName~Meitou.Tests.Engine.OracleCameraRestoreTests"
 ```
@@ -87,13 +113,14 @@ Build from a clean Git checkout: `build_commit` is the full commit only when
 `git status --porcelain` is empty at build time, otherwise `"unknown"`, which
 the comparator refuses for campaigns.
 
-**Verified:** in a scratch clone at upstream `88ae71a1`, `git am` applied the
-seven patches cleanly with `core.autocrlf=false` and with `core.autocrlf=true`;
-both times the resulting tree equalled the fork tip's tree (compared with
-`git rev-parse HEAD^{tree}`).
-This checks source reproduction, not a live campaign. The builds and test
-suites below ran at `efc2eb2a`, the same tree as `8677d68d` before patch 7's
-author was set to CrockMr.
+**Verified:** in a scratch checkout at upstream `88ae71a1`, without network
+access, `git am --3way` applied the eight patches cleanly with
+`core.autocrlf=false` and with `core.autocrlf=true`; both times the resulting
+tree equalled the fork tip's tree `869275d0a302d9562dac4d34b29db5528f9b9f76`
+(compared with `git rev-parse HEAD^{tree}`).
+This checks source reproduction, not a live campaign. The patch 7 results below
+ran at `efc2eb2a`, the same tree as `8677d68d` before patch 7's author was set
+to CrockMr.
 
 Adapt the relative `../KenshiOracle` checkout name. No contributor's installation
 path is embedded in the patches. Configure your own original content through
@@ -101,16 +128,27 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `8677d68d` on `88ae71a1`, in the fork's own checkout
+**Verified** at fork tip `198f4f81` on `88ae71a1`, in the fork's own checkout
 (whose tree equals the `git am` result above), with SDK 10.0.403:
 - The Release build had 0 warnings and 0 errors.
-- The quick suite (`Category!=Slow&Category!=Bench`) had 947 passes and 0
-  failures (3 skipped); it had 926 passes and 0 failures (3 skipped) at the
-  patch 6 tip `cd5a194d`.
+- The Oracle tests (`FullyQualifiedName~Meitou.Tests.Oracle`) passed 180 of
+  180.
+- The quick suite (`Category!=Slow&Category!=Bench`) had 957 passes and 0
+  failures (3 skipped) at `a9684066`, the patch 8 commit before the shared 0.5
+  vectors and the documentation were amended in (its source code is identical
+  to `198f4f81`). It had 947 passes and 0 failures (3 skipped) at the patch 7
+  tip `8677d68d`, and 926 passes and 0 failures (3 skipped) at the patch 6 tip
+  `cd5a194d`.
+- The complete suite (Slow and Bench included) on the `198f4f81` tree had 1109
+  passes, 13 failures and 25 skipped of 1147. The same run at the patch 7 tip
+  `8677d68d` had the same 13 failures plus the timing test
+  `OracleServerTests.A_host_timeout_cancels_queued_work_and_late_completion_cannot_replace_the_error`,
+  which fails or passes with machine load. None of the 13 is an Oracle test:
+  they are UI, rendering, texture, navigation, world and kidnap tests.
 - At the patch 6 tip `cd5a194d`, the focused Oracle/camera tests (the filter
   above) passed 152 of 152; with `GoldenHashTests` and `DeterminismTests`
   added, the Oracle filter passed 172 of 172. The golden hashes are unchanged,
-  and tests of patches 5, 6 and 7 check that the capture leaves
+  and tests of patches 5 to 8 check that the capture leaves
   `World.StateHash()` unchanged.
 - At the earlier tip `da2b35b4` of patch 6 (before the shared 0.3 vectors were
   copied in), a first quick-suite run had 2 failures outside the adapter
@@ -118,7 +156,7 @@ process ownership, scenario execution and restoration.
   folder); both passed alone and in a complete rerun. Treat them as
   environment-sensitive; they were not reproduced on `cd5a194d`.
 - The complete suite (Slow and Bench included) had 1094 passes, 13 failures
-  and 25 skipped at `8677d68d`, and 1072 passes, 14 failures and 25 skipped at
+  and 25 skipped at the patch 7 tip `8677d68d`, and 1072 passes, 14 failures and 25 skipped at
   `cd5a194d`, run one after the other on the same machine. The 13 failures are
   the same tests on both (GPU, texture, interface, navmesh, distant-mesh,
   particle and one kidnap test, none in the adapter); the extra failure at
@@ -139,8 +177,8 @@ reproduce every environmental result. See the
 
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
 (fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
-**Unknown:** patches 5 to 7 in game; no live campaign has run on `5ab88d9a`,
-`cd5a194d` or `8677d68d`.
+**Unknown:** patches 5 to 8 in game; no live campaign has run on `5ab88d9a`,
+`cd5a194d`, `8677d68d` or `198f4f81`.
 
 ## Scope and maintenance
 
@@ -162,20 +200,20 @@ setup needs (a swap-aware relation setter, a template-squad plan and spawn, a
 paused edit bracket); the fourth adds the `setup_*` commands of the
 [scene-setup contract](../../docs/scene-setup.md), `allow_setup` on
 `load_save`, the ping additions and the `issue_order` refusals; the fifth
-fills `health[].maximum` with the calculated part maximum; the sixth and seventh add the
-state 0.3 and 0.4 fields. Keep these
+fills `health[].maximum` with the calculated part maximum; the sixth, seventh and
+eighth add the state 0.3, 0.4 and 0.5 fields. Keep these
 integration points small when updating upstream; do not copy unrelated
 upstream changes into this series. The shared canonical vectors are synthetic
 fixtures, not game data.
 
 Maintain the branch as a durable fork. Before updating, keep a local backup
 branch, record the old upstream base, then fetch the current upstream and rebase
-the seven adapter commits onto the selected upstream commit. Resolve
+the eight adapter commits onto the selected upstream commit. Resolve
 host/lifecycle conflicts explicitly. Build both flag modes, rerun the focused
 tests and shared canonical vectors, and compare any complete-suite failures
 with that same unmodified upstream. Revalidate pause/loading, seed provenance,
 fresh heartbeat, cancellation, restoration and scene setup with local saves
-before claiming compatibility. Export a fresh seven-patch series into a
+before claiming compatibility. Export a fresh eight-patch series into a
 temporary directory with `git format-patch -N --no-signature`, review the diff,
 then update the pinned base, source commits, hashes and validation evidence
 here. Do not publish or force-push an upstream repository as part of this
@@ -194,8 +232,8 @@ MeitouClient and this derivative patch series are distributed under
 [additional permission for specified NVIDIA libraries](LICENSE-EXCEPTION.md)
 are preserved verbatim from the pinned upstream commit. The latter permission
 does not cover unrelated non-free dependencies. Upstream work is by the
-MeitouClient contributors; the seven modifications were made for KenshiOracle,
-with patches 1-2 committed as KenshiOracle contributors and patches 3-7 as
+MeitouClient contributors; the eight modifications were made for KenshiOracle,
+with patches 1-2 committed as KenshiOracle contributors and patches 3-8 as
 CrockMr (each patch's `From:` line). No proprietary executable, disassembled listing or decompiled
 game code is included. Upstream dependency notices remain in the separately
 obtained MeitouClient checkout.

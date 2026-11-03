@@ -1,8 +1,8 @@
 <a id="couverture-de-létat-commun-01-et-02"></a>
 
-# Shared state 0.1, 0.2, 0.3 and 0.4 coverage
+# Shared state 0.1, 0.2, 0.3, 0.4 and 0.5 coverage
 
-The contracts are [state.schema.json, 0.1](../schema/state.schema.json), [state-0.2.schema.json](../schema/state-0.2.schema.json), [state-0.3.schema.json](../schema/state-0.3.schema.json) and [state-0.4.schema.json](../schema/state-0.4.schema.json). The native adapter is in [OracleState.h](../plugin/OracleState.h); shared validation and normalization are in [oracle_schema.py](../mcp-server/oracle_schema.py). This page distinguishes the existence of an API from validation of a real capture.
+The contracts are [state.schema.json, 0.1](../schema/state.schema.json), [state-0.2.schema.json](../schema/state-0.2.schema.json), [state-0.3.schema.json](../schema/state-0.3.schema.json), [state-0.4.schema.json](../schema/state-0.4.schema.json) and [state-0.5.schema.json](../schema/state-0.5.schema.json). The native adapter is in [OracleState.h](../plugin/OracleState.h); shared validation and normalization are in [oracle_schema.py](../mcp-server/oracle_schema.py). This page distinguishes the existence of an API from validation of a real capture.
 
 - **Verified**: declaration present in the public headers used, with an explicit mapping in our code. This alone does not prove safety or completeness in every scene.
 - **Observed**: limited behavior established by the cited trials; distinguish their versions and do not extend it to other scenes.
@@ -16,7 +16,7 @@ Version **0.9.3** adds canonicalization of saved identities, retained in 0.9.5. 
 
 | Field or collection | Exact public source and conversion | Status and limits |
 | --- | --- | --- |
-| `schema_version` | Requested version `0.1`, `0.2`, `0.3` or `0.4`, without an engine API. | **Verified** in the schemas and serializers. The historical evidence above concerns 0.1. |
+| `schema_version` | Requested version `0.1`, `0.2`, `0.3`, `0.4` or `0.5`, without an engine API. | **Verified** in the schemas and serializers. The historical evidence above concerns 0.1. |
 | `clock` | `GameWorld.h:238`, `GameWorld::getTimeStamp_inGameHours()`; `util/TimeOfDay.h:23`, `TimeOfDay::getTotalHours()`. | **Verified**; progression and lack of movement while paused are **Observed** in the [clock measurements](research/simulation-clock-measurements.md). |
 | `clock.day` | `floor(total_hours / 24)`, carrying into the next day if the rounded hour reaches 24. | **Verified**: zero-based day. This is not the day displayed starting at 1 in the interface. |
 | `clock.hour` | `total_hours % 24`, with shared six-decimal rounding. | **Verified**; native code normalizes an hour rounded to 24 to zero on the following day. The schema also permits 24 for another adapter's representation of this boundary. |
@@ -122,7 +122,8 @@ also completed three snapshots and restoration. The 21 Meitou captures,
 
 The Meitou projection leaves `order` as `null` in states 0.1 to 0.3:
 equivalence of the task has not been established (state
-[0.4](#extension-additive-04) adds a Meitou order). Since patch 0005 of the
+[0.4](#extension-additive-04) adds a Meitou order, and
+[0.5](#extension-additive-05) a plan-step order for a goal's task). Since patch 0005 of the
 [Meitou series](../integrations/meitou/README.md), `health[].maximum` is
 Meitou's calculated part maximum, not the stored value, and `null` when negative
 or non-finite. In the 1 November 2026 setup heal receipts (unworn, full
@@ -223,9 +224,17 @@ adapter emits an order from its running task, named by row number through a
 copy of the native task-name table (never a C# enum name), with `target_id`
 the canonical id of a target character present in the census and `position`
 always `null`; Task_Blank goal rows give `null`. Its 0.1 to 0.3 output keeps
-`order:null`. For an attack Meitou's row is the goal while the native body
-shows the immediate task, so the two can differ by design; whether the orders
-agree on a move, a treatment and a fight is **Unknown** (live check 8).
+`order:null`. Every task the Meitou AI chooses (`TaskSource.Goal`), not only an
+attack, records its goal's row, while the native order is the body's current
+action, a step of the goal's plan; so the two differ by design for AI-driven
+characters, and 0.4 `order` compares player orders and non-blank goal rows
+only. In one paused run per engine on one save (`oracle-base-cage-blesse`, a
+local save with caged slaves; local evidence, not published), Meitou named an
+order for 324 of 2338 character checkpoints and the original for 1933
+(**Observed**). Whether the orders agree
+on a move, a treatment and a fight is **Unknown** (live check 8). In 0.5
+output, a goal's task gives its carried plan step instead
+([0.5](#extension-additive-05)).
 
 Live checks still needed (one paused native session, then the Meitou
 counterpart): (1) blood, hunger, fed and bleed rate on a bleeding character
@@ -253,8 +262,9 @@ the comparator refuses a 0.3 campaign against a 0.4 campaign.
 
 Four 0.4 [canonical vectors](../schema/canonical-vectors.json) (every field
 filled, a permutation, nulls with `other` and `nothing`, and range edges; 69
-cases in all, the earlier 65 unchanged) pass in Python and in patch 0007's C#
-test (**Verified**). The Meitou projection is patch 0007 of the
+cases in all at 0.4, the earlier 65 unchanged) pass in Python and in patch
+0007's C# test (**Verified**); the five [0.5 cases](#extension-additive-05)
+bring the file to 74. The Meitou projection is patch 0007 of the
 [Meitou series](../integrations/meitou/README.md) (**Verified** in code and in
 the adapter's tests, which also pin the unchanged 0.1 to 0.3 bytes and the
 unchanged state hash). One projection difference is by construction: a carried
@@ -264,6 +274,104 @@ An adapter without patch 0007 does not produce 0.4 and needs
 `state_schema:"0.3"` in both targets' configurations. The native probe with 0.4
 builds with every offset check above (**Verified** at compile time); it has not
 been loaded in game.
+
+<a id="extension-additive-05"></a>
+
+## Additive extension 0.5
+
+Versions 0.1 to 0.4 are unchanged byte for byte, on both producers: every
+accepted 0.4 snapshot stays valid, and a producer with 0.5 writes the same 0.1
+to 0.4 bytes as before (the Meitou `order` included). Version 0.5
+([state-0.5.schema.json](../schema/state-0.5.schema.json)) is 0.4 plus **one
+required character field**, `goal`. Changing only `schema_version` is
+rejected, and a 0.4 snapshot cannot carry it. Producers with 0.5 advertise
+`0.1` to `0.5` and default to `0.5`; the runner selects the highest common
+version (0.5, then 0.4, 0.3, 0.2, 0.1), `state_schema` is honoured exactly, and
+the Meitou target requests 0.5 unless its configuration says otherwise.
+
+`goal` is `null` or an object with exactly `type`, `priority` and `target_id`.
+`null` means unknown **or** no current goal: Meitou cannot tell "no goal" from
+"not thought yet", and what an empty native `TaskMatch` means is **Unknown**,
+so "no goal" is never a value. The field exists because the engines' `order`
+values do not mean the same thing for AI-driven characters (see the Meitou
+`order` paragraph of [0.4](#extension-additive-04)): the goal compares the AI
+decision itself, which goal at which tier.
+
+No game run backs any 0.5 value: every in-game value below is **Unknown** until
+the live checks listed after the table. "API **Verified**" means the member
+exists at that offset in the public SDK headers read for this contract (the
+native offsets and sizes are checked at compile time against those headers,
+not against the game binary); it does not prove what the game stores there at
+run time.
+
+| Added field | Native source and Meitou projection | Certainty and limits |
+| --- | --- | --- |
+| `characters[].goal` | Native: `Character::ai` (0x650, `Character.h:720`, `AI*`) to `AI::taskSystemAI` (0x20, `AI/AI.h:115`, `AITaskSytem*`) to `currentGoal` (0x1C0, a `TaskMatch` of length 0x48) and `currentGoalPriority` (0x20C) of `OrdersReceiver`, the base of `AITaskSytem` at offset 0 (`AI/AITaskSystem.h:179`, `:181`, `:194`). Member reads only: `TaskMatch::key()`, `getCurrentGoal()` and `getAI()` are not called. Meitou: `CharacterCold.Ai.Goal` (`AiMind`). | API **Verified**; values **Unknown** (live check G1). Native `null`: `ai`, `taskSystemAI` or `taskData` null, a key outside 0 to 290, `NULL_TASK`, a row without a name, or a dead character, whose AI is not read (whether its pointer stays valid after death is **Unknown**). Meitou `null`: no mind (`cold.Ai` null: player squads, which `AiSystem` does not attach, and characters without a mind), no goal yet (`mind.Goal` null before the first think, so right after a load), or a row without a native name. Meitou does not null a dead character's goal while the native probe does; a `null` on one side is never a divergence. An engine-routine Meitou mind (`AiMind.Engine`) still emits its combat and self-preservation goals like any goal. |
+| `goal.type` | Native `TaskMatch::taskData` (0x0, `AI/AITaskSystem.h:31`, `const TaskData*`) to `TaskData::key` (0x44, `Tasker.h:94`, `TaskType`), named by row number through the shared table ([OracleTaskNames.h](../plugin/OracleTaskNames.h)). Meitou: `mind.Goal.Task.Type` by row number through the adapter's copy `OracleTaskNames.cs`, never the C# enum spelling. | Constrained like `order.type`. Task_Blank rows (for example `wander_town` or `idle`) are **included**: they are goals, unlike in the 0.4 Meitou `order`. Values **Unknown** (live check G1). |
+| `goal.priority` | Native `currentGoalPriority`, `taskPriority` (`AI/AITaskSystem.h:87-95`): `TP_JUST_ACTION` 0 `just_action`, `TP_FLUFF` 1 `fluff`, `TP_NON_URGENT` 2 `non_urgent`, `TP_URGENT` 3 `urgent`, `TP_OBEDIENCE` 4 `obedience`. Meitou `mind.Goal.Task.Priority`, `TaskPriority` (`JustAction` 0, `Fluff` 1, `NonUrgent` 2, `Urgent` 3, `Obedience` 4, `Meitou.Data/Gameplay/Ai/AiData.cs:6`), with the same names. | The two enums number alike: **Verified** by reading both. They are not proven to hold the same quantity: native stores the tier passed when the goal was set, Meitou keeps the AI_TASK record's `classification` of the chosen goal (its think goes tier by tier). Agreement and whether a goal keeps its tier are **Unknown** (live check G2). Any other raw value gives `priority: null` and keeps the other keys. |
+| `goal.target_id` | Native `TaskMatch::subject` (0x8, `AI/AITaskSystem.h:40`, `hand`), encoded and canonicalized exactly like `order.target_id`; an empty hand gives `null`. Meitou: always `null`. `AiGoal` has no target; `FollowTarget`, `FightTarget` and `AssaultTarget` are act-out targets, and the last two are cleared within the tick, so mapping them would be a guess. | Native hand types (character, building, node or none) **Unknown** (live check G3). Because Meitou always emits `null`, `goal/target_id` is never comparable between the two engines. |
+
+Save: no save key. The saved orders record (type 67, linked to every character
+instance) holds only `jobs` and the permanent jobs (`pjob0`, `pjobT0*`):
+**Verified** on `oracle-base-cage-blesse` (128 characters, read from a
+hashed scratch copy; the save was not changed). So the goal cannot be checked
+against the save: at load the native goal is whatever the game rebuilt, and the
+Meitou goal is `null` until its first think.
+
+Meitou `order` in 0.5 output only (no schema change; patch 0008): the 0.4 rule
+holds except for one case. When the character's task provenance
+(`CharacterCold.Running`) is a goal's task (`TaskSource.Goal`) that runs the
+character's task now, and the mind's first plan step (`AiMind.Step`) is not
+none, differs from the goal's row, is a step the engine carries out
+(`AiSystem.Carried`) and has a native name, then `order.type` is that step's
+name and `target_id` and `position` are `null` (the plan target is a place, not
+a character). The carried steps are `move_on_free_will` (and `_fast`),
+`travel_to_target_town` (and `_fast`), `stand_at_node`, `buy_shit`, `use_bed`,
+`use_bed_order`, `use_turret`, `operate_machinery`,
+`pretend_to_operate_machinery`, `equip_weapon`, `unequip_weapon`,
+`equip_crossbow`, the three `get_out_of_bed` rows, `go_homebuilding`,
+`get_near_to`, `enter_building` and `leave_building`. A player order is
+unchanged. The intended effect is that native `move_on_free_will`,
+`stand_at_node`, `use_bed`, `operate_machinery` and `buy_shit` become
+comparable: they were 1618 of the 1933 native orders in the 0.4 run above, for
+characters present on both engines (**Observed**). Whether Meitou's first plan
+step is the step the original body runs at the same moment is **Unknown** (live
+check G4).
+
+Live checks still needed (one paused native session on `oracle-base-cage-blesse`
+with a hold scenario, then the Meitou counterpart; no new save is
+needed): (G1) the native goals of residents over the hold (expected among
+`idle`, `wander_town`, `shopping`, `man_the_gate`, `job_medic` and the sleep
+goals) against Meitou's goals for the same characters; (G2) the priority values
+on both sides, and whether a goal keeps its tier; (G3) the hand types of the
+native goal target: character, building, node or none; (G4) Meitou's carried
+plan step against the native `order` on the same character and checkpoint;
+(G5) what the native probe reports as the goal of a player character (Meitou:
+`null`).
+
+Comparison: in a 0.5 comparison, each saved character gains the individual
+metrics `goal/type`, `goal/priority` and `goal/target_id` (through the same
+reference handling as `order/target_id`: a proven saved HAND or a setup alias
+label, otherwise `null`). A `null` goal gives three `null` values. In a scene
+scope the player's goal joins its outcome fields and other saved characters'
+goals are background metrics. A `null` in any repetition makes the metric not
+comparable: it is never a divergence. Triage rule 7 merges a goal difference
+across the members of a squad into one field group
+(`/characters/*/goal/type`). A 0.2 to 0.4 comparison gains no metric, and the
+comparator refuses a 0.4 campaign against a 0.5 campaign.
+
+Five 0.5 [canonical vectors](../schema/canonical-vectors.json) (two goals, one
+with a target and one a Task_Blank row; a permutation; `just_action` and
+`non_urgent`; `obedience` and a `null` priority; a `null` goal: 74 cases in
+all, the earlier 69 unchanged, fixture identity
+`99f4bfee37ee2c953c7dc34954d8d525e5f116564dcfda11c67bb2ab0f8c1484`) pass in
+Python and in patch 0008's C# test (**Verified**). The Meitou projection is
+patch 0008 of the [Meitou series](../integrations/meitou/README.md)
+(**Verified** in code and in the adapter's tests, which also pin the unchanged
+0.1 to 0.4 bytes). An adapter without patch 0008 does not produce 0.5 and needs
+`state_schema:"0.4"` in both targets' configurations. The native goal logic is
+tested on fake objects and its offsets are checked at compile time against the
+SDK headers (**Verified**); the probe with 0.5 has not been loaded in game.
 
 <a id="identités-et-comparabilité"></a>
 

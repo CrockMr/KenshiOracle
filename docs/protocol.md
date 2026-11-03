@@ -27,7 +27,7 @@ Other historical scene and telemetry commands are retained. The following are ph
 | --- | --- | --- |
 | `ping` | None | Plugin/game versions, `schema_version` (phase 1 probes: `"0.1"`; later probes: their default state schema), `supported_schema_versions` (since state 0.2), `instance_id`, `process_id`, availability and historical capabilities. `instance_id` identifies a launch, not a character. |
 | `get_clock` | None | `{day,hour,elapsed_seconds,speed,paused}`. Ready world required. |
-| `dump_state` | `filename`, simple ASCII name of 1 to 100 alphanumeric, `_` or `-` characters, followed by `.json`; optional `schema_version` (`0.1`, `0.2`, `0.3` or `0.4`, see [negotiation](#state-schema-negotiation)) on probes that advertise `supported_schema_versions` | `{path,schema_version,bytes,identity_source}`. Ready paused world, no active advancement, origins prepared. Destination under `KENSHI_ORACLE_OUTPUT`, otherwise `oracle-dumps/` in the working directory. Absolute path returned. Windows reserved names rejected, never overwrites. |
+| `dump_state` | `filename`, simple ASCII name of 1 to 100 alphanumeric, `_` or `-` characters, followed by `.json`; optional `schema_version` (`0.1`, `0.2`, `0.3`, `0.4` or `0.5`, see [negotiation](#state-schema-negotiation)) on probes that advertise `supported_schema_versions` | `{path,schema_version,bytes,identity_source}`. Ready paused world, no active advancement, origins prepared. Destination under `KENSHI_ORACLE_OUTPUT`, otherwise `oracle-dumps/` in the working directory. Absolute path returned. Windows reserved names rejected, never overwrites. |
 | `pause` | Boolean `paused` | Actual pause; explicit pause interrupts active advancement. |
 | `set_game_speed` | `speed` from 0 to 5, optional `preserve_pause` | Historical contract retained. `preserve_pause:true` requires positive speed and preserves pause. |
 | `run_until` | Absolute `target_seconds` on the game clock; real `timeout_seconds`, default120, native bounds 0,1 to 3600 | Immediately returns `{operation_id,status,target_seconds,clock}`. Requires a paused start and positive speed explicitly commanded since the last load. The hook watches the crossing, then pauses; it does not block the main loop. |
@@ -90,20 +90,21 @@ Objects have sorted keys. For a finite binary64 number with absolute value at mo
 <a id="state-schema-negotiation"></a>
 
 State schema versions and negotiation: [0.1](../schema/state.schema.json),
-[0.2](../schema/state-0.2.schema.json), [0.3](../schema/state-0.3.schema.json)
-and [0.4](../schema/state-0.4.schema.json) are separate, unchanged contracts;
-each later version only adds required fields
+[0.2](../schema/state-0.2.schema.json), [0.3](../schema/state-0.3.schema.json),
+[0.4](../schema/state-0.4.schema.json) and [0.5](../schema/state-0.5.schema.json)
+are separate, unchanged contracts; each later version only adds required fields
 ([0.3 coverage](state-coverage.md#extension-additive-03),
-[0.4 coverage](state-coverage.md#extension-additive-04)). A producer lists
+[0.4 coverage](state-coverage.md#extension-additive-04),
+[0.5 coverage](state-coverage.md#extension-additive-05)). A producer lists
 the versions it writes in `supported_schema_versions` (a producer with
-state 0.4: `0.1`, `0.2`, `0.3`, `0.4`, default `0.4`). The runner selects the
+state 0.5: `0.1`, `0.2`, `0.3`, `0.4`, `0.5`, default `0.5`). The runner selects the
 highest version that both sides support and sends it as `dump_state`'s
 `schema_version`; a phase 1 probe without that list is sent no parameter and
 gives 0.1. The configuration key `state_schema` requests one version exactly:
 a producer that does not advertise it is refused, never downgraded. The
 snapshot's `schema_version` must equal the negotiated version, and a change
 of the negotiated version during an execution is refused. The comparator accepts
-0.2, 0.3 and 0.4 campaigns but never compares two different versions.
+0.2, 0.3, 0.4 and 0.5 campaigns but never compares two different versions.
 
 State-file size is bounded to 64 MiB. Python validation rejects duplicate keys, non-finite numbers, invalid Unicode, unexpected properties, and duplicate identities. MCP checks the returned path under `oracle_output`, validates schema, then writes canonical bytes. Byte identity for the same state does not promise engine determinism.
 

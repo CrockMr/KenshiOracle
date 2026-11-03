@@ -47,12 +47,13 @@ Loader requires:
 
 - Same scenario excluding repetition count, same save and same
   `quick.save`/indexed-platoon fingerprint; complete repetitions/checkpoints.
-- Canonical **0.2**, **0.3** or **0.4** snapshots, matching SHA-256, within their
-  campaign directory. All snapshots of a campaign use one state schema, equal to the
+- Canonical **0.2**, **0.3**, **0.4** or **0.5** snapshots, matching SHA-256,
+  within their campaign directory. All snapshots of a campaign use one state schema, equal to the
   report's `state_schema` when recorded, and both campaigns use the same one;
-  a 0.2, 0.3 or 0.4 campaign is never compared with a campaign of another
-  version. The 0.4 metrics are listed in
-  [state coverage](state-coverage.md#extension-additive-04).
+  a 0.2, 0.3, 0.4 or 0.5 campaign is never compared with a campaign of another
+  version. The 0.4 and 0.5 metrics are listed in
+  [state coverage](state-coverage.md#extension-additive-04) and
+  [its 0.5 section](state-coverage.md#extension-additive-05).
   Paused clock, requested time reached, `actual_at`, overshoot and snapshot
   clock consistent with repetition origin.
 - Original: audited Kenshi 1.0.65/RE_Kenshi 0.3.5 build, GUI/CRT evidence of six
@@ -106,6 +107,9 @@ Name, position, faction, index or coincident current ID does not establish ident
 In state 0.4, a squad with a proven saved HAND also gets an individual
 `/squads/<id>/money` metric, and the carried character `carrying_id` is a
 reference handled like `order/target_id`.
+In state 0.5, each saved character also gets `goal/type`, `goal/priority` and
+`goal/target_id`, the last a reference handled like `order/target_id`; a
+`null` goal on either side makes all three not comparable, never a divergence.
 Other NPCs contribute to groups; they are never individually matched across games.
 
 <a id="groupes-et-observations-temporelles"></a>

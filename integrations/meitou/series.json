@@ -1,7 +1,7 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "8677d68da41e8961972e387c565c0f678618e79b",
+  "fork_tip": "198f4f8149aa06589c39d52f7688925591d67197",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
@@ -46,6 +46,12 @@
       "source_commit": "8677d68da41e8961972e387c565c0f678618e79b",
       "sha256": "78bc1caa1f396b6efe511a59c8680bcfab56a50adecfeff5f744b3c61b8968de",
       "bytes": 102368
+    },
+    {
+      "file": "0008-state-05-goals-and-plan-step-orders.patch",
+      "source_commit": "198f4f8149aa06589c39d52f7688925591d67197",
+      "sha256": "c8891e376c1306ba1590d42275cf1f5603c874b0732446e43d764c5f52ca28fe",
+      "bytes": 71535
     }
   ]
 }

@@ -1,0 +1,1243 @@
+From 198f4f8149aa06589c39d52f7688925591d67197 Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 08:23:42 +0100
+Subject: [PATCH] Expose state 0.5 AI goals and plan-step orders in the oracle
+ adapter
+
+State schema 0.5 is 0.4 plus characters[].goal; 0.1 to 0.4 output is
+unchanged, order included (the canonical bytes of all four are pinned
+on patch 0007 for a world that holds AI goals and plan steps). goal
+reads CharacterCold.Ai.Goal: type is the goal row's native name by row
+number in OracleTaskNames, Task_Blank rows included (they are goals),
+priority maps the AI_TASK tier TaskPriority 0 to 4 to just_action,
+fluff, non_urgent, urgent and obedience (the native taskPriority
+numbering), any other value to null, and target_id is null because
+AiGoal has no target. goal is null without a mind (player squads),
+before the mind's first think and for a row without a native name, so
+"no goal" is never a value.
+
+In 0.5 only, order of a goal's task changes: Meitou records a goal's
+row as its task provenance while the original reports the body's
+current step. When CharacterCold.Running is a TaskSource.Goal task that
+runs the character's task now and the mind's first plan step
+(AiMind.Step) is not None, differs from the goal's row, is a step the
+engine carries out and has a native name, order is that step with a
+null target_id and position. Every other case keeps the 0.4 rule, and
+the 0.4 branch never sees the step. AiSystem.Carried becomes public so
+the adapter uses the engine's own list of carried steps instead of a
+copy; Meitou.Simulation exposes internals to the tests only.
+
+dump_state, ping's supported_schema_versions and canonical ordering
+accept 0.5, and the default dump schema becomes 0.5. Whether Meitou's
+tier is the same quantity as the native stored goal priority, and
+whether the first plan step is the step the original body runs at the
+same moment, are Unknown until a live check.
+
+Tests pin the 0.1 to 0.4 bytes, the goal by row number with a
+Task_Blank row, its null cases, the five priority names and null out of
+range, and the plan-step order against a step equal to the goal row, a
+step the engine does not carry out and a player order.
+
+The shared canonical vectors fixture is the KenshiOracle 0.5 copy: five
+state 0.5 goal cases appended, the 69 earlier cases byte-identical, with
+its pin updated.
+
+docs/oracle.md also records what one paused run per engine on one save
+showed for 0.4: every task the AI starts records its goal row while the
+original reports the body's current plan step, so most residents read a
+null order on Meitou (324 of 2338 character checkpoints against 1933 on
+the original), and every 0.4 value with a save key equalled the save at
+load on both engines (Observed).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/oracle.md                                |  35 +-
+ src/Meitou.Game/Oracle/OracleCanonicalJson.cs |   2 +-
+ src/Meitou.Game/Oracle/OracleState.cs         |  43 +-
+ src/Meitou.Simulation/Ai/AiSystem.Planning.cs |   4 +-
+ tests/Meitou.Tests/Oracle/Fixtures/README.md  |   7 +-
+ .../Oracle/Fixtures/canonical-vectors.json    | 776 ++++++++++++++++++
+ .../Oracle/OracleCanonicalJsonTests.cs        |   2 +-
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs |   6 +-
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs | 127 ++-
+ 9 files changed, 977 insertions(+), 25 deletions(-)
+
+diff --git a/docs/oracle.md b/docs/oracle.md
+index e70f2aaf..acdd8de6 100644
+--- a/docs/oracle.md
++++ b/docs/oracle.md
+@@ -62,7 +62,7 @@ return `not_implemented`.
+ Ping's `plugin_version` is `OracleProtocol.AdapterVersion` (0.11.0, the
+ KenshiOracle protocol release implemented). Ping also reports
+ `capabilities:["scene_setup"]`, `schema_version` and `state_schema_version`
+-`"0.4"` (the default dump schema), `supported_schema_versions:["0.1","0.2","0.3","0.4"]`,
++`"0.5"` (the default dump schema), `supported_schema_versions:["0.1","0.2","0.3","0.4","0.5"]`,
+ `world_readiness`, `world_mutated` and `build_commit`: the full 40-hex commit
+ from the assembly metadata `OracleBuildCommit` (`git rev-parse HEAD` at build
+ time), or `"unknown"` without git, on a git failure or with uncommitted changes
+@@ -78,8 +78,8 @@ arrival. Loads are asynchronous, end paused, and report readiness through ping.
+ 
+ ## State, identities and seed
+ 
+-`dump_state` accepts `filename` and optional `schema_version` (`0.4` default,
+-`0.1` to `0.3` supported; the runner sends the version it negotiated). Filenames are constrained to one new JSON file beneath the
++`dump_state` accepts `filename` and optional `schema_version` (`0.5` default,
++`0.1` to `0.4` supported; the runner sends the version it negotiated). Filenames are constrained to one new JSON file beneath the
+ output folder. The capture requires a ready paused world and no active advance.
+ [`OracleState`](../src/Meitou.Game/Oracle/OracleState.cs) projects loaded
+ characters/squads, factions and directional relations;
+@@ -143,11 +143,34 @@ the native probe's name by row number
+ ([`OracleTaskNames`](../src/Meitou.Game/Oracle/OracleTaskNames.cs), the
+ KenshiLib enum order; Meitou's own symbols differ at 0, 38, 52, 65, 223, 245,
+ 289 and 290), `target_id` the census id of a character target, `position`
+-null. A goal row is no order, so an attack (Meitou row 16) reads null while the
+-original reports its immediate task. In-game equivalence of every 0.4 value is
+-**Unknown** (no game run backs it). Reading them changes no simulation state or
++null. A goal row is no order. Every task the AI starts records its goal's row
++(`AiSystem.GoalRow`), while the original's order is the body's current action,
++a step of the goal's plan. So an attack (Meitou row 16) and a resident's town
++goal (`IDLE`, `WANDER_TOWN`, `SHOPPING`, `JOB_MEDIC`...) read null, while the
++original reports e.g. `move_on_free_will`, `stand_at_node` or `use_bed`
++(**Observed**, one paused run per engine on one save: Meitou named an order for
++324 of 2338 character checkpoints, the original for 1933). In the same runs,
++every 0.4 value that has a save key equalled the save at load on both engines
++(**Observed**); in-game equivalence beyond that is **Unknown**. Reading them changes no simulation state or
+ state hash (**Verified**, `OracleStateTests`).
+ 
++State 0.5 is 0.4 plus character `goal`; 0.1 to 0.4 bytes, `order` included, are
++unchanged (**Verified**, hashes pinned on patch 0007 in `OracleStateTests`).
++`goal` is `CharacterCold.Ai.Goal`: `type` its row's native name by row number,
++Task_Blank rows included; `priority` its AI_TASK `classification`, 0 to 4 as
++`just_action`, `fluff`, `non_urgent`, `urgent`, `obedience` (both enums number
++alike, **Verified** by reading them), other values null; `target_id` null
++(`AiGoal` has no target). `goal` is null without a mind (player squads),
++before the first think (right after a load) or for a row without a name, so
++"no goal" is never a value. In 0.5 only, `order` of a goal's task
++(`TaskSource.Goal`, whose row is the goal's) is the mind's first plan step
++(`AiMind.Step`) when that step is not None, differs from the goal's row, is one
++`AiSystem.Carried` lists and has a name; `target_id` and `position` are then
++null. Otherwise the 0.4 rule holds. **Unknown**: whether Meitou's tier is the
++same quantity as the native stored `currentGoalPriority` (the tier passed when
++the goal was set), and whether the first plan step is the step the original
++body runs at the same moment.
++
+ In Oracle mode, `--seed` is applied to the in-memory save before `SaveLoader`
+ and its first draws; it replaces the save's stored seed without rewriting that
+ file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
+diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+index c809a14c..04be9cb7 100644
+--- a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
++++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+@@ -15,7 +15,7 @@ internal static class OracleCanonicalJson
+     {
+         ArgumentNullException.ThrowIfNull(node);
+         var copy = node.DeepClone();
+-        if (copy is JsonObject state && state["schema_version"]?.GetValue<string>() is "0.1" or "0.2" or "0.3" or "0.4")
++        if (copy is JsonObject state && state["schema_version"]?.GetValue<string>() is "0.1" or "0.2" or "0.3" or "0.4" or "0.5")
+             OrderState(state);
+         var output = new StringBuilder();
+         Append(output, copy);
+diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
+index b0af38c8..4bd891f5 100644
+--- a/src/Meitou.Game/Oracle/OracleState.cs
++++ b/src/Meitou.Game/Oracle/OracleState.cs
+@@ -9,6 +9,7 @@ using Meitou.Data.Gameplay.Bodies;
+ using Meitou.Data.Save;
+ using Meitou.Engine;
+ using Meitou.Simulation;
++using Meitou.Simulation.Ai;
+ using Meitou.Simulation.Combat;
+ 
+ namespace Meitou.Game.Oracle;
+@@ -37,14 +38,14 @@ internal sealed class OracleState
+         $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.CS)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
+ 
+     /// <summary>The state schemas the adapter writes, oldest first; each adds keys to the one before and never changes them.</summary>
+-    internal static readonly string[] SchemaVersions = ["0.1", "0.2", "0.3", "0.4"];
+-    internal const string DefaultSchemaVersion = "0.4";
++    internal static readonly string[] SchemaVersions = ["0.1", "0.2", "0.3", "0.4", "0.5"];
++    internal const string DefaultSchemaVersion = "0.5";
+ 
+     internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = DefaultSchemaVersion)
+     {
+         int level = Array.IndexOf(SchemaVersions, schemaVersion);
+         if (level < 0) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
+-        bool v02 = level >= 1, v03 = level >= 2, v04 = level >= 3;
++        bool v02 = level >= 1, v03 = level >= 2, v04 = level >= 3, v05 = level >= 4;
+         if (!ReferenceEquals(world, session.World))
+         {
+             world = session.World;
+@@ -130,8 +131,8 @@ internal sealed class OracleState
+                 ["position"] = Position(hot[id.Slot].Position),
+                 ["state"] = medical is null ? null : medical.Dead ? "dead" : medical.Unconscious ? "unconscious" : "alive",
+                 ["health"] = health,
+-                // 0.1 to 0.3: a Meitou movement/AI task is not by itself proof of the original TaskType. 0.4: its task row (Order).
+-                ["order"] = v04 && cold is not null ? Order(hot[id.Slot], cold) : null,
++                // 0.1 to 0.3: a Meitou movement/AI task is not by itself proof of the original TaskType. 0.4: its task row; 0.5: or its plan step (Order).
++                ["order"] = v04 && cold is not null ? Order(hot[id.Slot], cold, v05) : null,
+             };
+             if (v02)
+             {
+@@ -147,6 +148,7 @@ internal sealed class OracleState
+                 row["slave_owner_faction_id"] = cold is null ? null : Faction(cold.SlaveOwner);
+             }
+             if (v04) AddState04(row, cold);
++            if (v05) row["goal"] = Goal(cold);
+             characters.Add(row);
+         }
+         var squadRows = new JsonArray();
+@@ -240,16 +242,43 @@ internal sealed class OracleState
+     /// State 0.4's order: the row of the character's task provenance (<see cref="CharacterCold.Running"/>) while it runs the character's task now,
+     /// when the row is not 0, not a <see cref="TaskBlankRows"/> goal and has a native name. The type is that name by row number
+     /// (<see cref="OracleTaskNames"/>, never the Meitou enum's spelling), the target the census id of a character target, the position null
+-    /// (whether the original reports the clicked or the floored goal is Unknown).
++    /// (whether the original reports the clicked or the floored goal is Unknown). From 0.5 (<paramref name="planStep"/>) a goal's task names
++    /// its plan step instead (<see cref="StepOrder"/>).
+     /// </summary>
+-    JsonObject? Order(in CharacterHot hot, CharacterCold cold)
++    JsonObject? Order(in CharacterHot hot, CharacterCold cold, bool planStep)
+     {
+         if (cold.Running is not { } run || !run.Runs((CharacterTask)hot.Task)) return null;
++        if (planStep && StepOrder(run, cold.Ai) is { } step) return new JsonObject { ["type"] = step, ["target_id"] = null, ["position"] = null };
+         int row = (int)run.Row;
+         if (row == 0 || TaskBlankRows.Contains(row) || OracleTaskNames.Of(row) is not { } type) return null;
+         return new JsonObject { ["type"] = type, ["target_id"] = CharacterIdentity(run.Target), ["position"] = null };
+     }
+ 
++    /// <summary>
++    /// State 0.5's order of a goal's task (<see cref="TaskSource.Goal"/>, whose provenance row is the goal's): the native name of the mind's first plan
++    /// step (<see cref="AiMind.Step"/>) when it is a step the engine carries out (<see cref="AiSystem.Carried"/>) other than the goal's row; null otherwise.
++    /// </summary>
++    static string? StepOrder(RunningTask run, AiMind? mind) =>
++        run.Source == TaskSource.Goal && mind is { Goal: { } goal, Step: var step } && step != TaskType.None && step != goal.Task.Type
++            && AiSystem.Carried(step) ? OracleTaskNames.Of((int)step) : null;
++
++    /// <summary>
++    /// State 0.5's goal: the mind's current goal (<see cref="AiMind.Goal"/>) named by row number, Task_Blank rows included, with its AI_TASK tier;
++    /// null without a mind, before its first think or for a row without a native name. <see cref="AiGoal"/> has no target, so target_id is null.
++    /// </summary>
++    static JsonObject? Goal(CharacterCold? cold)
++    {
++        if (cold?.Ai?.Goal is not { } goal || OracleTaskNames.Of((int)goal.Task.Type) is not { } type) return null;
++        return new JsonObject { ["type"] = type, ["priority"] = Priority(goal.Task.Priority), ["target_id"] = null };
++    }
++
++    /// <summary>The native <c>taskPriority</c> spelling of a tier (both enums number 0 to 4 alike); any other value is unknown.</summary>
++    internal static string? Priority(TaskPriority priority) => priority switch
++    {
++        TaskPriority.JustAction => "just_action", TaskPriority.Fluff => "fluff", TaskPriority.NonUrgent => "non_urgent",
++        TaskPriority.Urgent => "urgent", TaskPriority.Obedience => "obedience", _ => null,
++    };
++
+     /// <summary>The state 0.4 character fields; without the character's cold state each is unknown (null).</summary>
+     void AddState04(JsonObject row, CharacterCold? cold)
+     {
+diff --git a/src/Meitou.Simulation/Ai/AiSystem.Planning.cs b/src/Meitou.Simulation/Ai/AiSystem.Planning.cs
+index 2828ce47..4c351173 100644
+--- a/src/Meitou.Simulation/Ai/AiSystem.Planning.cs
++++ b/src/Meitou.Simulation/Ai/AiSystem.Planning.cs
+@@ -19,9 +19,9 @@ public sealed partial class AiSystem
+     /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), travelling to the mission town (the
+     /// travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed,
+     /// drawing a weapon, going home and getting near a target (walks of their own before the goal's act-out).
+-    /// A plan ending in another step fails.
++    /// A plan ending in another step fails. Public for the oracle adapter, which reports such a step as the character's order.
+     /// </summary>
+-    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
++    public static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
+         or TaskType.TRAVEL_TO_TARGET_TOWN_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
+         or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
+         or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED
+diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
+index 2d95c186..1d5dee39 100644
+--- a/tests/Meitou.Tests/Oracle/Fixtures/README.md
++++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
+@@ -1,8 +1,9 @@
+ The JSON is an identical synthetic copy of KenshiOracle `schema/canonical-vectors.json`.
+-SHA256 of the content with CRLF normalised to LF: `cd935563cb97f247ca7021a6bc1215d76bf21c01382e8d544783e4c138447f63`.
++SHA256 of the content with CRLF normalised to LF: `99f4bfee37ee2c953c7dc34954d8d525e5f116564dcfda11c67bb2ab0f8c1484`.
+ Set `KENSHI_ORACLE_VECTORS` to test the shared original directly. The first 59 cases
+ are the phase 1 Python/native numeric, string and nullable-state vectors; three
+ additional cases check scalar key order and additive state 0.2 canonicalisation,
+-three more check the additive state 0.3 slave fields, and four more check the additive
+-state 0.4 fields (medical, stats, part care, holding and carrying, squad money).
++three more check the additive state 0.3 slave fields, four more check the additive
++state 0.4 fields (medical, stats, part care, holding and carrying, squad money), and five
++more check the additive state 0.5 goal (every priority, a null priority, a null goal).
+ Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
+diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
+index 2a753bac..0cf42577 100644
+--- a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
++++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
+@@ -5883,6 +5883,782 @@
+       },
+       "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpudWxsLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOm51bGwsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6bnVsbCwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoiY2hhcmFjdGVyIiwiY2FycnlpbmdfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaGVhbHRoIjpbeyJiYW5kYWdlIjpudWxsLCJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInNwbGludCI6bnVsbCwic3R1biI6MCwid2VhciI6bnVsbH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6Im5vdGhpbmciLCJtZWRpY2FsIjp7ImJsZWVkX3JhdGUiOi0xMDAwMDAwMDAwLCJibG9vZCI6MTAwMDAwMDAwMCwiYmxvb2RfbG9zc190cmF1bWEiOm51bGwsImNvbWEiOnRydWUsImZlZCI6bnVsbCwiaHVuZ2VyIjpudWxsfSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwic2xhdmVfc3RhdGUiOiJleF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MCwiYXRobGV0aWNzIjowLCJibHVudCI6MCwiY29va2luZyI6MCwiY3Jvc3Nib3dzIjowLCJkZXh0ZXJpdHkiOjAsImRvZGdlIjowLCJlbmdpbmVlcmluZyI6MCwiZmFybWluZyI6MCwiZnJpZW5kbHlfZmlyZSI6MCwiaGFja2VycyI6MCwiaGVhdnl3ZWFwb25zIjowLCJrYXRhbmFzIjowLCJsYWJvdXJpbmciOjAsImxvY2twaWNraW5nIjowLCJtYXJ0aWFsYXJ0cyI6MCwibWFzc2NvbWJhdCI6MCwibWVkaWMiOjAsIm1lbGVlX2F0dGFjayI6MCwibWVsZWVfZGVmZW5jZSI6MCwicGVyY2VwdGlvbiI6MCwicG9sZWFybXMiOjAsInJvYm90aWNzIjowLCJzYWJyZXMiOjAsInNjaWVuY2UiOjAsInNtaXRoaW5nX2FybW91ciI6MCwic21pdGhpbmdfYm93IjowLCJzbWl0aGluZ193ZWFwb24iOjAsInN0ZWFsdGgiOjAsInN0cmVuZ3RoIjowLCJzd2ltbWluZyI6MCwidGhpZXZpbmciOjAsInRvdWdobmVzcyI6MCwidHVycmV0cyI6MH0sInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC40Iiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwibW9uZXkiOi0xMDAwMDAwMDAwLCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
+       "expected_sha256": "f17fce9a40f59dc51a737d632cba9147e5d206fa30aa714a84b74154c2d2fb52"
++    },
++    {
++      "name": "additive-state-05",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.5",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": null,
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": "bed",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": null,
++            "goal": {
++              "type": "melee_attack",
++              "priority": "urgent",
++              "target_id": "hand:1:7:101:2:1002"
++            }
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": 1000000000.0,
++              "bleed_rate": -1000000000.0,
++              "hunger": null,
++              "fed": null,
++              "coma": true,
++              "blood_loss_trauma": null
++            },
++            "stats": {
++              "assassination": 0,
++              "athletics": 0,
++              "blunt": 0,
++              "cooking": 0,
++              "crossbows": 0,
++              "dexterity": 0,
++              "dodge": 0,
++              "engineering": 0,
++              "farming": 0,
++              "friendly_fire": 0,
++              "hackers": 0,
++              "heavyweapons": 0,
++              "katanas": 0,
++              "labouring": 0,
++              "lockpicking": 0,
++              "martialarts": 0,
++              "masscombat": 0,
++              "medic": 0,
++              "melee_attack": 0,
++              "melee_defence": 0,
++              "perception": 0,
++              "polearms": 0,
++              "robotics": 0,
++              "sabres": 0,
++              "science": 0,
++              "smithing_armour": 0,
++              "smithing_bow": 0,
++              "smithing_weapon": 0,
++              "stealth": 0,
++              "strength": 0,
++              "swimming": 0,
++              "thieving": 0,
++              "toughness": 0,
++              "turrets": 0
++            },
++            "in_something": "nothing",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:1:1001",
++            "being_carried": true,
++            "goal": {
++              "type": "wander_town",
++              "priority": "fluff",
++              "target_id": null
++            }
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": -1000000000
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiZ29hbCI6eyJwcmlvcml0eSI6InVyZ2VudCIsInRhcmdldF9pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJ0eXBlIjoibWVsZWVfYXR0YWNrIn0sImhlYWx0aCI6bnVsbCwiaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJiZWQiLCJtZWRpY2FsIjpudWxsLCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOm51bGwsInRvd25fYXNzaWdubWVudCI6bnVsbH0seyJiZWluZ19jYXJyaWVkIjp0cnVlLCJjYXJyeWluZyI6ImNoYXJhY3RlciIsImNhcnJ5aW5nX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImdvYWwiOnsicHJpb3JpdHkiOiJmbHVmZiIsInRhcmdldF9pZCI6bnVsbCwidHlwZSI6IndhbmRlcl90b3duIn0sImhlYWx0aCI6W3siYmFuZGFnZSI6bnVsbCwiY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzcGxpbnQiOm51bGwsInN0dW4iOjAsIndlYXIiOm51bGx9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJub3RoaW5nIiwibWVkaWNhbCI6eyJibGVlZF9yYXRlIjotMTAwMDAwMDAwMCwiYmxvb2QiOjEwMDAwMDAwMDAsImJsb29kX2xvc3NfdHJhdW1hIjpudWxsLCJjb21hIjp0cnVlLCJmZWQiOm51bGwsImh1bmdlciI6bnVsbH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOjAsImF0aGxldGljcyI6MCwiYmx1bnQiOjAsImNvb2tpbmciOjAsImNyb3NzYm93cyI6MCwiZGV4dGVyaXR5IjowLCJkb2RnZSI6MCwiZW5naW5lZXJpbmciOjAsImZhcm1pbmciOjAsImZyaWVuZGx5X2ZpcmUiOjAsImhhY2tlcnMiOjAsImhlYXZ5d2VhcG9ucyI6MCwia2F0YW5hcyI6MCwibGFib3VyaW5nIjowLCJsb2NrcGlja2luZyI6MCwibWFydGlhbGFydHMiOjAsIm1hc3Njb21iYXQiOjAsIm1lZGljIjowLCJtZWxlZV9hdHRhY2siOjAsIm1lbGVlX2RlZmVuY2UiOjAsInBlcmNlcHRpb24iOjAsInBvbGVhcm1zIjowLCJyb2JvdGljcyI6MCwic2FicmVzIjowLCJzY2llbmNlIjowLCJzbWl0aGluZ19hcm1vdXIiOjAsInNtaXRoaW5nX2JvdyI6MCwic21pdGhpbmdfd2VhcG9uIjowLCJzdGVhbHRoIjowLCJzdHJlbmd0aCI6MCwic3dpbW1pbmciOjAsInRoaWV2aW5nIjowLCJ0b3VnaG5lc3MiOjAsInR1cnJldHMiOjB9LCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuNSIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm1vbmV5IjotMTAwMDAwMDAwMCwib3JpZ2luX3Rvd25faWQiOm51bGwsInRlbXBsYXRlX2lkIjoiZml4dHVyZS10ZW1wbGF0ZSJ9XX0K",
++      "expected_sha256": "0d876f5f05e480bff552c6fb110c748d860a049d910c006975c33baf8b6e8b3d"
++    },
++    {
++      "name": "state-05-permutation",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.5",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": 1000000000.0,
++              "bleed_rate": -1000000000.0,
++              "hunger": null,
++              "fed": null,
++              "coma": true,
++              "blood_loss_trauma": null
++            },
++            "stats": {
++              "assassination": 0,
++              "athletics": 0,
++              "blunt": 0,
++              "cooking": 0,
++              "crossbows": 0,
++              "dexterity": 0,
++              "dodge": 0,
++              "engineering": 0,
++              "farming": 0,
++              "friendly_fire": 0,
++              "hackers": 0,
++              "heavyweapons": 0,
++              "katanas": 0,
++              "labouring": 0,
++              "lockpicking": 0,
++              "martialarts": 0,
++              "masscombat": 0,
++              "medic": 0,
++              "melee_attack": 0,
++              "melee_defence": 0,
++              "perception": 0,
++              "polearms": 0,
++              "robotics": 0,
++              "sabres": 0,
++              "science": 0,
++              "smithing_armour": 0,
++              "smithing_bow": 0,
++              "smithing_weapon": 0,
++              "stealth": 0,
++              "strength": 0,
++              "swimming": 0,
++              "thieving": 0,
++              "toughness": 0,
++              "turrets": 0
++            },
++            "in_something": "nothing",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:1:1001",
++            "being_carried": true,
++            "goal": {
++              "target_id": null,
++              "priority": "fluff",
++              "type": "wander_town"
++            }
++          },
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": null,
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": "bed",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": null,
++            "goal": {
++              "target_id": "hand:1:7:101:2:1002",
++              "priority": "urgent",
++              "type": "melee_attack"
++            }
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:2:1002",
++              "hand:1:7:101:1:1001"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": -1000000000
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiZ29hbCI6eyJwcmlvcml0eSI6InVyZ2VudCIsInRhcmdldF9pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJ0eXBlIjoibWVsZWVfYXR0YWNrIn0sImhlYWx0aCI6bnVsbCwiaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJiZWQiLCJtZWRpY2FsIjpudWxsLCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOm51bGwsInRvd25fYXNzaWdubWVudCI6bnVsbH0seyJiZWluZ19jYXJyaWVkIjp0cnVlLCJjYXJyeWluZyI6ImNoYXJhY3RlciIsImNhcnJ5aW5nX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImdvYWwiOnsicHJpb3JpdHkiOiJmbHVmZiIsInRhcmdldF9pZCI6bnVsbCwidHlwZSI6IndhbmRlcl90b3duIn0sImhlYWx0aCI6W3siYmFuZGFnZSI6bnVsbCwiY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzcGxpbnQiOm51bGwsInN0dW4iOjAsIndlYXIiOm51bGx9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJub3RoaW5nIiwibWVkaWNhbCI6eyJibGVlZF9yYXRlIjotMTAwMDAwMDAwMCwiYmxvb2QiOjEwMDAwMDAwMDAsImJsb29kX2xvc3NfdHJhdW1hIjpudWxsLCJjb21hIjp0cnVlLCJmZWQiOm51bGwsImh1bmdlciI6bnVsbH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOjAsImF0aGxldGljcyI6MCwiYmx1bnQiOjAsImNvb2tpbmciOjAsImNyb3NzYm93cyI6MCwiZGV4dGVyaXR5IjowLCJkb2RnZSI6MCwiZW5naW5lZXJpbmciOjAsImZhcm1pbmciOjAsImZyaWVuZGx5X2ZpcmUiOjAsImhhY2tlcnMiOjAsImhlYXZ5d2VhcG9ucyI6MCwia2F0YW5hcyI6MCwibGFib3VyaW5nIjowLCJsb2NrcGlja2luZyI6MCwibWFydGlhbGFydHMiOjAsIm1hc3Njb21iYXQiOjAsIm1lZGljIjowLCJtZWxlZV9hdHRhY2siOjAsIm1lbGVlX2RlZmVuY2UiOjAsInBlcmNlcHRpb24iOjAsInBvbGVhcm1zIjowLCJyb2JvdGljcyI6MCwic2FicmVzIjowLCJzY2llbmNlIjowLCJzbWl0aGluZ19hcm1vdXIiOjAsInNtaXRoaW5nX2JvdyI6MCwic21pdGhpbmdfd2VhcG9uIjowLCJzdGVhbHRoIjowLCJzdHJlbmd0aCI6MCwic3dpbW1pbmciOjAsInRoaWV2aW5nIjowLCJ0b3VnaG5lc3MiOjAsInR1cnJldHMiOjB9LCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuNSIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm1vbmV5IjotMTAwMDAwMDAwMCwib3JpZ2luX3Rvd25faWQiOm51bGwsInRlbXBsYXRlX2lkIjoiZml4dHVyZS10ZW1wbGF0ZSJ9XX0K",
++      "expected_sha256": "0d876f5f05e480bff552c6fb110c748d860a049d910c006975c33baf8b6e8b3d"
++    },
++    {
++      "name": "state-05-just-action-and-non-urgent",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.5",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": null,
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": "bed",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": null,
++            "goal": {
++              "type": "idle",
++              "priority": "just_action",
++              "target_id": null
++            }
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": 1000000000.0,
++              "bleed_rate": -1000000000.0,
++              "hunger": null,
++              "fed": null,
++              "coma": true,
++              "blood_loss_trauma": null
++            },
++            "stats": {
++              "assassination": 0,
++              "athletics": 0,
++              "blunt": 0,
++              "cooking": 0,
++              "crossbows": 0,
++              "dexterity": 0,
++              "dodge": 0,
++              "engineering": 0,
++              "farming": 0,
++              "friendly_fire": 0,
++              "hackers": 0,
++              "heavyweapons": 0,
++              "katanas": 0,
++              "labouring": 0,
++              "lockpicking": 0,
++              "martialarts": 0,
++              "masscombat": 0,
++              "medic": 0,
++              "melee_attack": 0,
++              "melee_defence": 0,
++              "perception": 0,
++              "polearms": 0,
++              "robotics": 0,
++              "sabres": 0,
++              "science": 0,
++              "smithing_armour": 0,
++              "smithing_bow": 0,
++              "smithing_weapon": 0,
++              "stealth": 0,
++              "strength": 0,
++              "swimming": 0,
++              "thieving": 0,
++              "toughness": 0,
++              "turrets": 0
++            },
++            "in_something": "nothing",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:1:1001",
++            "being_carried": true,
++            "goal": {
++              "type": "job_medic",
++              "priority": "non_urgent",
++              "target_id": "hand:1:7:101:1:1001"
++            }
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": -1000000000
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiZ29hbCI6eyJwcmlvcml0eSI6Imp1c3RfYWN0aW9uIiwidGFyZ2V0X2lkIjpudWxsLCJ0eXBlIjoiaWRsZSJ9LCJoZWFsdGgiOm51bGwsImlkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwiaW5fY29tYmF0IjpmYWxzZSwiaW5fc29tZXRoaW5nIjoiYmVkIiwibWVkaWNhbCI6bnVsbCwibmFtZSI6IkFscGhhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMCwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6bnVsbCwic2xhdmVfc3RhdGUiOiJub3Rfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjpudWxsLCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9LHsiYmVpbmdfY2FycmllZCI6dHJ1ZSwiY2FycnlpbmciOiJjaGFyYWN0ZXIiLCJjYXJyeWluZ19pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJjdXJyZW50X3Rvd25faWQiOm51bGwsImZhY3Rpb25faWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJnb2FsIjp7InByaW9yaXR5Ijoibm9uX3VyZ2VudCIsInRhcmdldF9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJ0eXBlIjoiam9iX21lZGljIn0sImhlYWx0aCI6W3siYmFuZGFnZSI6bnVsbCwiY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzcGxpbnQiOm51bGwsInN0dW4iOjAsIndlYXIiOm51bGx9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJub3RoaW5nIiwibWVkaWNhbCI6eyJibGVlZF9yYXRlIjotMTAwMDAwMDAwMCwiYmxvb2QiOjEwMDAwMDAwMDAsImJsb29kX2xvc3NfdHJhdW1hIjpudWxsLCJjb21hIjp0cnVlLCJmZWQiOm51bGwsImh1bmdlciI6bnVsbH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOjAsImF0aGxldGljcyI6MCwiYmx1bnQiOjAsImNvb2tpbmciOjAsImNyb3NzYm93cyI6MCwiZGV4dGVyaXR5IjowLCJkb2RnZSI6MCwiZW5naW5lZXJpbmciOjAsImZhcm1pbmciOjAsImZyaWVuZGx5X2ZpcmUiOjAsImhhY2tlcnMiOjAsImhlYXZ5d2VhcG9ucyI6MCwia2F0YW5hcyI6MCwibGFib3VyaW5nIjowLCJsb2NrcGlja2luZyI6MCwibWFydGlhbGFydHMiOjAsIm1hc3Njb21iYXQiOjAsIm1lZGljIjowLCJtZWxlZV9hdHRhY2siOjAsIm1lbGVlX2RlZmVuY2UiOjAsInBlcmNlcHRpb24iOjAsInBvbGVhcm1zIjowLCJyb2JvdGljcyI6MCwic2FicmVzIjowLCJzY2llbmNlIjowLCJzbWl0aGluZ19hcm1vdXIiOjAsInNtaXRoaW5nX2JvdyI6MCwic21pdGhpbmdfd2VhcG9uIjowLCJzdGVhbHRoIjowLCJzdHJlbmd0aCI6MCwic3dpbW1pbmciOjAsInRoaWV2aW5nIjowLCJ0b3VnaG5lc3MiOjAsInR1cnJldHMiOjB9LCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuNSIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm1vbmV5IjotMTAwMDAwMDAwMCwib3JpZ2luX3Rvd25faWQiOm51bGwsInRlbXBsYXRlX2lkIjoiZml4dHVyZS10ZW1wbGF0ZSJ9XX0K",
++      "expected_sha256": "cc0f22ff634978b377409d92de0b8d6ba011e5c8307d8134f58f1fb5bf9a8d7d"
++    },
++    {
++      "name": "state-05-obedience-and-null-priority",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.5",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": null,
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": "bed",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": null,
++            "goal": {
++              "type": "man_the_gate",
++              "priority": "obedience",
++              "target_id": "hand:1:7:101:2:1002"
++            }
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": 1000000000.0,
++              "bleed_rate": -1000000000.0,
++              "hunger": null,
++              "fed": null,
++              "coma": true,
++              "blood_loss_trauma": null
++            },
++            "stats": {
++              "assassination": 0,
++              "athletics": 0,
++              "blunt": 0,
++              "cooking": 0,
++              "crossbows": 0,
++              "dexterity": 0,
++              "dodge": 0,
++              "engineering": 0,
++              "farming": 0,
++              "friendly_fire": 0,
++              "hackers": 0,
++              "heavyweapons": 0,
++              "katanas": 0,
++              "labouring": 0,
++              "lockpicking": 0,
++              "martialarts": 0,
++              "masscombat": 0,
++              "medic": 0,
++              "melee_attack": 0,
++              "melee_defence": 0,
++              "perception": 0,
++              "polearms": 0,
++              "robotics": 0,
++              "sabres": 0,
++              "science": 0,
++              "smithing_armour": 0,
++              "smithing_bow": 0,
++              "smithing_weapon": 0,
++              "stealth": 0,
++              "strength": 0,
++              "swimming": 0,
++              "thieving": 0,
++              "toughness": 0,
++              "turrets": 0
++            },
++            "in_something": "nothing",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:1:1001",
++            "being_carried": true,
++            "goal": {
++              "type": "wander_town",
++              "priority": null,
++              "target_id": null
++            }
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": -1000000000
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiZ29hbCI6eyJwcmlvcml0eSI6Im9iZWRpZW5jZSIsInRhcmdldF9pZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJ0eXBlIjoibWFuX3RoZV9nYXRlIn0sImhlYWx0aCI6bnVsbCwiaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJiZWQiLCJtZWRpY2FsIjpudWxsLCJuYW1lIjoiQWxwaGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlswLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjpudWxsLCJzbGF2ZV9zdGF0ZSI6Im5vdF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOm51bGwsInRvd25fYXNzaWdubWVudCI6bnVsbH0seyJiZWluZ19jYXJyaWVkIjp0cnVlLCJjYXJyeWluZyI6ImNoYXJhY3RlciIsImNhcnJ5aW5nX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImN1cnJlbnRfdG93bl9pZCI6bnVsbCwiZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImdvYWwiOnsicHJpb3JpdHkiOm51bGwsInRhcmdldF9pZCI6bnVsbCwidHlwZSI6IndhbmRlcl90b3duIn0sImhlYWx0aCI6W3siYmFuZGFnZSI6bnVsbCwiY3VycmVudCI6MTAwLCJpZCI6ImZpeHR1cmUtaGVhZDpuZWl0aGVyIiwibWF4aW11bSI6MTAwLCJzcGxpbnQiOm51bGwsInN0dW4iOjAsIndlYXIiOm51bGx9XSwiaWQiOiJoYW5kOjE6NzoxMDE6MjoxMDAyIiwiaWRlbnRpdHlfb3JpZ2luIjoic2F2ZWQiLCJpbl9jb21iYXQiOmZhbHNlLCJpbl9zb21ldGhpbmciOiJub3RoaW5nIiwibWVkaWNhbCI6eyJibGVlZF9yYXRlIjotMTAwMDAwMDAwMCwiYmxvb2QiOjEwMDAwMDAwMDAsImJsb29kX2xvc3NfdHJhdW1hIjpudWxsLCJjb21hIjp0cnVlLCJmZWQiOm51bGwsImh1bmdlciI6bnVsbH0sIm5hbWUiOiJCZXRhIiwib3JkZXIiOm51bGwsInBvc2l0aW9uIjpbMSwwLDBdLCJyYWNlX2lkIjoiZml4dHVyZS1yYWNlIiwic2xhdmVfb3duZXJfZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsInNsYXZlX3N0YXRlIjoiZXhfc2xhdmUiLCJzcXVhZF9pZCI6ImhhbmQ6MzQ6NzoxMDE6MDowIiwic3RhdGUiOiJhbGl2ZSIsInN0YXRzIjp7ImFzc2Fzc2luYXRpb24iOjAsImF0aGxldGljcyI6MCwiYmx1bnQiOjAsImNvb2tpbmciOjAsImNyb3NzYm93cyI6MCwiZGV4dGVyaXR5IjowLCJkb2RnZSI6MCwiZW5naW5lZXJpbmciOjAsImZhcm1pbmciOjAsImZyaWVuZGx5X2ZpcmUiOjAsImhhY2tlcnMiOjAsImhlYXZ5d2VhcG9ucyI6MCwia2F0YW5hcyI6MCwibGFib3VyaW5nIjowLCJsb2NrcGlja2luZyI6MCwibWFydGlhbGFydHMiOjAsIm1hc3Njb21iYXQiOjAsIm1lZGljIjowLCJtZWxlZV9hdHRhY2siOjAsIm1lbGVlX2RlZmVuY2UiOjAsInBlcmNlcHRpb24iOjAsInBvbGVhcm1zIjowLCJyb2JvdGljcyI6MCwic2FicmVzIjowLCJzY2llbmNlIjowLCJzbWl0aGluZ19hcm1vdXIiOjAsInNtaXRoaW5nX2JvdyI6MCwic21pdGhpbmdfd2VhcG9uIjowLCJzdGVhbHRoIjowLCJzdHJlbmd0aCI6MCwic3dpbW1pbmciOjAsInRoaWV2aW5nIjowLCJ0b3VnaG5lc3MiOjAsInR1cnJldHMiOjB9LCJ0b3duX2Fzc2lnbm1lbnQiOm51bGx9XSwiY2xvY2siOnsiZGF5IjoyLCJlbGFwc2VkX3NlY29uZHMiOjIxNjAwMCwiaG91ciI6MTIsInBhdXNlZCI6dHJ1ZSwic3BlZWQiOjB9LCJmYWN0aW9ucyI6W3siaWQiOiJmaXh0dXJlLWZhY3Rpb24iLCJuYW1lIjoiRml4dHVyZSBmYWN0aW9uIn1dLCJyZWxhdGlvbnMiOltdLCJzY2hlbWFfdmVyc2lvbiI6IjAuNSIsInNxdWFkcyI6W3siZmFjdGlvbl9pZCI6ImZpeHR1cmUtZmFjdGlvbiIsImlkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImxlYWRlcl9pZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJtZW1iZXJzIjpbImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJoYW5kOjE6NzoxMDE6MjoxMDAyIl0sIm1vbmV5IjotMTAwMDAwMDAwMCwib3JpZ2luX3Rvd25faWQiOm51bGwsInRlbXBsYXRlX2lkIjoiZml4dHVyZS10ZW1wbGF0ZSJ9XX0K",
++      "expected_sha256": "815b7ad2fc172f8934b1cb310fcc839f1fb8f54ac27882262ea5a736b24b155d"
++    },
++    {
++      "name": "state-05-null-goal",
++      "kind": "state",
++      "input": {
++        "schema_version": "0.5",
++        "clock": {
++          "day": 2,
++          "hour": 12,
++          "elapsed_seconds": 216000,
++          "speed": 0,
++          "paused": true
++        },
++        "characters": [
++          {
++            "id": "hand:1:7:101:1:1001",
++            "name": "Alpha",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              0,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": null,
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "not_slave",
++            "slave_owner_faction_id": null,
++            "medical": null,
++            "stats": null,
++            "in_something": "bed",
++            "carrying": "nothing",
++            "carrying_id": null,
++            "being_carried": null,
++            "goal": null
++          },
++          {
++            "id": "hand:1:7:101:2:1002",
++            "name": "Beta",
++            "race_id": "fixture-race",
++            "faction_id": "fixture-faction",
++            "squad_id": "hand:34:7:101:0:0",
++            "position": [
++              1,
++              0,
++              0
++            ],
++            "state": "alive",
++            "health": [
++              {
++                "id": "fixture-head:neither",
++                "current": 100,
++                "stun": 0,
++                "maximum": 100,
++                "bandage": null,
++                "splint": null,
++                "wear": null
++              }
++            ],
++            "order": null,
++            "identity_origin": "saved",
++            "current_town_id": null,
++            "town_assignment": null,
++            "in_combat": false,
++            "slave_state": "ex_slave",
++            "slave_owner_faction_id": "fixture-faction",
++            "medical": {
++              "blood": 1000000000.0,
++              "bleed_rate": -1000000000.0,
++              "hunger": null,
++              "fed": null,
++              "coma": true,
++              "blood_loss_trauma": null
++            },
++            "stats": {
++              "assassination": 0,
++              "athletics": 0,
++              "blunt": 0,
++              "cooking": 0,
++              "crossbows": 0,
++              "dexterity": 0,
++              "dodge": 0,
++              "engineering": 0,
++              "farming": 0,
++              "friendly_fire": 0,
++              "hackers": 0,
++              "heavyweapons": 0,
++              "katanas": 0,
++              "labouring": 0,
++              "lockpicking": 0,
++              "martialarts": 0,
++              "masscombat": 0,
++              "medic": 0,
++              "melee_attack": 0,
++              "melee_defence": 0,
++              "perception": 0,
++              "polearms": 0,
++              "robotics": 0,
++              "sabres": 0,
++              "science": 0,
++              "smithing_armour": 0,
++              "smithing_bow": 0,
++              "smithing_weapon": 0,
++              "stealth": 0,
++              "strength": 0,
++              "swimming": 0,
++              "thieving": 0,
++              "toughness": 0,
++              "turrets": 0
++            },
++            "in_something": "nothing",
++            "carrying": "character",
++            "carrying_id": "hand:1:7:101:1:1001",
++            "being_carried": true,
++            "goal": {
++              "type": "wander_town",
++              "priority": null,
++              "target_id": null
++            }
++          }
++        ],
++        "squads": [
++          {
++            "id": "hand:34:7:101:0:0",
++            "faction_id": "fixture-faction",
++            "members": [
++              "hand:1:7:101:1:1001",
++              "hand:1:7:101:2:1002"
++            ],
++            "leader_id": "hand:1:7:101:1:1001",
++            "identity_origin": "saved",
++            "template_id": "fixture-template",
++            "origin_town_id": null,
++            "money": -1000000000
++          }
++        ],
++        "factions": [
++          {
++            "id": "fixture-faction",
++            "name": "Fixture faction"
++          }
++        ],
++        "relations": []
++      },
++      "expected_base64": "eyJjaGFyYWN0ZXJzIjpbeyJiZWluZ19jYXJyaWVkIjpudWxsLCJjYXJyeWluZyI6Im5vdGhpbmciLCJjYXJyeWluZ19pZCI6bnVsbCwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiZ29hbCI6bnVsbCwiaGVhbHRoIjpudWxsLCJpZCI6ImhhbmQ6MTo3OjEwMToxOjEwMDEiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6ImJlZCIsIm1lZGljYWwiOm51bGwsIm5hbWUiOiJBbHBoYSIsIm9yZGVyIjpudWxsLCJwb3NpdGlvbiI6WzAsMCwwXSwicmFjZV9pZCI6ImZpeHR1cmUtcmFjZSIsInNsYXZlX293bmVyX2ZhY3Rpb25faWQiOm51bGwsInNsYXZlX3N0YXRlIjoibm90X3NsYXZlIiwic3F1YWRfaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsInN0YXRlIjoiYWxpdmUiLCJzdGF0cyI6bnVsbCwidG93bl9hc3NpZ25tZW50IjpudWxsfSx7ImJlaW5nX2NhcnJpZWQiOnRydWUsImNhcnJ5aW5nIjoiY2hhcmFjdGVyIiwiY2FycnlpbmdfaWQiOiJoYW5kOjE6NzoxMDE6MToxMDAxIiwiY3VycmVudF90b3duX2lkIjpudWxsLCJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiZ29hbCI6eyJwcmlvcml0eSI6bnVsbCwidGFyZ2V0X2lkIjpudWxsLCJ0eXBlIjoid2FuZGVyX3Rvd24ifSwiaGVhbHRoIjpbeyJiYW5kYWdlIjpudWxsLCJjdXJyZW50IjoxMDAsImlkIjoiZml4dHVyZS1oZWFkOm5laXRoZXIiLCJtYXhpbXVtIjoxMDAsInNwbGludCI6bnVsbCwic3R1biI6MCwid2VhciI6bnVsbH1dLCJpZCI6ImhhbmQ6MTo3OjEwMToyOjEwMDIiLCJpZGVudGl0eV9vcmlnaW4iOiJzYXZlZCIsImluX2NvbWJhdCI6ZmFsc2UsImluX3NvbWV0aGluZyI6Im5vdGhpbmciLCJtZWRpY2FsIjp7ImJsZWVkX3JhdGUiOi0xMDAwMDAwMDAwLCJibG9vZCI6MTAwMDAwMDAwMCwiYmxvb2RfbG9zc190cmF1bWEiOm51bGwsImNvbWEiOnRydWUsImZlZCI6bnVsbCwiaHVuZ2VyIjpudWxsfSwibmFtZSI6IkJldGEiLCJvcmRlciI6bnVsbCwicG9zaXRpb24iOlsxLDAsMF0sInJhY2VfaWQiOiJmaXh0dXJlLXJhY2UiLCJzbGF2ZV9vd25lcl9mYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwic2xhdmVfc3RhdGUiOiJleF9zbGF2ZSIsInNxdWFkX2lkIjoiaGFuZDozNDo3OjEwMTowOjAiLCJzdGF0ZSI6ImFsaXZlIiwic3RhdHMiOnsiYXNzYXNzaW5hdGlvbiI6MCwiYXRobGV0aWNzIjowLCJibHVudCI6MCwiY29va2luZyI6MCwiY3Jvc3Nib3dzIjowLCJkZXh0ZXJpdHkiOjAsImRvZGdlIjowLCJlbmdpbmVlcmluZyI6MCwiZmFybWluZyI6MCwiZnJpZW5kbHlfZmlyZSI6MCwiaGFja2VycyI6MCwiaGVhdnl3ZWFwb25zIjowLCJrYXRhbmFzIjowLCJsYWJvdXJpbmciOjAsImxvY2twaWNraW5nIjowLCJtYXJ0aWFsYXJ0cyI6MCwibWFzc2NvbWJhdCI6MCwibWVkaWMiOjAsIm1lbGVlX2F0dGFjayI6MCwibWVsZWVfZGVmZW5jZSI6MCwicGVyY2VwdGlvbiI6MCwicG9sZWFybXMiOjAsInJvYm90aWNzIjowLCJzYWJyZXMiOjAsInNjaWVuY2UiOjAsInNtaXRoaW5nX2FybW91ciI6MCwic21pdGhpbmdfYm93IjowLCJzbWl0aGluZ193ZWFwb24iOjAsInN0ZWFsdGgiOjAsInN0cmVuZ3RoIjowLCJzd2ltbWluZyI6MCwidGhpZXZpbmciOjAsInRvdWdobmVzcyI6MCwidHVycmV0cyI6MH0sInRvd25fYXNzaWdubWVudCI6bnVsbH1dLCJjbG9jayI6eyJkYXkiOjIsImVsYXBzZWRfc2Vjb25kcyI6MjE2MDAwLCJob3VyIjoxMiwicGF1c2VkIjp0cnVlLCJzcGVlZCI6MH0sImZhY3Rpb25zIjpbeyJpZCI6ImZpeHR1cmUtZmFjdGlvbiIsIm5hbWUiOiJGaXh0dXJlIGZhY3Rpb24ifV0sInJlbGF0aW9ucyI6W10sInNjaGVtYV92ZXJzaW9uIjoiMC41Iiwic3F1YWRzIjpbeyJmYWN0aW9uX2lkIjoiZml4dHVyZS1mYWN0aW9uIiwiaWQiOiJoYW5kOjM0Ojc6MTAxOjA6MCIsImlkZW50aXR5X29yaWdpbiI6InNhdmVkIiwibGVhZGVyX2lkIjoiaGFuZDoxOjc6MTAxOjE6MTAwMSIsIm1lbWJlcnMiOlsiaGFuZDoxOjc6MTAxOjE6MTAwMSIsImhhbmQ6MTo3OjEwMToyOjEwMDIiXSwibW9uZXkiOi0xMDAwMDAwMDAwLCJvcmlnaW5fdG93bl9pZCI6bnVsbCwidGVtcGxhdGVfaWQiOiJmaXh0dXJlLXRlbXBsYXRlIn1dfQo=",
++      "expected_sha256": "8a4fd009787995dc723932f6e7e1c668d20029a353f3785d9e1a26ee1ffcd0fc"
+     }
+   ]
+ }
+diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
+index 90f541e4..2e72a255 100644
+--- a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
+@@ -9,7 +9,7 @@ namespace Meitou.Tests.Oracle;
+ public class OracleCanonicalJsonTests
+ {
+     // SHA-256 of the fixture with CRLF normalised to LF, so checkouts with either line ending agree.
+-    const string VectorHash = "cd935563cb97f247ca7021a6bc1215d76bf21c01382e8d544783e4c138447f63";
++    const string VectorHash = "99f4bfee37ee2c953c7dc34954d8d525e5f116564dcfda11c67bb2ab0f8c1484";
+ 
+     static string VectorPath([CallerFilePath] string source = "") => Environment.GetEnvironmentVariable("KENSHI_ORACLE_VECTORS")
+         ?? Path.Combine(Path.GetDirectoryName(source)!, "Fixtures", "canonical-vectors.json");
+diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+index 7c4f60af..7ae109fa 100644
+--- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
+@@ -99,9 +99,9 @@ public class OracleSetupTests
+         var ping = OracleSetupPolicy.PingIdentity();
+         Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
+         Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
+-        Assert.Equal("0.4", ping["state_schema_version"]!.GetValue<string>());
+-        Assert.Equal("0.4", ping["schema_version"]!.GetValue<string>());
+-        Assert.Equal(["0.1", "0.2", "0.3", "0.4"], ping["supported_schema_versions"]!.AsArray().Select(v => v!.GetValue<string>()));
++        Assert.Equal("0.5", ping["state_schema_version"]!.GetValue<string>());
++        Assert.Equal("0.5", ping["schema_version"]!.GetValue<string>());
++        Assert.Equal(["0.1", "0.2", "0.3", "0.4", "0.5"], ping["supported_schema_versions"]!.AsArray().Select(v => v!.GetValue<string>()));
+         Assert.Equal(["scene_setup"], ping["capabilities"]!.AsArray().Select(c => c!.GetValue<string>()));
+     }
+ 
+diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+index 21d8e80d..f8b987e1 100644
+--- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
++++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
+@@ -13,6 +13,7 @@ using Meitou.Engine;
+ using Meitou.Engine.Time;
+ using Meitou.Game.Oracle;
+ using Meitou.Simulation;
++using Meitou.Simulation.Ai;
+ using Meitou.Simulation.Bodies;
+ using Meitou.Simulation.Locks;
+ using Meitou.Simulation.Saving;
+@@ -84,6 +85,128 @@ public class OracleStateTests
+             foreach (var row in projection.Capture(session, Data(), version)["characters"]!.AsArray()) Assert.Null(row!["order"]);
+     }
+ 
++    static AiMind Mind(Squad squad, TaskType goal, TaskPriority priority, params TaskType[] plan)
++    {
++        var mind = new AiMind { Squad = squad, Goal = new AiGoal(new AiTask("fixture-task", "Fixture task", goal, priority, TaskTargetType.Self, TaskEndEvent.Nothing), 0, 24, 1) };
++        foreach (var step in plan) mind.Plan.Add(new PlanStep(step, default));
++        return mind;
++    }
++
++    static void Act(WorldSession session, string name, CharacterTask task, RunningTask? running, AiMind? mind) =>
++        session.World.Characters.Spawn(new CharacterHot { Task = (byte)task }, new CharacterCold { Name = name, Running = running, Ai = mind }, 0);
++
++    /// <summary>
++    /// A world of AI minds (state 0.5's goal and plan step): a Task_Blank goal walking its carried step, a goal whose step is its own row, a goal
++    /// with a step the engine does not carry out, a player order under a mind, a mind before its first think and a character without one.
++    /// </summary>
++    static void Goals(WorldSession session)
++    {
++        var squad = new Squad { Id = 5, TemplateId = "fixture-template", Faction = 1 };
++        session.World.Squads.Add(squad);
++        static RunningTask Goal(CharacterTask task, TaskType row) => new(task, row, TaskSource.Goal, -1, CharacterId.None, null, 0);
++        Act(session, "wanderer", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.WANDER_TOWN),
++            Mind(squad, TaskType.WANDER_TOWN, TaskPriority.Fluff, TaskType.MOVE_ON_FREE_WILL, TaskType.WANDER_TOWN));
++        Act(session, "sleeper", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.USE_BED), Mind(squad, TaskType.USE_BED, TaskPriority.NonUrgent, TaskType.USE_BED));
++        Act(session, "operator", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.OPERATE_MACHINERY),
++            Mind(squad, TaskType.OPERATE_MACHINERY, TaskPriority.Urgent, TaskType.MELEE_ATTACK, TaskType.OPERATE_MACHINERY));
++        Act(session, "ordered", CharacterTask.GoTo, new RunningTask(CharacterTask.GoTo, TaskType.MOVE_CUS_ORDERED, TaskSource.Order, -1, CharacterId.None, null, 0),
++            Mind(squad, TaskType.WANDER_TOWN, TaskPriority.Obedience, TaskType.MOVE_ON_FREE_WILL));
++        Act(session, "fresh", CharacterTask.Idle, null, new AiMind { Squad = squad });
++        Act(session, "player", CharacterTask.Idle, null, null);
++    }
++
++    [Fact]
++    public void Schema_01_to_04_bytes_are_pinned_on_a_world_holding_goals_and_plan_steps()
++    {
++        // Pinned on 8677d68d (patch 0007) before the 0.5 projection existed: 0.5 must leave these bytes, the order included, untouched.
++        using var session = Session();
++        Rich(session);
++        Goals(session);
++        var projection = new OracleState();
++        string Hash(string version) => Convert.ToHexStringLower(SHA256.HashData(OracleCanonicalJson.Serialize(projection.Capture(session, Data(), version))));
++        Assert.Equal("3b5eb62aec1fc599c1a73566353096e9b490a881c7771a72a8064f959c268918", Hash("0.1"));
++        Assert.Equal("7a3a50515bae252283dc2bcb72a45318edffb36478253e3a74cf2b23709a3eb6", Hash("0.2"));
++        Assert.Equal("3e4402636192ef74422e5733573910745ecb652022ea1b348024f63a29f534a9", Hash("0.3"));
++        Assert.Equal("c9dd3d18e304d1e1286a3120841cf310807fd3d7c113590319324cac020d9684", Hash("0.4"));
++        var v04 = projection.Capture(session, Data(), "0.4");
++        Assert.All(v04["characters"]!.AsArray(), row => Assert.False(row!.AsObject().ContainsKey("goal")));
++        string? Order(string name) => v04["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!["order"]?["type"]?.GetValue<string>();
++        // The 0.4 rule: a Task_Blank goal row is no order, any other goal row is its own name whatever the plan step.
++        Assert.Null(Order("wanderer"));
++        Assert.Equal("use_bed", Order("sleeper"));
++        Assert.Equal("operate_machinery", Order("operator"));
++        Assert.Equal("move_cus_ordered", Order("ordered"));
++    }
++
++    [Fact]
++    public void Schema_05_goal_is_the_mind_goal_by_row_number_and_order_names_a_carried_plan_step()
++    {
++        using var session = Session();
++        Goals(session);
++        ulong before = session.World.StateHash();
++        var state = new OracleState().Capture(session, Data(), "0.5");
++        Assert.Equal(before, session.World.StateHash());
++        Assert.Equal("0.5", state["schema_version"]!.GetValue<string>());
++        JsonNode Row(string name) => state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!;
++        void Goal(string name, string type, string priority)
++        {
++            var goal = Row(name)["goal"]!;
++            Assert.Equal(["type", "priority", "target_id"], goal.AsObject().Select(p => p.Key));
++            Assert.Equal(type, goal["type"]!.GetValue<string>());
++            Assert.Equal(priority, goal["priority"]!.GetValue<string>());
++            Assert.True(goal.AsObject().ContainsKey("target_id")); Assert.Null(goal["target_id"]);
++        }
++        // WANDER_TOWN (37) is a Task_Blank row: still a goal, named by number.
++        Goal("wanderer", "wander_town", "fluff");
++        Goal("sleeper", "use_bed", "non_urgent");
++        Goal("operator", "operate_machinery", "urgent");
++        Goal("ordered", "wander_town", "obedience");
++        // No goal before the first think, none without a mind.
++        foreach (string name in new[] { "fresh", "player" }) { Assert.True(Row(name).AsObject().ContainsKey("goal")); Assert.Null(Row(name)["goal"]); }
++        string? Order(string name) => Row(name)["order"]?["type"]?.GetValue<string>();
++        // Part B: a goal's task walking a carried step other than the goal's row names the step, with no target or position.
++        Assert.Equal("move_on_free_will", Order("wanderer"));
++        Assert.Equal(["type", "target_id", "position"], Row("wanderer")["order"]!.AsObject().Select(p => p.Key));
++        Assert.Null(Row("wanderer")["order"]!["target_id"]); Assert.Null(Row("wanderer")["order"]!["position"]);
++        // A step equal to the goal's row, a step the engine does not carry out and a player order keep the 0.4 rule.
++        Assert.Equal("use_bed", Order("sleeper"));
++        Assert.Equal("operate_machinery", Order("operator"));
++        Assert.Equal("move_cus_ordered", Order("ordered"));
++        Assert.Null(Row("fresh")["order"]); Assert.Null(Row("player")["order"]);
++        string canonical = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(state));
++        Assert.Contains("\"goal\":{\"priority\":\"fluff\",\"target_id\":null,\"type\":\"wander_town\"}", canonical);
++    }
++
++    [Theory]
++    [InlineData(TaskPriority.JustAction, "just_action")]
++    [InlineData(TaskPriority.Fluff, "fluff")]
++    [InlineData(TaskPriority.NonUrgent, "non_urgent")]
++    [InlineData(TaskPriority.Urgent, "urgent")]
++    [InlineData(TaskPriority.Obedience, "obedience")]
++    [InlineData((TaskPriority)5, null)]
++    [InlineData((TaskPriority)(-1), null)]
++    public void Schema_05_goal_priority_is_the_native_tier_name_or_null(TaskPriority priority, string? expected)
++    {
++        using var session = Session();
++        var squad = new Squad { Id = 5, TemplateId = "fixture-template" };
++        session.World.Squads.Add(squad);
++        Act(session, "thinker", CharacterTask.Idle, null, Mind(squad, TaskType.IDLE, priority));
++        var goal = new OracleState().Capture(session, Data(), "0.5")["characters"]![0]!["goal"]!;
++        Assert.Equal("idle", goal["type"]!.GetValue<string>());
++        Assert.True(goal.AsObject().ContainsKey("priority"));
++        Assert.Equal(expected, goal["priority"]?.GetValue<string>());
++    }
++
++    [Fact]
++    public void Schema_05_goal_of_a_row_without_a_native_name_is_null()
++    {
++        using var session = Session();
++        var squad = new Squad { Id = 5, TemplateId = "fixture-template" };
++        session.World.Squads.Add(squad);
++        Act(session, "thinker", CharacterTask.Idle, null, Mind(squad, (TaskType)OracleTaskNames.Count, TaskPriority.Fluff));
++        Assert.Null(new OracleState().Capture(session, Data(), "0.5")["characters"]![0]!["goal"]);
++    }
++
+     [Fact]
+     public void Full_saved_hand_uses_all_unsigned_component_bits()
+     {
+@@ -244,7 +367,7 @@ public class OracleStateTests
+         Assert.Equal(["id", "faction_id", "members", "leader_id", "identity_origin", "template_id", "origin_town_id"],
+             v02["squads"]![0]!.AsObject().Select(pair => pair.Key));
+         Assert.Equal(v02.ToJsonString(), projection.Capture(session, Data(), "0.2").ToJsonString());
+-        Assert.Equal("0.4", projection.Capture(session, Data())["schema_version"]!.GetValue<string>());
++        Assert.Equal("0.5", projection.Capture(session, Data())["schema_version"]!.GetValue<string>());
+         var v03 = projection.Capture(session, Data(), "0.3");
+         string canonical03 = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(v03));
+         // Canonical scalar key order places the new keys between race_id and squad_id.
+@@ -253,7 +376,7 @@ public class OracleStateTests
+         stripped["schema_version"] = "0.2";
+         foreach (var row in stripped["characters"]!.AsArray()) { row!.AsObject().Remove("slave_state"); row.AsObject().Remove("slave_owner_faction_id"); }
+         Assert.Equal(OracleCanonicalJson.Serialize(v02), OracleCanonicalJson.Serialize(stripped));
+-        Assert.Throws<ArgumentException>(() => projection.Capture(session, Data(), "0.5"));
++        Assert.Throws<ArgumentException>(() => projection.Capture(session, Data(), "0.6"));
+     }
+ 
+     static void SetPrivate(object target, string property, object value) =>

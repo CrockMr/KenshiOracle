@@ -44,14 +44,15 @@ In the main `config.json` used by CLI and MCP, add:
 This field points to the separate configuration; replace neither the original
 target's port nor runtime. The Meitou target must declare `"target":"meitou"`,
 use a distinct port (47801 by default) and its own `runtime`, for example
-`runtime/meitou`. `state_schema` defaults to `"0.4"` and requires that
-contract; an adapter without state 0.4 (series before patch 0007) needs
-`"state_schema":"0.3"` (`"0.2"` before patch 0006) here and in `config.json`,
+`runtime/meitou`. `state_schema` defaults to `"0.5"` and requires that
+contract; an adapter without state 0.5 (series before patch 0008) needs
+`"state_schema":"0.4"` (`"0.3"` before patch 0007, `"0.2"` before patch 0006)
+here and in `config.json`,
 because the comparator never compares two state schema versions. The same
 holds in two other cases: an adapter against a probe that lacks its version
 (the released 0.11.0 probe has state 0.2 only), and an old
-`config.meitou.json` that still says `"0.2"` or `"0.3"` against a probe with a
-later state. The comparator refuses the mismatch only after both campaigns have
+`config.meitou.json` that still says `"0.2"`, `"0.3"` or `"0.4"` against a
+probe with a later state. The comparator refuses the mismatch only after both campaigns have
 run, so set the same `state_schema` explicitly in both files before a
 campaign.
 `game_install` supplies `KENSHI_PATH` to the child process.
@@ -157,8 +158,9 @@ Remove-Item Env:KENSHI_ORACLE_VECTORS
 
 The fixture identity is the SHA-256 of its content with CRLF normalized to LF,
 `99f4bfee37ee2c953c7dc34954d8d525e5f116564dcfda11c67bb2ab0f8c1484`, checked by
-KenshiOracle, so CRLF and LF checkouts agree without a Git setting. Patch 0007
-carries the earlier 69-case fixture copy and pins its identity
+KenshiOracle, so CRLF and LF checkouts agree without a Git setting. Patch 0008
+carries this 74-case fixture copy and pins this identity in its C# test. Patch
+0007 carries the earlier 69-case fixture copy and pins its identity
 `cd935563cb97f247ca7021a6bc1215d76bf21c01382e8d544783e4c138447f63` in its C#
 test, patch 0006 the 65-case identity
 `06a63911f1375ec5d19027c261a1bd066f2a4682c84add7f0e84ce3f434b2170`, and series
