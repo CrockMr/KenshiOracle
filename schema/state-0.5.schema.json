@@ -1,0 +1,773 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:kenshi-oracle:state:0.5",
+  "title": "Kenshi shared state 0.5",
+  "description": "Engine-neutral snapshot of loaded characters and their squads/factions. No wall clock, process identity, address, or adapter metadata belongs in this state. Collections sort lexically by stable ID; numbers use the six-decimal canonical encoding documented in protocol.md. Version 0.2 adds producer-asserted identity provenance, nullable combat mode and proven town-placement/squad-template context; null is unknown coverage. Version 0.3 adds the nullable slave state and slave owner faction of each character; null is unknown coverage, never not_slave or no owner. Version 0.4 adds the nullable medical state, stored stat values, use-stuff state, carrying and being-carried state of each character, bandage, splint and wear of each health part, and the money of each squad; null is unknown coverage, never 0, false, nothing or an empty object. Version 0.5 adds the nullable current AI goal of each character (task row name, priority tier and target); null is unknown coverage or no current goal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "clock",
+    "characters",
+    "squads",
+    "factions",
+    "relations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "clock": {
+      "$ref": "#/$defs/clock"
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/character"
+      }
+    },
+    "squads": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/squad"
+      }
+    },
+    "factions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/faction"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+      "description": "Opaque persistent save/data identity, never a memory address or an enumeration index."
+    },
+    "nullable_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "number": {
+      "type": "number",
+      "minimum": -1000000000,
+      "maximum": 1000000000
+    },
+    "nullable_number": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "position": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/number"
+      },
+      "description": "Absolute world coordinates x, y, z; y is height. Never camera-relative coordinates."
+    },
+    "nullable_position": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/position"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "day",
+        "hour",
+        "elapsed_seconds",
+        "speed",
+        "paused"
+      ],
+      "properties": {
+        "day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Zero-based world day, not the one-based UI day."
+        },
+        "hour": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 24,
+          "description": "Hour within the world day. The value 24 is permitted only for rounding of an observation immediately before midnight."
+        },
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Absolute calendar seconds since world time origin: total world hours multiplied by 3600. Not wall time, QPC, or engine simulation seconds. Per MeitouClient's constant of 1200/11 simulated seconds per in-game hour, one simulated second is 33 calendar seconds; this conversion is measured on MeitouClient (checkpoint tick steps); on the original the engine reports the same hour length, simulated-time equivalence argued."
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Effective game speed, observed as zero while paused. The remembered nonzero selection is not exposed by the public game API and does not belong in this common state."
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      }
+    },
+    "health_part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "current",
+        "stun",
+        "maximum",
+        "bandage",
+        "splint",
+        "wear"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id",
+          "description": "Body-part data identity followed by :neither, :left, :right, or :both where the adapter uses side to distinguish parts."
+        },
+        "current": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Current flesh/structural health, including negative health."
+        },
+        "stun": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bandage": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Stored bandaging amount of this part (the original HealthPartStatus bandaging member). null means unavailable; it never means 0 or unbandaged."
+        },
+        "splint": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Stored splint (jury-rigging) amount of this part (the original juryRigging member). null means unavailable; it never means 0 or no splint."
+        },
+        "wear": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Stored wear damage of this part (the original wearDamage member). null means unavailable; it never means 0."
+        }
+      }
+    },
+    "order": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "target_id",
+        "position"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z_][a-z0-9_]*$",
+          "description": "Stable symbolic task name, lower-case public task enumeration name; no numeric C++ enum value."
+        },
+        "target_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "position": {
+          "$ref": "#/$defs/nullable_position"
+        }
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "priority",
+        "target_id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z_][a-z0-9_]*$",
+          "description": "Stable symbolic task name of the current goal row, lower-case public task enumeration name (Task_Blank rows included); no numeric C++ enum value."
+        },
+        "priority": {
+          "enum": [
+            "just_action",
+            "fluff",
+            "non_urgent",
+            "urgent",
+            "obedience",
+            null
+          ],
+          "description": "Priority tier of the current goal (KenshiLib taskPriority TP_JUST_ACTION to TP_OBEDIENCE, lower case without TP_); null when unknown."
+        },
+        "target_id": {
+          "$ref": "#/$defs/nullable_id"
+        }
+      }
+    },
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "race_id",
+        "faction_id",
+        "squad_id",
+        "position",
+        "state",
+        "health",
+        "order",
+        "identity_origin",
+        "current_town_id",
+        "town_assignment",
+        "in_combat",
+        "slave_state",
+        "slave_owner_faction_id",
+        "medical",
+        "stats",
+        "in_something",
+        "carrying",
+        "carrying_id",
+        "being_carried",
+        "goal"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "race_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "faction_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "squad_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "position": {
+          "$ref": "#/$defs/nullable_position"
+        },
+        "state": {
+          "enum": [
+            "alive",
+            "unconscious",
+            "dead",
+            null
+          ]
+        },
+        "health": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/health_part"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "All readable body parts, or null when coverage is unavailable/incomplete; [] means a known empty set."
+        },
+        "order": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/order"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Current task, or null if absent/unavailable. Coverage documentation records which interpretation is possible."
+        },
+        "identity_origin": {
+          "$ref": "#/$defs/identity_origin"
+        },
+        "current_town_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "Stable town-placement identity shared by both producers only when equivalence is proven. Never a TOWN definition id, transient HAND, display name, nearest-town guess or array index. Null unless town_assignment is inside."
+        },
+        "town_assignment": {
+          "enum": [
+            "inside",
+            "outside",
+            null
+          ],
+          "description": "inside means the engine establishes membership in the identified town placement; outside means a known absence of town membership; null means unavailable or unproven coverage. Null must not be interpreted as outside."
+        },
+        "in_combat": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "The broad combat-mode predicate including both melee and ranged participation (the original isInCombatMode(true,true), or a proven equivalent). False means the predicate is known false; null means unavailable or not semantically verified. It is not inferred from the current task, health or target alone."
+        },
+        "slave_state": {
+          "enum": [
+            "not_slave",
+            "slave",
+            "escaping_slave",
+            "ex_slave",
+            null
+          ],
+          "description": "The character's slave state, named after the original SlaveStateEnum (NOT_SLAVE, IS_SLAVE, ESCAPING_SLAVE, EX_SLAVE). null means unavailable or a raw engine value outside that enumeration; it never means not_slave. Worn or locked shackles, cage or prisoner use and chained mode are not part of this field."
+        },
+        "slave_owner_faction_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "Faction data identity (the same GameData stringID namespace as factions[].id) of the faction that owns this character as a slave, when readable. null means no owner faction is readable; it does not prove that the character has no owner. Not a display name, address or index."
+        },
+        "medical": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/medical"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Medical state, or null when the medical system is unavailable. Never an empty object."
+        },
+        "stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/stats"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Stored stats, or null when the character has no stats object. Never an empty object."
+        },
+        "in_something": {
+          "enum": [
+            "nothing",
+            "bed",
+            "prison",
+            null
+          ],
+          "description": "Use-stuff state named after the original UseStuffState (IN_NOTHING, IN_BED, IN_PRISON). null means unavailable or a raw engine value outside that enumeration; it never means nothing."
+        },
+        "carrying": {
+          "enum": [
+            "nothing",
+            "character",
+            "other",
+            null
+          ],
+          "description": "What the character carries: nothing (known not carrying), character (a carried character, identified by carrying_id), other (a carried object that is not a character), or null when unavailable. null never means nothing."
+        },
+        "carrying_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "Identity of the carried character, canonicalized like order.target_id. A string exactly when carrying is character; null otherwise."
+        },
+        "being_carried": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether another character carries this character. false means known false; null means unavailable."
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/goal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Current AI goal (task row, priority tier, target), or null when unknown or when the character has no current goal. The target is canonicalized like order.target_id."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "town_assignment": {
+                "const": "inside"
+              }
+            },
+            "required": [
+              "town_assignment"
+            ]
+          },
+          "then": {
+            "properties": {
+              "current_town_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "current_town_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "carrying": {
+                "const": "character"
+              }
+            },
+            "required": [
+              "carrying"
+            ]
+          },
+          "then": {
+            "properties": {
+              "carrying_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "carrying_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "squad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "faction_id",
+        "members",
+        "leader_id",
+        "identity_origin",
+        "template_id",
+        "origin_town_id",
+        "money"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "faction_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "members": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "description": "Loaded member identities in this snapshot, sorted lexically."
+        },
+        "leader_id": {
+          "$ref": "#/$defs/nullable_id"
+        },
+        "identity_origin": {
+          "$ref": "#/$defs/identity_origin"
+        },
+        "template_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "The stable SQUAD_TEMPLATE or UNIQUE_SQUAD_TEMPLATE data identity used to create the squad, when established. Not a squad instance id or display name; null when unknown."
+        },
+        "origin_town_id": {
+          "$ref": "#/$defs/nullable_id",
+          "description": "Proven original/home town-placement identity, using exactly the same identity namespace as current_town_id. Never a town definition id or name. Null means unknown or no established origin; it does not establish current presence in that town."
+        },
+        "money": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -1000000000,
+              "maximum": 1000000000
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Money of the squad (the original Platoon ownerships money), or null when unavailable; null never means 0."
+        }
+      }
+    },
+    "faction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "target_id",
+        "value"
+      ],
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_id": {
+          "$ref": "#/$defs/id"
+        },
+        "value": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Directional source-to-target relation, or null when unavailable. Do not mirror it to the reverse direction."
+        }
+      }
+    },
+    "identity_origin": {
+      "enum": [
+        "saved",
+        "generated",
+        null
+      ],
+      "description": "Producer-proven identity origin: saved means a complete saved identity was linked to this loaded entity; generated means creation outside the source save is independently established; null means unknown. Absence of a resolved saved identity never proves generation."
+    },
+    "medical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blood",
+        "bleed_rate",
+        "hunger",
+        "fed",
+        "coma",
+        "blood_loss_trauma"
+      ],
+      "properties": {
+        "blood": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Stored blood amount."
+        },
+        "bleed_rate": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Current bleed rate."
+        },
+        "hunger": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Stored hunger value."
+        },
+        "fed": {
+          "$ref": "#/$defs/nullable_number",
+          "description": "Stored fed value."
+        },
+        "coma": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Coma flag (the original sub50KO member). false means known false; null means unavailable."
+        },
+        "blood_loss_trauma": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Blood-loss knockout flag (the original bloodlossTrauma member). false means known false; null means unavailable."
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assassination",
+        "athletics",
+        "blunt",
+        "cooking",
+        "crossbows",
+        "dexterity",
+        "dodge",
+        "engineering",
+        "farming",
+        "friendly_fire",
+        "hackers",
+        "heavyweapons",
+        "katanas",
+        "labouring",
+        "lockpicking",
+        "martialarts",
+        "masscombat",
+        "medic",
+        "melee_attack",
+        "melee_defence",
+        "perception",
+        "polearms",
+        "robotics",
+        "sabres",
+        "science",
+        "smithing_armour",
+        "smithing_bow",
+        "smithing_weapon",
+        "stealth",
+        "strength",
+        "swimming",
+        "thieving",
+        "toughness",
+        "turrets"
+      ],
+      "properties": {
+        "assassination": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "athletics": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "blunt": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "cooking": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "crossbows": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "dexterity": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "dodge": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "engineering": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "farming": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "friendly_fire": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "hackers": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "heavyweapons": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "katanas": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "labouring": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "lockpicking": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "martialarts": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "masscombat": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "medic": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "melee_attack": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "melee_defence": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "perception": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "polearms": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "robotics": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "sabres": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "science": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "smithing_armour": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "smithing_bow": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "smithing_weapon": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "stealth": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "strength": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "swimming": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "thieving": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "toughness": {
+          "$ref": "#/$defs/nullable_number"
+        },
+        "turrets": {
+          "$ref": "#/$defs/nullable_number"
+        }
+      },
+      "description": "Exactly the 34 stored stat values, keyed by the KenshiLib StatsEnumerated name without STAT_ in lower case. Each is the stored value (no multiplier and no effective-stat formula), or null when unavailable; null never means 0. hivemedic and vet (stored as medic), weapons and survival are not keys."
+    }
+  }
+}

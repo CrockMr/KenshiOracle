@@ -24,15 +24,15 @@ class SchemaClient:
         assert command == 'dump_state'
         state = sample_state()
         state['schema_version'] = self.actual
-        if self.actual in ('0.2', '0.3', '0.4'):
+        if self.actual in ('0.2', '0.3', '0.4', '0.5'):
             for row in state['characters']:
                 row.update(identity_origin='saved', current_town_id=None, town_assignment=None, in_combat=None)
             for row in state['squads']:
                 row.update(identity_origin='saved', template_id=None, origin_town_id=None)
-        if self.actual in ('0.3', '0.4'):
+        if self.actual in ('0.3', '0.4', '0.5'):
             for row in state['characters']:
                 row.update(slave_state=None, slave_owner_faction_id=None)
-        if self.actual == '0.4':
+        if self.actual in ('0.4', '0.5'):
             for row in state['characters']:
                 row.update(medical=None, stats=None, in_something=None, carrying=None, carrying_id=None,
                            being_carried=None)
@@ -40,6 +40,9 @@ class SchemaClient:
                     part.update(bandage=None, splint=None, wear=None)
             for row in state['squads']:
                 row.update(money=None)
+        if self.actual == '0.5':
+            for row in state['characters']:
+                row.update(goal=None)
         path = self.root / params['filename']
         path.write_bytes(canonical_bytes(state))
         return dict(path=str(path))
@@ -109,6 +112,50 @@ def negotiate(tmp_path, supported, requested=None, actual=None):
         state, record = await session.dump()
         return session, state, record
     return client, *asyncio.run(run())
+
+
+def test_05_is_selected_when_both_sides_support_it(tmp_path):
+    client, session, state, record = negotiate(tmp_path, ('0.1', '0.2', '0.3', '0.4', '0.5'))
+    assert session.state_schema == state['schema_version'] == record['schema_version'] == '0.5'
+    assert client.requests[-1][1]['schema_version'] == '0.5'
+    assert all(row['goal'] is None and row['medical'] is None for row in state['characters'])
+
+
+def test_04_only_target_still_negotiates_04(tmp_path):
+    client, session, state, _ = negotiate(tmp_path, ('0.1', '0.2', '0.3', '0.4'))
+    assert session.state_schema == state['schema_version'] == '0.4'
+    assert client.requests[-1][1]['schema_version'] == '0.4'
+    assert all('goal' not in row and 'medical' in row for row in state['characters'])
+
+
+@pytest.mark.parametrize('requested', ['0.1', '0.2', '0.3', '0.4', '0.5'])
+def test_explicit_request_is_honoured_on_a_05_producer(tmp_path, requested):
+    client, session, state, _ = negotiate(tmp_path, ('0.1', '0.2', '0.3', '0.4', '0.5'), requested)
+    assert session.state_schema == state['schema_version'] == requested
+    assert client.requests[-1][1]['schema_version'] == requested
+    assert all(('goal' in row) == (requested == '0.5') for row in state['characters'])
+
+
+def test_explicit_05_request_never_falls_back_on_a_04_producer(tmp_path):
+    client = SchemaClient(tmp_path, supported=('0.1', '0.2', '0.3', '0.4'))
+
+    async def run():
+        session = OracleSession(dict(state_schema='0.5'), client)
+        with pytest.raises(ScenarioError, match='requested state schema'):
+            await session.ping()
+    asyncio.run(run())
+
+
+def test_04_snapshot_from_a_producer_that_promised_05_is_rejected(tmp_path):
+    client = SchemaClient(tmp_path, supported=('0.1', '0.2', '0.3', '0.4', '0.5'), actual='0.4')
+
+    async def run():
+        session = OracleSession(dict(oracle_output=str(tmp_path), runs=str(tmp_path / 'runs')), client)
+        await session.ping()
+        with pytest.raises(ScenarioError, match='differs from the negotiated'):
+            await session.dump(tmp_path / 'accepted.json')
+    asyncio.run(run())
+    assert not (tmp_path / 'accepted.json').exists()
 
 
 def test_04_is_selected_when_both_sides_support_it(tmp_path):
@@ -187,14 +234,14 @@ def test_explicit_03_request_never_falls_back_on_a_02_producer(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('requested', ['0.5', '0.40', 0.4, ''])
+@pytest.mark.parametrize('requested', ['0.6', '0.50', 0.5, ''])
 def test_unknown_requested_versions_are_rejected_at_configuration(requested):
-    with pytest.raises(ValueError, match='0.1, 0.2, 0.3 or 0.4'):
+    with pytest.raises(ValueError, match='0.1, 0.2, 0.3, 0.4 or 0.5'):
         OracleSession(dict(state_schema=requested), SchemaClient(None))
 
 
 def test_unknown_advertised_versions_are_ignored_by_negotiation(tmp_path):
-    client, session, state, _ = negotiate(tmp_path, ('0.2', '0.5'), actual='0.2')
+    client, session, state, _ = negotiate(tmp_path, ('0.2', '0.6'), actual='0.2')
     assert session.state_schema == '0.2'
 
 

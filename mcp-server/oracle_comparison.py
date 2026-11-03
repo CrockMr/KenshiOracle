@@ -189,7 +189,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
     checkpoints = {point['name']: point['at'] for point in scenario['checkpoints']}
     grouped = defaultdict(list)
     seeds, identities, repetition_seeds = [], set(), {}
-    # One campaign uses one state schema (0.2, 0.3 or 0.4); the runner records it.
+    # One campaign uses one state schema (0.2, 0.3, 0.4 or 0.5); the runner records it.
     state_schema = report.get('state_schema')
     for execution in executions:
         repetition = execution.get('execution')

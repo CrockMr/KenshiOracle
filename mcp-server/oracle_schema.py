@@ -1,4 +1,4 @@
-"""Shared oracle contracts (state 0.1/0.2/0.3/0.4, scenario 0.1/scenario-0.2) and canonical, engine-independent state bytes.
+"""Shared oracle contracts (state 0.1/0.2/0.3/0.4/0.5, scenario 0.1/scenario-0.2) and canonical, engine-independent state bytes.
 
 Numbers are finite binary64 values with magnitude at most 1e9. Quantization is
 floor(abs(x) * 1e6 + .5), signed afterwards: ties away from zero, negative zero
@@ -21,10 +21,10 @@ from jsonschema import Draft202012Validator
 SCENARIO_SCHEMA_VERSIONS = ('0.1', 'scenario-0.2')
 # Deprecated alias for the first scenario version; use SCENARIO_SCHEMA_VERSIONS.
 SCHEMA_VERSION = '0.1'
-STATE_SCHEMA_VERSIONS = ('0.1', '0.2', '0.3', '0.4')
-LATEST_STATE_SCHEMA_VERSION = '0.4'
+STATE_SCHEMA_VERSIONS = ('0.1', '0.2', '0.3', '0.4', '0.5')
+LATEST_STATE_SCHEMA_VERSION = '0.5'
 # Versions carrying the additive 0.2 fields; the comparator requires one of them.
-COMPARABLE_STATE_SCHEMA_VERSIONS = ('0.2', '0.3', '0.4')
+COMPARABLE_STATE_SCHEMA_VERSIONS = ('0.2', '0.3', '0.4', '0.5')
 # State 0.4 object keys (schema/state-0.4.schema.json requires exactly these).
 MEDICAL_KEYS = ('blood', 'bleed_rate', 'hunger', 'fed', 'coma', 'blood_loss_trauma')
 # KenshiLib StatsEnumerated names without STAT_, lower case; hivemedic and vet
@@ -34,6 +34,8 @@ STATS_KEYS = ('assassination', 'athletics', 'blunt', 'cooking', 'crossbows', 'de
               'lockpicking', 'martialarts', 'masscombat', 'medic', 'melee_attack', 'melee_defence', 'perception',
               'polearms', 'robotics', 'sabres', 'science', 'smithing_armour', 'smithing_bow', 'smithing_weapon',
               'stealth', 'strength', 'swimming', 'thieving', 'toughness', 'turrets')
+# State 0.5 goal priorities (KenshiLib taskPriority TP_JUST_ACTION 0 to TP_OBEDIENCE 4, in that order).
+GOAL_PRIORITIES = ('just_action', 'fluff', 'non_urgent', 'urgent', 'obedience')
 MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / 'schema'
 _RESERVED_NAME = re.compile(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', re.I)
@@ -127,7 +129,7 @@ def _unique(rows: list, key, path: str) -> None:
 def validate_state(state: dict) -> dict:
     """Validate shape and unique stable identities; return the original unchanged."""
     # Keep the historical schema file and scenario version independent. New
-    # states must carry every additive 0.2 (and 0.3, 0.4) field; a version change
+    # states must carry every additive 0.2 (and 0.3, 0.4, 0.5) field; a version change
     # alone fails. Any other version, unknown included, fails the 0.1 constant.
     version = state.get('schema_version') if type(state) is dict else None
     kind = 'state-' + version if version in COMPARABLE_STATE_SCHEMA_VERSIONS else 'state'

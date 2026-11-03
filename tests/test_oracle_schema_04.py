@@ -104,9 +104,9 @@ def test_schema_04_is_self_contained_valid_and_only_adds_to_03():
 
 
 def test_versions_and_comparable_versions():
-    assert STATE_SCHEMA_VERSIONS == ('0.1', '0.2', '0.3', '0.4')
-    assert LATEST_STATE_SCHEMA_VERSION == '0.4'
-    assert COMPARABLE_STATE_SCHEMA_VERSIONS == ('0.2', '0.3', '0.4')
+    assert STATE_SCHEMA_VERSIONS == ('0.1', '0.2', '0.3', '0.4', '0.5')
+    assert LATEST_STATE_SCHEMA_VERSION == '0.5'
+    assert COMPARABLE_STATE_SCHEMA_VERSIONS == ('0.2', '0.3', '0.4', '0.5')
     assert validate_state(state_04())['schema_version'] == '0.4'
     assert validate_state(filled())['schema_version'] == '0.4'
     assert validate_state(state_03())['schema_version'] == '0.3'
@@ -555,10 +555,10 @@ def test_04_scene_scope_records_new_fields_in_outcome_and_background(tmp_path, m
                 and 'hand:34:7:101:0:1' not in metric]
 
 
-def test_meitou_target_defaults_to_04_and_keeps_an_explicit_03(tmp_path):
+def test_meitou_target_keeps_an_explicit_04_or_03(tmp_path):
     from test_meitou_targets import target_files
     from oracle_targets import target_config
-    assert target_config(target_files(tmp_path), 'meitou')['state_schema'] == '0.4'
+    assert target_config(target_files(tmp_path, state_schema='0.4'), 'meitou')['state_schema'] == '0.4'
     pinned = tmp_path / 'pinned'
     pinned.mkdir()
     assert target_config(target_files(pinned, state_schema='0.3'), 'meitou')['state_schema'] == '0.3'

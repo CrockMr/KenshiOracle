@@ -232,6 +232,15 @@ def _fields(state, row, labels=None):
     for index in range(3):
         fields[f'order/position/{index}'] = (order['position'][index] if order is not None
                                           and order['position'] is not None else None)
+    # State 0.5 only (the key is absent before). A null goal gives three null
+    # (non-comparable) values: it never means "no goal". The goal target is a
+    # reference, kept exactly like order/target_id.
+    if 'goal' in row:
+        goal = row['goal']
+        fields['goal/type'] = goal['type'] if goal is not None else None
+        fields['goal/priority'] = goal['priority'] if goal is not None else None
+        fields['goal/target_id'] = (_reference(goal['target_id'], saved_characters, labels)
+                                    if goal is not None else None)
     return fields
 
 

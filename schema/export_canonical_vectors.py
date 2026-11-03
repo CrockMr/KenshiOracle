@@ -121,6 +121,32 @@ def vectors():
     for row in state['squads']:
         row.update(money=-1000000000)
     cases.append(('state-04-edges', 'state', state))
+    # State 0.5: the last 0.4 case plus the current AI goal; Task_Blank rows such
+    # as wander_town are goals, null is unknown coverage or no current goal.
+    state = deepcopy(state)
+    state['schema_version'] = '0.5'
+    state['characters'][0].update(goal=dict(type='melee_attack', priority='urgent', target_id=second))
+    state['characters'][1].update(goal=dict(type='wander_town', priority='fluff', target_id=None))
+    cases.append(('additive-state-05', 'state', state))
+    permuted = deepcopy(state)
+    for key in ('characters', 'squads', 'factions', 'relations'):
+        permuted[key].reverse()
+    for row in permuted['squads']:
+        row['members'].reverse()
+    for row in permuted['characters']:
+        row['goal'] = {key: value for key, value in reversed(list(row['goal'].items()))}
+    cases.append(('state-05-permutation', 'state', permuted))
+    state = deepcopy(state)
+    state['characters'][0].update(goal=dict(type='idle', priority='just_action', target_id=None))
+    state['characters'][1].update(goal=dict(type='job_medic', priority='non_urgent', target_id=first))
+    cases.append(('state-05-just-action-and-non-urgent', 'state', state))
+    state = deepcopy(state)
+    state['characters'][0].update(goal=dict(type='man_the_gate', priority='obedience', target_id=second))
+    state['characters'][1].update(goal=dict(type='wander_town', priority=None, target_id=None))
+    cases.append(('state-05-obedience-and-null-priority', 'state', state))
+    state = deepcopy(state)
+    state['characters'][0].update(goal=None)
+    cases.append(('state-05-null-goal', 'state', state))
     return cases
 
 
@@ -128,7 +154,7 @@ def main():
     rows, legacy = [], bytearray()
     for index, (name, kind, value) in enumerate(vectors()):
         _check_json_values(value)
-        if kind == 'state' and value['schema_version'] == '0.4':
+        if kind == 'state' and value['schema_version'] in ('0.4', '0.5'):
             validate_state(value)
         encoded = canonical_bytes(value) if kind == 'state' else (_encode(value) + '\n').encode('utf-8')
         if index < 59:
