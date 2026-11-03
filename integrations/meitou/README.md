@@ -100,8 +100,11 @@ The captive sweep now records on each job the AI goal it started the job for
 worker's goal is that goal, by row number with its AI_TASK tier; otherwise it is
 the mind's goal as before. A job started any other way (a player animal's race
 goal) has no recorded goal and changes nothing. 0.1 to 0.4 output and the 0.5
-`order` are unchanged (pinned by test). Whether this goal is what the original's
-`currentGoal` holds during the same work is **Unknown** until a live check.
+`order` are unchanged (pinned by test). In one hold on a private build with the
+later MeitouClient fixes and this patch (**Observed**, N = 1), the slavers read
+`gather_slaves_from_cages` and `work_the_slaves`, as the original's census does;
+see the [MeitouClient findings](../../docs/meitou-findings.md). The series alone,
+on its pinned base, starts no such job in that save, so it shows no change there.
 
 ## Apply and build
 

@@ -49,7 +49,9 @@ four are merged.
 - **Captive jobs were not goals on Meitou.** Gathering, shouting, getting into a cage and similar slave work run as MeitouClient
   captive jobs, outside the AI's goal. Patch 0008 reported the mind's goal, so a Meitou slaver's goal never read
   `gather_slaves_from_cages` or `work_the_slaves`, even while it did that work. This was a projection gap of the adapter, not a
-  behaviour difference. [Patch 0009](../integrations/meitou/README.md) reports the goal a running job runs. Its live check is pending.
+  behaviour difference. [Patch 0009](../integrations/meitou/README.md) reports the goal a running job runs. In one hold with the
+  fixes above and patch 0009 (**Observed**, N = 1), Meitou's Holy Sentinels read `gather_slaves_from_cages` (7 at 66 s, down to 2
+  as the cages empty) and `work_the_slaves` (1 to 3 at several checkpoints), where the original shows 4 to 6 and 2 to 5.
 - **G. Shoppers:** native `shopping`, Meitou `relax_in_town_package` (106 of 136). Not diagnosed.
 - **H. Guards:** native `stand_at_guard_node_hometown_outside`, Meitou `..._homebuilding_in_out` (140; the reverse 39). Not
   diagnosed.
@@ -57,3 +59,6 @@ four are merged.
   `go_home_and_go_to_bed`). What the original holds then is **Unknown**.
 - **Order `stand_at_node` against `move_on_free_will`** (54): Meitou still walks where the original already stands. The cause is
   **Unknown**.
+- **Wild spawns during a hold.** In that same hold, Meitou's wild tick brought in a Starving bandit mob (7) and 2 escaped servants
+  from a nearby sector, and 9 Wolves from a nest, about 10 km from the focus. The earlier holds had none, and neither does the
+  original in an hour (**Observed**, N = 1 each). Why the original spawns nothing there is **Unknown**: this is the open part of D.

@@ -386,7 +386,9 @@ defects, fixed or proposed upstream; see the
 [MeitouClient findings](meitou-findings.md). One was a projection gap of the
 adapter: MeitouClient runs captive work (gathering slaves, working them) as
 jobs outside the AI's goal, which patch 0008 could not report. Patch 0009
-reports the goal a running job runs; its live check is pending.
+reports the goal a running job runs; in one hold its slavers read
+`gather_slaves_from_cages` and `work_the_slaves` as the original's do
+(**Observed**, N = 1; counts in the findings).
 
 Comparison: in a 0.5 comparison, each saved character gains the individual
 metrics `goal/type`, `goal/priority` and `goal/target_id` (through the same
