@@ -86,7 +86,9 @@ were non-null, the priorities were equal in all 778, and 301 of 770 carried
 plan steps equalled the native order; see the
 [state coverage](../../docs/state-coverage.md#extension-additive-05). Whether
 Meitou's tier is the same quantity as the native stored goal priority in
-general is **Unknown**.
+general is **Unknown**. Most goal differences of that run came from MeitouClient
+defects that later upstream changes address, all after the pinned base; see the
+[MeitouClient findings](../../docs/meitou-findings.md).
 
 ## Apply and build
 

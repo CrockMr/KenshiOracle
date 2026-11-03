@@ -23,7 +23,8 @@ or guarantees for another installation.
 - [Quiet-town phase 1 supplement](oracle-ville-calme-validation.md),
   [phase 2 cold-profile milestone](phase2-step0-validation.md) and
   [phase 2 validation and real comparison](phase2-validation.md)
-- [Mod-free campaigns on a fresh city save](mod-free-campaigns.md)
+- [Mod-free campaigns on a fresh city save](mod-free-campaigns.md) and
+  [MeitouClient findings from the state 0.5 live check](meitou-findings.md)
 - [Paused automatic loading](autoload-pause-validation.md) and
   [pause-preserving speed control](pause-preserving-speed-validation.md)
 
