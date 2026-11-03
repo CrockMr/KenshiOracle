@@ -4,7 +4,7 @@ This directory makes the Meitou adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the seven patches, in
 order, to upstream MeitouClient commit
 `88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `efc2eb2ac630b25d3c35f8d251976e96e730d0d9`;
+correspond to the local fork tip `8677d68da41e8961972e387c565c0f678618e79b`;
 they are not an upstream release or an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
@@ -19,7 +19,7 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 | 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `893114dec3a8543ade4147fb8f2f4040ac4cf365` |
 | 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `5ab88d9a8960e75241965c1e48b3760544db264e` |
 | 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5a194dc9013ec8a81d1b339686bda649e3cc5f` |
-| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `efc2eb2ac630b25d3c35f8d251976e96e730d0d9` |
+| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `8677d68da41e8961972e387c565c0f678618e79b` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -91,7 +91,9 @@ the comparator refuses for campaigns.
 seven patches cleanly with `core.autocrlf=false` and with `core.autocrlf=true`;
 both times the resulting tree equalled the fork tip's tree (compared with
 `git rev-parse HEAD^{tree}`).
-This checks source reproduction, not a live campaign.
+This checks source reproduction, not a live campaign. The builds and test
+suites below ran at `efc2eb2a`, the same tree as `8677d68d` before patch 7's
+author was set to CrockMr.
 
 Adapt the relative `../KenshiOracle` checkout name. No contributor's installation
 path is embedded in the patches. Configure your own original content through
@@ -99,7 +101,7 @@ Meitou's `KENSHI_PATH`; no content, save or SDK binary is included here. Use the
 [Meitou target guide](../../docs/meitou-target.md) for private working preferences,
 process ownership, scenario execution and restoration.
 
-**Verified** at fork tip `efc2eb2a` on `88ae71a1`, in the fork's own checkout
+**Verified** at fork tip `8677d68d` on `88ae71a1`, in the fork's own checkout
 (whose tree equals the `git am` result above), with SDK 10.0.403:
 - The Release build had 0 warnings and 0 errors.
 - The quick suite (`Category!=Slow&Category!=Bench`) had 947 passes and 0
@@ -116,7 +118,7 @@ process ownership, scenario execution and restoration.
   folder); both passed alone and in a complete rerun. Treat them as
   environment-sensitive; they were not reproduced on `cd5a194d`.
 - The complete suite (Slow and Bench included) had 1094 passes, 13 failures
-  and 25 skipped at `efc2eb2a`, and 1072 passes, 14 failures and 25 skipped at
+  and 25 skipped at `8677d68d`, and 1072 passes, 14 failures and 25 skipped at
   `cd5a194d`, run one after the other on the same machine. The 13 failures are
   the same tests on both (GPU, texture, interface, navmesh, distant-mesh,
   particle and one kidnap test, none in the adapter); the extra failure at
@@ -138,7 +140,7 @@ reproduce every environmental result. See the
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
 (fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
 **Unknown:** patches 5 to 7 in game; no live campaign has run on `5ab88d9a`,
-`cd5a194d` or `efc2eb2a`.
+`cd5a194d` or `8677d68d`.
 
 ## Scope and maintenance
 
@@ -193,7 +195,7 @@ MeitouClient and this derivative patch series are distributed under
 are preserved verbatim from the pinned upstream commit. The latter permission
 does not cover unrelated non-free dependencies. Upstream work is by the
 MeitouClient contributors; the seven modifications were made for KenshiOracle,
-with patches 1-2 and 7 committed as KenshiOracle contributors and patches 3-6 as
+with patches 1-2 committed as KenshiOracle contributors and patches 3-7 as
 CrockMr (each patch's `From:` line). No proprietary executable, disassembled listing or decompiled
 game code is included. Upstream dependency notices remain in the separately
 obtained MeitouClient checkout.

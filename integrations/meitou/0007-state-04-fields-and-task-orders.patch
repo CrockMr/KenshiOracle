@@ -1,5 +1,5 @@
-From efc2eb2ac630b25d3c35f8d251976e96e730d0d9 Mon Sep 17 00:00:00 2001
-From: KenshiOracle contributors <contributors@users.noreply.github.com>
+From 8677d68da41e8961972e387c565c0f678618e79b Mon Sep 17 00:00:00 2001
+From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 22:48:51 +0100
 Subject: [PATCH] Expose state 0.4 fields and task-row orders in the oracle
  adapter

@@ -1,7 +1,7 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "efc2eb2ac630b25d3c35f8d251976e96e730d0d9",
+  "fork_tip": "8677d68da41e8961972e387c565c0f678618e79b",
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [
@@ -43,9 +43,9 @@
     },
     {
       "file": "0007-state-04-fields-and-task-orders.patch",
-      "source_commit": "efc2eb2ac630b25d3c35f8d251976e96e730d0d9",
-      "sha256": "f3fbe3d5082a57b9980681d0db94c9ccc3e17dbc6f82abdb31ff29d9da639705",
-      "bytes": 102381
+      "source_commit": "8677d68da41e8961972e387c565c0f678618e79b",
+      "sha256": "78bc1caa1f396b6efe511a59c8680bcfab56a50adecfeff5f744b3c61b8968de",
+      "bytes": 102368
     }
   ]
 }
