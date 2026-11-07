@@ -116,6 +116,52 @@ assume neither native telemetry nor equivalent scene creation in Meitou.
 `get_scene_state(thread_details=True)` is not implemented by the adapter.
 An absent command returns `not_implemented`.
 
+<a id="live-two-target-tools"></a>
+### Live two-target tools
+
+With both games open, each under its own supervisor, three MCP tools work on
+both targets at once. They need no plugin or adapter change: they combine the
+existing commands.
+
+| Tool | What it does |
+| --- | --- |
+| `step_both(advance_seconds=None, target_seconds=None, timeout_seconds=120)` | Runs `run_until` on both targets concurrently to the same absolute game-clock time, then both are paused. `advance_seconds` is added to the later of the two current clocks. Returns both reached clocks, their difference and any per-target error; one target's failure does not hide the other's result. |
+| `compare_now(fields=None, limit=20, position_tolerance=0.000001)` | Captures both paused games concurrently (two ordinary `dump_state` snapshots under each target's `runs/dumps/`), pairs saved characters by complete handle and returns only the fields that differ, per field and per pair. `fields` filters by whole field-path prefix, for example `["goal", "order/type", "health"]`. |
+| `inspect_both(saved_id)` | One saved character (`hand:1:…`) or squad (`hand:34:…`) from the pair kept by the last `compare_now`, both raw rows side by side, plus the differing fields. It captures nothing new. |
+
+`compare_now` uses the campaign comparator's per-character fields
+(`oracle_compare.character_fields`), so a live difference names the same field
+as a campaign metric. A `null` on one side is unknown: it is counted under
+`not_comparable_fields`, never listed as a difference. Unsaved (generated)
+characters are not paired. Before `step_both`, set a positive speed on each
+target since its last load (`set_game_speed(speed=1, preserve_pause=True)`).
+
+**Limits.** One pair of snapshots is one observation. It shows where two runs
+stand at that moment, not whether a difference is stable, variable or a known
+deviation; campaigns with repetitions classify. The two engines do not draw
+the same random numbers, so pairs taken long after a load mostly show
+divergent histories rather than single rule differences. MeitouClient stops
+on whole ticks, so its clock can be up to about 1.1 calendar seconds past the
+original's. The kept pair lives in the MCP server process only and is lost
+when it restarts.
+
+**Observed** (2026-11-07, one local session, save `oracle-base-cage-blesse`,
+original probe state-0.5 build 8221ba1, MeitouClient adapter 0.12.0): loading
+took about 22 s on each target, a paired 120-second advance ended at
+124380.0 and 124381.0, each capture took about 7 s (about 1 MB), and all 54
+saved characters of the original snapshot were found among the 128 of
+MeitouClient's. That run used the commands one by one.
+
+**Observed** (2026-11-07, a second session, same save and builds, the three
+tools above): right after the load, `compare_now` paired 54 saved characters
+(74 only in MeitouClient) with clocks 0.0045 s apart. `step_both(advance_seconds=120)`
+ended at 124380.12 and 124381.00. `compare_now(fields=["goal", "order/type", "health"])`
+then listed 24 pairs with differences (goal type 10, order type 10), and
+`inspect_both` returned both rows for one character and for one squad. For a
+squad it lists no differing fields, because the comparator fields are
+per-character. One `inspect_both` result for a character is about 8 KB, most
+of it the stats block.
+
 <a id="seed-résultats-et-reprise"></a>
 
 ## Seed, results and recovery

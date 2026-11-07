@@ -135,6 +135,7 @@ The pytest suite does not need Kenshi. It uses synthetic data, fake processes an
 | `load_save`, `issue_order` | Load the starting save and replay the scenario's orders |
 | `run_scenario(path, repeat=None)` | Run a scenario end to end; optional repeat overrides the file (1–100) |
 | `compare_scenarios(original_report, meitou_report, output)` | Compare certified completed campaigns locally; write reports and English issue drafts |
+| `step_both`, `compare_now`, `inspect_both` | Live session with both games open: advance both to the same clock, list only the differences of paired saved characters, show one character or squad side by side ([details](docs/meitou-target.md#live-two-target-tools)) |
 | `game_status`, `restart_game`, `read_log` | Watch and restart the game |
 | `get_frame_stats(n=300, detail="aggregates")` | Frame/system timing aggregates; `detail="full"` also includes individual rows |
 

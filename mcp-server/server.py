@@ -396,6 +396,78 @@ async def restore_scenario(save: str | None = None, target: str = 'original') ->
     return await restore_interrupted_scenario(target_settings(target), save=save)
 
 
+# Last pair captured by compare_now, kept in this server process only.
+LIVE_PAIR = {}
+
+
+async def both_targets(factory):
+    """Run one coroutine per target concurrently; one target's failure never hides the other's result."""
+    from oracle_live import TARGETS
+    outcomes = await asyncio.gather(*(factory(target) for target in TARGETS), return_exceptions=True)
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException) and not isinstance(outcome, Exception):
+            raise outcome
+    return dict(zip(TARGETS, outcomes))
+
+
+def failures(outcomes):
+    return {target: type(value).__name__ + ': ' + str(value)
+            for target, value in outcomes.items() if isinstance(value, Exception)}
+
+
+@mcp.tool()
+async def step_both(advance_seconds: float | None = None, target_seconds: float | None = None,
+                    timeout_seconds: float = 120) -> dict:
+    """Advance the original and MeitouClient concurrently to the same absolute game-clock time, then pause both. Give exactly one of advance_seconds (added to the later of the two current clocks) or target_seconds. Both games must be paused with a positive speed commanded since their last load (set_game_speed with preserve_pause=True). Returns both reached clocks and their difference; MeitouClient stops on whole ticks of 1.1 calendar seconds."""
+    if (advance_seconds is None) == (target_seconds is None):
+        raise ValueError('Give exactly one of advance_seconds or target_seconds')
+    if advance_seconds is not None:
+        if type(advance_seconds) not in (int, float) or not math.isfinite(advance_seconds) or advance_seconds <= 0:
+            raise ValueError('advance_seconds must be a positive finite number of game-clock seconds')
+        clocks = await both_targets(lambda target: target_call('get_clock', target))
+        if failures(clocks):
+            raise ProbeError('get_clock failed: ' + json.dumps(failures(clocks)))
+        target_seconds = max(clock['elapsed_seconds'] for clock in clocks.values()) + advance_seconds
+    outcomes = await both_targets(
+        lambda target: OracleSession(target_settings(target)).until(target_seconds, timeout_seconds))
+    errors = failures(outcomes)
+    result = dict(target_seconds=target_seconds, errors=errors,
+                  original=None if 'original' in errors else outcomes['original'],
+                  meitou=None if 'meitou' in errors else outcomes['meitou'])
+    if not errors:
+        result['meitou_minus_original_seconds'] = (outcomes['meitou']['clock']['elapsed_seconds']
+                                                   - outcomes['original']['clock']['elapsed_seconds'])
+    return result
+
+
+@mcp.tool()
+async def compare_now(fields: list[str] | None = None, limit: int = 20,
+                      position_tolerance: float = 0.000001) -> dict:
+    """Capture both paused games concurrently and return only the differences of saved characters present in both, paired by complete saved handle with the campaign comparator's fields. fields filters by field prefix (for example ["goal", "order/type", "health"]); limit bounds the listed pairs. A null on one side counts as not comparable, never as a difference. One pair is one observation, not a classification. Keeps the pair for inspect_both."""
+    from oracle_live import compare_states
+    outcomes = await both_targets(lambda target: OracleSession(target_settings(target)).dump())
+    errors = failures(outcomes)
+    if errors:
+        raise ProbeError('dump_state failed: ' + json.dumps(errors))
+    result = await asyncio.to_thread(compare_states, outcomes['original'][0], outcomes['meitou'][0],
+                                     fields=fields, limit=limit, position_tolerance=position_tolerance)
+    LIVE_PAIR.clear()
+    LIVE_PAIR.update(outcomes)
+    result['snapshots'] = {target: record['path'] for target, (_, record) in outcomes.items()}
+    return result
+
+
+@mcp.tool()
+async def inspect_both(saved_id: str) -> dict:
+    """Show one saved character or squad (complete hand:1:... or hand:34:... handle) from the pair captured by the last compare_now, raw rows side by side, with the fields that differ. Captures nothing new; call compare_now again after the games move."""
+    from oracle_live import inspect_states
+    if not LIVE_PAIR:
+        raise ValueError('No live pair yet: call compare_now first')
+    result = inspect_states(LIVE_PAIR['original'][0], LIVE_PAIR['meitou'][0], saved_id)
+    result['snapshots'] = {target: record['path'] for target, (_, record) in LIVE_PAIR.items()}
+    return result
+
+
 @mcp.tool()
 async def compare_scenarios(original_report: str, meitou_report: str, output: str,
                             minimum_repetitions: int = 5, position_tolerance: float = 0.000001,
