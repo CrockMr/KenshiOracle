@@ -35,8 +35,11 @@ layers above it.
      whether the result builds and passes the focused tests.
 3. Record the findings (conflicts, patches already present upstream, build or
    test failures, measured-system changes) and the last upstream commit
-   reviewed. A finding is something to record, not a reason to rebase
-   immediately.
+   reviewed. The public record is `upstream_review` in
+   [series.json](../integrations/meitou/series.json), repeated in plain words
+   under [upstream drift](../integrations/meitou/README.md#upstream-drift);
+   update both in the same change. A finding is something to record, not a
+   reason to rebase immediately.
 4. The next check starts from the recorded commit. A finding stays open until
    the maintainer has read it.
 

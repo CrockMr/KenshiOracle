@@ -1,6 +1,9 @@
 <a id="protocole-kenshiprobe--oracle-095-état-et-scénario-01"></a>
 
-# KenshiProbe protocol — oracle 0.9.5, state and scenario 0.1
+# KenshiProbe protocol — probe 0.12.0, states 0.1 to 0.5, scenarios 0.1 and scenario-0.2
+
+The sections below were written for 0.9.5 (state and scenario 0.1) and extended in place: later additions name the
+version that introduced them. State schema negotiation, scene setup and the error codes each have their own section.
 
 <a id="transport-et-périmètre"></a>
 

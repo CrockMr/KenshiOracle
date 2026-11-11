@@ -14,6 +14,7 @@ from fake_probe import sample_state
 from oracle_live import MAX_LIMIT, compare_states, inspect_states
 import server
 
+ROOT = Path(__file__).resolve().parents[1]
 FIRST = 'hand:1:7:101:1:1001'
 SECOND = 'hand:1:7:101:2:1002'
 
@@ -218,7 +219,7 @@ def test_stdio_server_lists_the_live_tools(tmp_path):
     cfg.write_text(json.dumps(dict(port=1, runtime=str(tmp_path / 'runtime'))), encoding='utf-8')
 
     async def run():
-        params = StdioServerParameters(command=sys.executable, args=[str(Path('mcp-server/server.py').resolve())],
+        params = StdioServerParameters(command=sys.executable, args=[str(ROOT / 'mcp-server' / 'server.py')],
                                        env=dict(os.environ, KENSHI_PROBE_CONFIG=str(cfg)))
         async with stdio_client(params) as (reader, writer):
             async with ClientSession(reader, writer) as session:

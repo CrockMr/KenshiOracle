@@ -4,9 +4,9 @@
 
 <a id="direction-actuelle--oracle-phase-1-état-01"></a>
 
-## Current direction: phase 1 oracle, state 0.1
+## Current direction: the oracle on both engines, states 0.1 to 0.5
 
-The current scope is the oracle for the original game, described in the [phase 1 delivery report](../oracle-phase1-delivery.md). The following sections retain historical observations and decisions; their proposed campaigns, deadlines and former elevation requests are no longer work instructions. The 0.8.20 baseline remains the regression reference. No further performance gain is sought here.
+The current scope is the oracle for the original game and MeitouClient: phase 1 is described in the [phase 1 delivery report](../oracle-phase1-delivery.md), the comparison in the [comparator](../comparator.md) and [agreement](../agreement.md) guides, and what the live checks found in the [MeitouClient findings](../meitou-findings.md). The following sections retain historical observations and decisions; their proposed campaigns, deadlines and former elevation requests are no longer work instructions. The 0.8.20 baseline remains the regression reference. No further performance gain is sought here.
 
 | Question | Current certainty | Accepted validation or limitation |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ The initial 0.9.3 trial (local evidence, not published), outside Git, prepares 1
 | Question | Current certainty | Validation or limit |
 | --- | --- | --- |
 | Initial height of characters after load and spawn | Y difference **Observed** on the mod-free base save `oracle-base-nature`, one local setup-test run per engine (outside Git). After the same paused reload, the original holds the player at Y 781.29, then lowers them by about 45 units (781.29 to 736.59) during the first simulated second; MeitouClient places the player at 736.59 from the load. Spawned characters follow the same pattern: about 778, then about 736, on the original; on the ground at once on MeitouClient. MeitouClient ignores the requested spawn Y (**Verified** by code reading). The cause on the original is **Unknown**. | A link to the camera height change after loading (0.936035 units) is not established. Compare `characters[].position.y` only after the first simulated second (33 calendar seconds), or account for the difference before any paused comparison. Evidence: local setup-test runs (outside Git) `20261031T123043Z-original` and `20261031T131358Z-meitou`. |
-| Two town platoons of the clean city appear only on the original (H1) | **Observed**, see [mod-free campaigns](../mod-free-campaigns.md#open-question-h1-two-late-town-platoons). | A fix is proposed to MeitouClient upstream separately. |
+| Two town platoons of the clean city appear only on the original (H1) | **Observed**, see [mod-free campaigns](../mod-free-campaigns.md#open-question-h1-two-late-town-platoons). | Fixed upstream by [MeitouClient pull request #182](https://github.com/VlcekM/MeitouClient/pull/182) (merged); the rerun is in the [mod-free campaigns](../mod-free-campaigns.md). |
 
 <a id="historique-de-profilage-conservé"></a>
 

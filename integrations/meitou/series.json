@@ -2,6 +2,32 @@
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
   "fork_tip": "3a862bf0f5054a14bfd45f42318134402d2ef366",
+  "upstream_review": {
+    "head_seen": {
+      "commit": "c80362dc27bdcf155bbc59efff1df3b241da6956",
+      "date": "2026-11-12",
+      "commits_after_base": 1757,
+      "source": "GitHub comparison of the base with master; nothing applied or built"
+    },
+    "last_application_check": {
+      "commit": "8d79ee9e4928e3c1073f28bba7c023ee175c5a9f",
+      "date": "2026-11-02",
+      "commits_after_base": 250,
+      "applies": false,
+      "first_conflict": {
+        "patch": "0002-opt-in-oracle-adapter.patch",
+        "files": [
+          "src/Meitou.Game/GameOptions.cs"
+        ]
+      },
+      "source": "local git am --3way check; report not distributed"
+    },
+    "unpublished_port": {
+      "commit": "c09ed01c3d26eeb69433dbd6c69fae7dc71b554f",
+      "commits_after_base": 1324,
+      "note": "private builds behind the findings after 2026-11-03; not reproducible from this series"
+    }
+  },
   "license": "GPL-3.0-or-later",
   "upstream_additional_permission": "LICENSE-EXCEPTION.md",
   "patches": [

@@ -11,9 +11,12 @@ It does not provide a plugin/modding API. Its `docs/oracle.md` describes the
 seam and limits; the [durable-fork design](meitou-oracle-design.md) specifies
 maintenance. The supervised workflow below uses the project's Windows watchdog.
 
-**Verified outside the game:** Release build with .NET 10.0.403, no errors or
-warnings, 115 passing focused Oracle/camera tests and 62 shared canonical
-vectors, including 59 historical cases. **Observed:** a first real paused 0.2
+**Verified outside the game**, at the first adapter build: Release build with
+.NET 10.0.403, no errors or warnings, 115 passing focused Oracle/camera tests
+and 62 shared canonical vectors, including 59 historical cases. The current
+series has 180 Oracle tests and 74 vectors; its
+[README](../integrations/meitou/README.md#apply-and-build) gives the figures
+per fork tip. **Observed:** a first real paused 0.2
 snapshot validates with seed 1729, owned process stopped and protected files
 unchanged; [coverage](state-coverage.md#extension-additive-02) gives the
 measurements and local evidence. Quiet town subsequently completed **N = 5,
@@ -109,6 +112,7 @@ The following MCP tools accept `target="meitou"`; their default remains
 | State | `ping`, `heartbeat`, `get_clock`, `dump_state` |
 | Time and orders | `pause`, `set_game_speed`, `run_until`, `run_until_status`, `cancel_run_until`, `issue_order` |
 | Loading and controls | `load_save`, `get_scene_state`, `set_camera_free`, `prepare_scene_control`, `commit_scene_control`, `restore_scene_control` |
+| Scene setup | `setup_info`, `setup_area_census`, `setup_spawn_squad`, `setup_set_relation`, `setup_heal` ([contract](scene-setup.md)) |
 | Scenario and recovery | `run_scenario`, `restore_scenario` |
 
 Historical tools without this parameter remain specific to the original;

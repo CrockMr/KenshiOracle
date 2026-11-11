@@ -37,3 +37,21 @@ def test_series_adapter_version_equals_the_native_probe_version():
     native = NATIVE_VERSION.findall((ROOT / 'plugin' / 'Version.h').read_text(encoding='utf-8'))
     assert len(native) == 1
     assert versions[-1] == native[0]
+
+
+def test_upstream_review_is_recorded_and_repeated_in_the_series_readme():
+    # docs/maintenance.md: the last upstream commit reviewed is recorded here and said in plain words in the README.
+    review = manifest()['upstream_review']
+    readme = (SERIES / 'README.md').read_text(encoding='utf-8')
+    assert '<a id="upstream-drift"></a>' in readme
+    for key in ('head_seen', 'last_application_check', 'unpublished_port'):
+        entry = review[key]
+        assert re.fullmatch(r'[0-9a-f]{40}', entry['commit']) and entry['commit'] in readme, key
+        assert type(entry['commits_after_base']) is int and entry['commits_after_base'] > 0
+        assert f'{entry["commits_after_base"]} commits after' in readme, key
+    check = review['last_application_check']
+    assert type(check['applies']) is bool
+    if not check['applies']:
+        assert check['first_conflict']['patch'] in {entry['file'] for entry in manifest()['patches']}
+        assert all(name in readme for name in check['first_conflict']['files'])
+    assert review['head_seen']['commits_after_base'] >= check['commits_after_base']

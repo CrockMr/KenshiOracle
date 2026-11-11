@@ -381,7 +381,7 @@ async def restore_scene_control(camera_center: list[float], camera_orientation: 
 
 @mcp.tool()
 async def run_scenario(path: str, repeat: int | None = None, target: str = 'original') -> dict:
-    """Run a validated scenario JSON (format 0.1 or scenario-0.2), reloading before each repetition, validating snapshots and writing a stable/variable report under runs. Preload exactly the scenario save, pause and establish a known speed; captured controls must belong to that save. Verify restoration afterward and retain a recovery guard on failure. repeat overrides the file count (1..100)."""
+    """Run a validated scenario JSON (format 0.1 or scenario-0.2), reloading before each repetition, validating snapshots and writing a stable/variable report under runs. For MeitouClient (and an original probe without the reference profile): preload exactly the scenario save, pause and establish a known speed; captured controls must belong to that save. For the original when the configuration has rekenshi_config, this runs the reference controller instead: Kenshi must be closed first; the tool applies the verified RE_Kenshi profile, starts and stops its own game and restores the player's profile. Verify restoration afterward and retain a recovery guard on failure. repeat overrides the file count (1..100)."""
     cfg = target_settings(target)
     if target == 'original' and cfg.get('rekenshi_config'):
         from original_reference import run_original_reference

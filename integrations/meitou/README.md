@@ -11,6 +11,32 @@ recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
 `100c6caec876cb1cdb4e3a404eed7e6d7b33eb54`; the
 [mod-free campaigns](../../docs/mod-free-campaigns.md) name the base of each run.
 
+<a id="upstream-drift"></a>
+
+## Upstream drift
+
+The series is pinned and upstream moves fast. As recorded in
+[series.json](series.json) (`upstream_review`):
+
+- **Verified** on 2026-11-12 (GitHub comparison): upstream `master` is
+  `c80362dc27bdcf155bbc59efff1df3b241da6956`, **1757 commits after the base**.
+- **Observed** on 2026-11-02 (local check, report not distributed): against
+  `master` at `8d79ee9e4928e3c1073f28bba7c023ee175c5a9f`, 250 commits after the
+  base, `git am --3way` stopped at patch 2 on `src/Meitou.Game/GameOptions.cs`.
+  **The series does not apply to current upstream as it is**, and it has not
+  been checked against any later `master`.
+- The holds reported in the [MeitouClient findings](../../docs/meitou-findings.md)
+  after 2026-11-03 used private builds where the adapter was carried by hand
+  onto later commits, the last one `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`
+  (1324 commits after the base). **That port is not published.** Those
+  figures cannot be rebuilt from this series alone.
+
+What this means in practice: on the pinned base the series applies, builds and
+passes its tests as described below. On a current MeitouClient you have to
+rebase it yourself, starting with `GameOptions.cs`; the
+[maintenance guide](../../docs/maintenance.md) gives the routine. A rebased
+series is the next maintenance step and is not done.
+
 | Order | Patch | Source commit |
 | --- | --- | --- |
 | 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c` |

@@ -15,7 +15,11 @@ records what the oracle found. It is not a MeitouClient changelog.
 - **The causes** are read in MeitouClient's code (**Verified** there) or found with local diagnostic builds, traces and probes. The
   original's side comes from MeitouClient's own documentation of the decompiled game, and from live hooks on the original.
 - **The follow-up holds** ran the same scenario with the fix applied in a private build, one fix at a time.
-- **Statuses** are those of 2026-11-09.
+- **Statuses** are those of 2026-11-12.
+- **Reproducibility:** the holds after the 0.5 check ran on private builds where the adapter was carried by hand onto
+  later MeitouClient commits, the last one `c09ed01c`. That port is not published: the
+  [patch series](../integrations/meitou/README.md#upstream-drift) still targets `88ae71a1`, so the figures of those holds
+  cannot be rebuilt from this repository alone.
 
 ## Findings at Rebirth
 
@@ -54,14 +58,31 @@ four are merged.
 **Where Rebirth stands** (hold with #400 to #403 and #427, **Observed**, N = 1): 95.9 % of the goal pairs agree, leaving out the pairs
 that depend on the original's loading order (gate guards' start, slaves whose owner loads late).
 
+**The original against itself** (**Observed**, one pair of original runs of the same hold, the second on a diagnostic build of the
+probe): 90.3 % of the goal pairs agree over all pairs, 98.5 % by the same count as above. A later MeitouClient hold on `c09ed01c`
+reads 85.4 % and 96.8 % against the same reference. So the room left above MeitouClient on this hold is under two points, and the
+gate-guard and late-gatherer exclusions also fire between two original runs (133 and 31 pairs); the late-owner one does not (0).
+[Agreement between runs](agreement.md) describes the count.
+
 ## Findings at Sho-Battai
 
 - **Pairing:** only the 38 characters stored in the save have the same handle on both engines. The town's people are made at load with
   different handles, so per-character pairs cover little; the comparison by squad template and goal is the useful one there.
 - **Saved squads the game never made** (Meitou: 32 of the save's 45 squads at 66 s, plus 21 rolled; the samurai stood with no goal all
   hour): a town squad was read as travelling, the save's never-made desert squads were dropped, and the desert sectors filled
-  themselves beside them. [#450](https://github.com/VlcekM/MeitouClient/pull/450), open: 43 of 45, 7 rolled (native 1), the samurai
+  themselves beside them. [#450](https://github.com/VlcekM/MeitouClient/pull/450), merged: 43 of 45, 7 rolled (native 1), the samurai
   guard and patrol as the original's.
+
+## Merged since, not yet detailed here
+
+Five more changes came out of the same holds and were merged upstream on 2026-11-09 and 2026-11-10. Their findings are not
+written up on this page yet; the pull requests carry the oracle numbers.
+
+- [#472](https://github.com/VlcekM/MeitouClient/pull/472): a slave just taken out of a cage no longer treats people by himself.
+- [#475](https://github.com/VlcekM/MeitouClient/pull/475): a slave a guard takes out of a cage walks to work instead of standing in the cage.
+- [#479](https://github.com/VlcekM/MeitouClient/pull/479): a slave a guard takes out of a cage stays in his own squad.
+- [#481](https://github.com/VlcekM/MeitouClient/pull/481): animal packs sleep together instead of members walking after their sleeping leader.
+- [#489](https://github.com/VlcekM/MeitouClient/pull/489): a loaded save no longer gets extra desert squads on top of the ones it already holds.
 
 ## Still open
 
