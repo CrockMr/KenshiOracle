@@ -41,6 +41,21 @@ def parser():
     comparison.add_argument('--number-tolerance', type=float, default=0.0)
     comparison.add_argument('--arrival-radius', type=float, default=5.0)
     comparison.add_argument('--known-deviations', help='JSON mapping exact metric IDs to documented evidence rules')
+    agree = commands.add_parser('agree', help='Agreement of paired saved characters between completed runs: '
+        'a reference run against other runs, with the same-engine noise floor when one is given')
+    agree.add_argument('reference', help='report.json of the reference run, or its directory')
+    agree.add_argument('runs', nargs='+', help='report.json (or directory) of each run to compare with the reference; '
+        'a run of the reference engine gives the noise floor')
+    agree.add_argument('--rules', help='JSON rules file (agreement-rules-0.1) naming documented classes of differences')
+    agree.add_argument('--field', action='append', help='Field prefix kept in the all-fields table (repeatable)')
+    agree.add_argument('--detail', action='append',
+        help='Exact field reported in detail (repeatable; default goal/type, or order/type before state 0.5)')
+    agree.add_argument('--top', type=int, default=12, help='Rows listed per detail table (default 12)')
+    agree.add_argument('--position-tolerance', type=float)
+    agree.add_argument('--number-tolerance', type=float)
+    agree.add_argument('--output', help='Directory that receives agreement.json and agreement.txt')
+    agree.add_argument('--ledger', help='JSON-lines file that receives one row per run and detail field')
+    agree.add_argument('--json', action='store_true', help='Print the JSON result instead of the text report')
     return result
 
 
@@ -60,6 +75,17 @@ async def execute(args):
             minimum_repetitions=args.minimum_repetitions,
             tolerances=dict(position=args.position_tolerance, number=args.number_tolerance),
             arrival_radius=args.arrival_radius, known_deviations=rules)
+
+    if args.command == 'agree':
+        from oracle_agreement import agreement, append_ledger, render_text, write_outputs
+        result = await asyncio.to_thread(agreement, args.reference, args.runs, rules_path=args.rules,
+            fields=args.field, detail_fields=args.detail, top=args.top,
+            position_tolerance=args.position_tolerance, number_tolerance=args.number_tolerance)
+        if args.output:
+            result['written'] = write_outputs(result, args.output)
+        if args.ledger:
+            result['ledger_rows_added'] = append_ledger(args.ledger, result)
+        return result if args.json else render_text(result)
 
     cfg = config(args.config)
     cfg.setdefault('target', 'original')
@@ -100,7 +126,10 @@ def main(argv=None):
     except Exception as exc:
         print(type(exc).__name__ + ': ' + str(exc), file=sys.stderr)
         return 1
-    print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2))
+    if isinstance(result, str):
+        sys.stdout.write(result)
+    else:
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2))
     return 0
 
 

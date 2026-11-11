@@ -6,13 +6,16 @@ campaign comparator (``oracle_compare.character_fields``), so a live
 difference names the same field as a campaign metric. A single pair of
 snapshots is one observation: it shows where two runs stand, not whether a
 difference is stable, variable or a known deviation. Campaigns classify.
+``field_agreement`` counts, per field family, the pairs where both sides have a
+value and those where the two values are equal (``oracle_agreement`` does the
+same over whole runs).
 """
 from __future__ import annotations
 
 from collections import Counter
 import math
 
-from oracle_compare import DEFAULT_TOLERANCES, _saved_id, character_fields
+from oracle_compare import DEFAULT_TOLERANCES, _saved_id, character_fields, field_family, saved_sets
 from oracle_schema import validate_state
 
 TARGETS = ('original', 'meitou')
@@ -77,9 +80,11 @@ def compare_states(original, meitou, *, fields=None, limit=20, position_toleranc
     left, right = _saved_rows(original), _saved_rows(meitou)
     paired = sorted(left.keys() & right.keys())
     divergent, unknown, differences = Counter(), Counter(), []
+    comparable, equal = Counter(), Counter()
+    left_saved, right_saved = saved_sets(original), saved_sets(meitou)
     for identity in paired:
-        a = character_fields(original, left[identity])
-        b = character_fields(meitou, right[identity])
+        a = character_fields(original, left[identity], saved=left_saved)
+        b = character_fields(meitou, right[identity], saved=right_saved)
         changed = {}
         for key in sorted(a.keys() | b.keys()):
             if not _selected(key, fields):
@@ -88,7 +93,10 @@ def compare_states(original, meitou, *, fields=None, limit=20, position_toleranc
                 if not (key in a and key in b and a[key] is None and b[key] is None):
                     unknown[key] += 1
                 continue
-            if not _equal(key, a[key], b[key], tolerance):
+            same = _equal(key, a[key], b[key], tolerance)
+            comparable[field_family(key)] += 1
+            equal[field_family(key)] += same
+            if not same:
                 changed[key] = dict(original=a[key], meitou=b[key])
         divergent.update(changed.keys())
         if changed:
@@ -108,6 +116,7 @@ def compare_states(original, meitou, *, fields=None, limit=20, position_toleranc
                           sorted(divergent.items(), key=lambda item: (-item[1], item[0]))],
         not_comparable_fields=[dict(field=key, pairs=count) for key, count in
                                sorted(unknown.items(), key=lambda item: (-item[1], item[0]))],
+        field_agreement=[dict(field=key, comparable=comparable[key], equal=equal[key]) for key in sorted(comparable)],
         differences=differences[:limit],
         differences_truncated=len(differences) > limit,
         only_original=[dict(id=i, name=left[i].get('name')) for i in only_original[:limit]],

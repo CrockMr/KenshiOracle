@@ -1,0 +1,39 @@
+{
+  "format": "agreement-rules-0.1",
+  "description": "Example only: adapt the ids to your own save and replace each evidence with your own record. A class sets aside pairs that differ and that a documented cause explains; the number over all pairs is always reported next to it.",
+  "classes": [
+    {
+      "name": "gate-guards-start",
+      "field": "goal/type",
+      "reason": "After a save load, a gate squad of the reference engine may start on the other of its two guard-post goals and keep it; the two goals swap between runs of that engine itself.",
+      "evidence": "your-notes/gate-guards.md",
+      "when": {
+        "squad_template": ["49398-rebirth.mod"],
+        "values": [["stand_at_guard_node_homebuilding_in_out", "stand_at_guard_node_hometown_outside"]]
+      }
+    },
+    {
+      "name": "slave-owner-loads-late",
+      "field": "goal/type",
+      "reason": "While a slave's saved owner is not loaded yet in the reference run, the slave plans without it and goes to a cage; it stays there until gathered.",
+      "evidence": "your-notes/slave-owner.md",
+      "when": {
+        "related_absent": {
+          "related": {"hand:1:0:0:1:1": "hand:1:0:0:2:2"},
+          "held_value": "slave_get_in_my_masters_cage"
+        }
+      }
+    },
+    {
+      "name": "late-loaded-gatherer",
+      "field": "goal/type",
+      "reason": "A squad that is absent from the reference run's first checkpoint loaded late; its gatherers act on the state left by the previous class.",
+      "evidence": "your-notes/late-gatherers.md",
+      "when": {
+        "reference_value": ["gather_slaves_from_cages"],
+        "candidate_value_not": ["gather_slaves_from_cages"],
+        "squad_absent_at_first_checkpoint": true
+      }
+    }
+  ]
+}

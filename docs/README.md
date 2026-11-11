@@ -15,7 +15,8 @@ or guarantees for another installation.
 - [Patch-series maintenance and version-change rules](maintenance.md)
 - [State coverage](state-coverage.md), [saved NPC identities](npc-identities-phase1.md)
   and [complete protocol](protocol.md)
-- [Cross-engine comparison](comparator.md)
+- [Cross-engine comparison](comparator.md) and
+  [agreement between runs](agreement.md) (one run per side, noise floor, rules as data)
 - [Scene setup contract](scene-setup.md) (0.11.0, scenario-0.2)
 - [Phase 1 delivery](oracle-phase1-delivery.md),
   [phase 1 validation](oracle-phase1-validation.md) and

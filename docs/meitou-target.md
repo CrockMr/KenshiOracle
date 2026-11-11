@@ -132,8 +132,10 @@ existing commands.
 `compare_now` uses the campaign comparator's per-character fields
 (`oracle_compare.character_fields`), so a live difference names the same field
 as a campaign metric. A `null` on one side is unknown: it is counted under
-`not_comparable_fields`, never listed as a difference. Unsaved (generated)
-characters are not paired. Before `step_both`, set a positive speed on each
+`not_comparable_fields`, never listed as a difference. `field_agreement` gives,
+per field, the pairs where both sides have a value and those that are equal;
+[agreement between runs](agreement.md) does the same over completed runs.
+Unsaved (generated) characters are not paired. Before `step_both`, set a positive speed on each
 target since its last load (`set_game_speed(speed=1, preserve_pause=True)`).
 
 **Limits.** One pair of snapshots is one observation. It shows where two runs

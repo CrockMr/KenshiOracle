@@ -99,6 +99,8 @@ For the local MeitouClient fork, follow [the separate target configuration and l
 
 After both campaigns finish and restore their controls, compare them without a game or MCP client using `python -m launcher compare ORIGINAL_REPORT MEITOU_REPORT OUTPUT`. The [comparison guide](docs/comparator.md) documents the five-repetition default, tolerances, group coverage and limits of sparse trajectory/combat observations. MCP clients can call `compare_scenarios` with the same paths.
 
+For the daily loop of one run per engine, `python -m launcher agree REFERENCE RUN [RUN ...]` counts how often paired saved characters hold the same value, field by field, and shows a second run of the reference engine as the noise floor. Known load-order differences are named in a rules file, not in code; see [agreement between runs](docs/agreement.md).
+
 The phase 1 standalone command below uses the existing Python runner directly and needs no MCP client or AI agent:
 
 ```powershell
@@ -135,6 +137,7 @@ The pytest suite does not need Kenshi. It uses synthetic data, fake processes an
 | `load_save`, `issue_order` | Load the starting save and replay the scenario's orders |
 | `run_scenario(path, repeat=None)` | Run a scenario end to end; optional repeat overrides the file (1–100) |
 | `compare_scenarios(original_report, meitou_report, output)` | Compare certified completed campaigns locally; write reports and English issue drafts |
+| `agreement(reference_report, run_reports, rules=None)` | Read completed runs from disk and count, per field, how often paired saved characters hold the same value; a run of the reference's own engine gives the noise floor ([details](docs/agreement.md)) |
 | `step_both`, `compare_now`, `inspect_both` | Live session with both games open: advance both to the same clock, list only the differences of paired saved characters, show one character or squad side by side ([details](docs/meitou-target.md#live-two-target-tools)) |
 | `game_status`, `restart_game`, `read_log` | Watch and restart the game |
 | `get_frame_stats(n=300, detail="aggregates")` | Frame/system timing aggregates; `detail="full"` also includes individual rows |

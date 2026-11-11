@@ -480,6 +480,17 @@ async def compare_scenarios(original_report: str, meitou_report: str, output: st
 
 
 @mcp.tool()
+async def agreement(reference_report: str, run_reports: list[str], rules: str | None = None,
+                    fields: list[str] | None = None, detail_fields: list[str] | None = None, top: int = 12) -> dict:
+    """Agreement between completed runs, read from disk without any game: the reference run against each other run, checkpoint by checkpoint (matched by name) and saved character by saved character. Per field: pairs where both sides have a value, and pairs that are equal. A run of the reference's own engine gives the noise floor. rules is an optional agreement-rules-0.1 JSON file naming documented classes of differences; only differing pairs are set aside and the number over all pairs is always returned. detail_fields defaults to goal/type. Returns counts and a text report; one run pair is one observation."""
+    from oracle_agreement import agreement as run_agreement, render_text
+    result = await asyncio.to_thread(run_agreement, reference_report, run_reports, rules_path=rules,
+                                     fields=fields, detail_fields=detail_fields, top=top)
+    result['text'] = render_text(result)
+    return result
+
+
+@mcp.tool()
 async def game_status() -> dict:
     """Return the supervised original-game process state and the latest heartbeat observed by its watchdog."""
     p = Path(settings()['runtime']) / 'state.json'

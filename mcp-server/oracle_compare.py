@@ -187,15 +187,35 @@ def _reference(value, proven, labels):
     return value if value in proven else None
 
 
-def _fields(state, row, labels=None):
+def saved_sets(state):
+    """(saved character ids, saved squad ids) of one state, for ``character_fields``."""
+    return ({r['id'] for r in state['characters'] if _saved_id(r, 1)},
+            {r['id'] for r in state['squads'] if _saved_id(r, 34)})
+
+
+def field_family(field):
+    """A character field with its body part or stat name replaced by ``*``.
+
+    ``health/<part>/current`` becomes ``health/*/current`` and ``stats/<name>``
+    becomes ``stats/*``; every other field is its own family.
+    """
+    parts = field.split('/')
+    if parts[0] == 'health' and len(parts) == 3:
+        return 'health/*/' + parts[2]
+    if parts[0] == 'stats' and len(parts) == 2:
+        return 'stats/*'
+    return field
+
+
+def _fields(state, row, labels=None, saved=None):
     """Only proven references enter individual metrics; order semantics are not guessed.
 
     ``labels`` maps setup alias ids to their ``alias:`` label (scene scope), so a
     reference to an aliased character or squad never shows its raw engine id.
+    ``saved`` is ``saved_sets(state)`` when the caller reads many rows of one state.
     """
     labels = labels or {}
-    saved_characters = {r['id'] for r in state['characters'] if _saved_id(r, 1)}
-    saved_squads = {r['id'] for r in state['squads'] if _saved_id(r, 34)}
+    saved_characters, saved_squads = saved if saved is not None else saved_sets(state)
     fields = {key: row.get(key) for key in ('name', 'race_id', 'faction_id', 'state',
                                          'current_town_id', 'town_assignment', 'in_combat')}
     fields['squad_id'] = _reference(row.get('squad_id'), saved_squads, labels)
@@ -244,9 +264,9 @@ def _fields(state, row, labels=None):
     return fields
 
 
-def character_fields(state, row, labels=None):
+def character_fields(state, row, labels=None, saved=None):
     """Individual fields of one character, references labelled as in ``_fields``."""
-    return _fields(state, row, labels)
+    return _fields(state, row, labels, saved)
 
 
 def saved_observations(original_states, meitou_states):
@@ -269,9 +289,10 @@ def saved_observations(original_states, meitou_states):
             mapped = {}
             if state is not None:
                 validate_state(state)
+                saved = saved_sets(state)
                 for row in state['characters']:
-                    if _saved_id(row, 1) and row['id'] not in labels:
-                        mapped[row['id']] = _fields(state, row, labels)
+                    if row['id'] in saved[0] and row['id'] not in labels:
+                        mapped[row['id']] = _fields(state, row, labels, saved)
                 identities.update(mapped)
             prepared.append((observation, mapped))
         datasets.append(prepared)

@@ -8,6 +8,11 @@ Sources are [oracle_comparison.py](../mcp-server/oracle_comparison.py),
 [oracle_compare.py](../mcp-server/oracle_compare.py) and
 [oracle_traces.py](../mcp-server/oracle_traces.py).
 
+With fewer than five repetitions per engine the comparator can classify little
+and drafts nothing. For one run per side, use
+[agreement between runs](agreement.md): it counts equal pairs per field and
+shows the reference engine's own noise floor.
+
 <a id="commande-et-entrées"></a>
 
 ## Command and inputs
