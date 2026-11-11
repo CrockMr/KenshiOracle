@@ -13,9 +13,61 @@ The plugin retains the 0.8.20 architecture: TCP **127.0.0.1 only**, default port
 {"id":"req-1","result":{"day":2,"hour":12,"elapsed_seconds":216000,"speed":0,"paused":true}}
 ```
 
-Errors use `{"id":"req-1","error":{"code":"invalid_request","message":"..."}}`. Command, parameter, unavailable-state, timeout, existing-file, and unimplemented-API errors are explicit. Python rejects malformed, oversized, or mismatched-identifier responses. A mutation with an uncertain response is not automatically resent.
+Errors use `{"id":"req-1","error":{"code":"invalid_request","message":"..."}}`; the [error codes](#error-codes) are listed below. Command, parameter, unavailable-state, timeout, existing-file, and unimplemented-API errors are explicit. Python rejects malformed, oversized, or mismatched-identifier responses. A mutation with an uncertain response is not automatically resent.
 
 The network thread parses and queues commands under `CRITICAL_SECTION`. Existing GameWorld and Renderer SDK hooks execute them on the main thread; Renderer permits service in the menu. Heartbeat comes from a copy published under lock, readable even when no world is ready. State reads never leave the game thread; serialization/writing of their JSON copy may occur on the network thread. New log lines use the `[KenshiOracle]` prefix in the RE_Kenshi log; project, DLL, and MCP-server names remain KenshiProbe.
+
+<a id="error-codes"></a>
+
+## Error codes
+
+An error reply is `{"id":"req-1","error":{"code":"...","message":"..."}}`. The
+code says what happened; the message is for a person and may change. Both
+producers, the native probe and the MeitouClient adapter, use the same code for
+the same condition. The Python client keeps the code on its `ProbeError`
+(`code`, `message`, `uncertain`), and a failed scenario records it as
+`error_code` in its report. [`tests/test_error_codes.py`](../tests/test_error_codes.py)
+checks the sources of both producers, the test fake and this table against one
+list (`ERROR_CODES` in [`probe.py`](../mcp-server/probe.py)).
+
+| Code | Meaning |
+| --- | --- |
+| `invalid_request` | The request is malformed, a parameter is missing, of the wrong type or out of range, or a precondition the caller controls is not met (for example the game is not paused). Nothing was changed. |
+| `not_implemented` | The command does not exist in this producer, or its API is not available there. |
+| `world_not_ready` | No world is loaded, or a save is loading. Read-only calls may be repeated. |
+| `state_unavailable` | The world is ready but the requested object or value cannot be read now. |
+| `not_found` | The named character, squad, town, template, save or operation does not exist. |
+| `not_allowed` | The command is refused in the current mode (for example scene setup without `allow_setup`, or saving a world changed by scene setup). |
+| `busy` | Another operation is in progress (a `run_until`, a pending load) or the command queue is full. Nothing was changed. |
+| `timeout` | The game's main thread did not answer in time (9 s on the native probe). **The command may already have started**: a mutation must not be resent. |
+| `cancelled` | MeitouClient only: the request ended because the client disconnected or the server stopped; the command may already have started. |
+| `internal_error` | An unexpected failure inside the producer. |
+| `response_too_large` | The reply would exceed 64 KiB; ask for less (`n`, `limit`) or use a file command. |
+| `already_exists` | The destination file exists; nothing is overwritten. |
+| `io_error` | A file could not be written or read. |
+| `load_failed` | MeitouClient only: the save load did not complete. |
+| `origin_context_required`, `origin_context_incomplete`, `origin_context_save_mismatch`, `origin_context_token_invalid` | Saved-origin preparation is missing, unfinished, for another save, or its token is absent or stale; see [saved origins](#origines-sauvegardées-et-identités). |
+| `origin_identity_ambiguous` | A saved identity does not resolve to exactly one loaded object. |
+| `camera_restore_busy`, `camera_restore_state_changed`, `camera_restore_token_invalid` | Camera preparation is already pending, the controls changed since preparation, or the token is stale. |
+| `rekenshi_settings_unavailable`, `rekenshi_settings_unverified` | Native probe only: RE_Kenshi's effective settings cannot be read yet, or could not be verified. |
+
+The client adds three codes for failures on its own side:
+
+| Code | Meaning |
+| --- | --- |
+| `unreachable` | Nothing listens on the port: the game is not started. The command was not sent. |
+| `no_reply` | The connection opened but no reply came within the client timeout (game frozen or loading). **The command may already have started.** |
+| `invalid_reply` | The reply line is truncated, not JSON, or carries another request's id. |
+
+`timeout` and `no_reply` are the two uncertain outcomes (`ProbeError.uncertain`).
+
+**Probes up to 0.12.0.** The released native probe 0.12.0 sends `world not
+ready`, the main-thread timeout, `queue full`, `unknown command`, `internal
+error` and `response too large` with the code `invalid_request` and a fixed
+message. The client recognises those messages and gives the error the code
+above, so callers see the same codes with an older probe. Sending them as
+their own code is in the native source after 0.12.0: it compiles and the
+native suites pass, and it has **not been checked in a running game**.
 
 <a id="commandes-oracle"></a>
 

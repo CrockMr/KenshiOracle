@@ -62,7 +62,7 @@ def test_dump_never_overwrites_and_rejects_paths_outside_output(tmp_path):
         with pytest.raises(ProbeError, match='already_exists'):
             await fake.call('dump_state', filename='state.json')
         for filename in ('../state.json', 'C:\\state.json', '/state.json', 'nested/state.json', 'state.txt'):
-            with pytest.raises(ProbeError, match='invalid_params'):
+            with pytest.raises(ProbeError, match='invalid_request'):
                 await fake.call('dump_state', filename=filename)
         assert (fake.output_directory / 'state.json').read_bytes() == original
     asyncio.run(run())
@@ -147,12 +147,14 @@ def test_fake_network_rejects_malformed_request_without_losing_server(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('mode,message', [('wrong_id', 'Identifiant'), ('invalid', 'invalide'), ('hang', 'délai')])
-def test_fake_protocol_errors_are_bounded(tmp_path, mode, message):
+@pytest.mark.parametrize('mode,code', [('wrong_id', 'invalid_reply'), ('invalid', 'invalid_reply'),
+                                       ('hang', 'no_reply')])
+def test_fake_protocol_errors_are_bounded(tmp_path, mode, code):
     async def run():
         async with FakeProbe(tmp_path, mode=mode) as fake:
-            with pytest.raises(ProbeError, match=message):
+            with pytest.raises(ProbeError, match='^' + code + ': ') as caught:
                 await Client(fake.port, .1).call('get_clock')
+            assert caught.value.code == code
     asyncio.run(run())
 
 
@@ -589,7 +591,7 @@ def test_staged_unfollow_restore_holds_requested_center_then_restores_flags(tmp_
     dict(camera_orientation=[1, 1, 1, 1]), dict(camera_orientation=[1, 0, 0]), dict(camera_zoom=0),
     dict(speed=0), dict(speed=True), dict(paused=1), dict(edge_scrolling='true'),
     dict(camera_follow_id='missing'), dict(camera_follow_id=[]), dict(extra=True)])
-def test_staged_prepare_rejects_invalid_params_before_mutating_camera_or_clock(tmp_path, change):
+def test_staged_prepare_rejects_invalid_request_before_mutating_camera_or_clock(tmp_path, change):
     async def run():
         fake = FakeProbe(tmp_path)
         before = deepcopy(fake.__dict__)

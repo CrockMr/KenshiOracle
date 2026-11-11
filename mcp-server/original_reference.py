@@ -245,7 +245,7 @@ class ReferenceGame:
             try:
                 return await self.client.call('get_rekenshi_settings')
             except ProbeError as exc:
-                if 'rekenshi_settings_unavailable' not in str(exc) or time.monotonic() >= deadline:
+                if exc.code != 'rekenshi_settings_unavailable' or time.monotonic() >= deadline:
                     raise
                 await asyncio.sleep(1)
 

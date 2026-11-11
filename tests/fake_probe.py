@@ -478,7 +478,7 @@ class FakeProbe(FakePlugin):
         if command == 'pause':
             paused = params.get('paused', True)
             if type(paused) is not bool:
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             self.state['clock']['paused'] = paused
             self._clock()
             if paused:
@@ -489,7 +489,7 @@ class FakeProbe(FakePlugin):
         if command == 'set_game_speed':
             speed = params.get('speed', 1)
             if type(speed) not in (int, float) or not math.isfinite(speed) or not 0 <= speed <= 5:
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             if params.get('preserve_pause', False) and speed == 0:
                 raise ProbeError('invalid_request: preserve_pause requires a positive speed')
             before = self.state['clock']['paused']
@@ -503,10 +503,10 @@ class FakeProbe(FakePlugin):
         if command == 'load_save':
             name = params.get('name')
             if not isinstance(name, str) or not name or any(x in name for x in '/\\:\r\n\0') or name in ('.', '..'):
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             allow_setup = params.get('allow_setup', False)
             if type(allow_setup) is not bool:
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             self.loads.append(name)
             self._loaded_save = self._current_save = name
             # The fake load completes at once, so the opt-in takes effect now.
@@ -535,7 +535,7 @@ class FakeProbe(FakePlugin):
             if (type(target) not in (int, float) or not math.isfinite(target)
                     or not 0 <= target <= 1e9
                     or type(timeout) not in (int, float) or not math.isfinite(timeout) or not .1 <= timeout <= 3600):
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             if any(o['status'] == 'running' for o in self.operations.values()):
                 raise ProbeError('busy')
             if not self.state['clock']['paused'] or self.selected_speed is None or self.selected_speed <= 0:
@@ -564,9 +564,9 @@ class FakeProbe(FakePlugin):
         if command == 'dump_state':
             filename = params.get('filename')
             if not isinstance(filename, str) or re.fullmatch(r'[A-Za-z0-9_-]{1,100}\.json', filename) is None:
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             if re.fullmatch(r'(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])\.json', filename, re.I):
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             if not self.state['clock']['paused'] or any(o['status'] == 'running' for o in self.operations.values()):
                 raise ProbeError('invalid_request: pause before taking a checkpoint')
             path = self.output_directory / filename
@@ -591,22 +591,22 @@ class FakeProbe(FakePlugin):
             if not self.state['clock']['paused']:
                 raise ProbeError('invalid_request: issue_order requires pause')
             if set(params) - ISSUE_ORDER_KEYS:
-                raise ProbeError('invalid_params')  # Id-only: aliases never reach a probe.
+                raise ProbeError('invalid_request')  # Id-only: aliases never reach a probe.
             if kind not in ('move', 'attack') or ('character_id' in params) == ('squad_id' in params):
-                raise ProbeError('invalid_params')
+                raise ProbeError('invalid_request')
             actor_id = self._input_id(params['character_id'], 'characters') if 'character_id' in params else None
             squad_id = self._input_id(params['squad_id'], 'squads') if 'squad_id' in params else None
             actors = [row for row in self.state['characters']
                       if (row['id'] == actor_id if actor_id is not None else row['squad_id'] == squad_id)]
             if not actors:
-                raise ProbeError('entity_not_found')
+                raise ProbeError('not_found')
             if kind == 'move':
                 position = params.get('position')
                 if (not isinstance(position, list) or len(position) != 3 or 'target_id' in params
                         or any(type(value) not in (int, float) or not math.isfinite(value) for value in position)):
-                    raise ProbeError('invalid_params')
+                    raise ProbeError('invalid_request')
             elif 'position' in params or not any(row['id'] == self._input_id(params.get('target_id'), 'characters') for row in self.state['characters']):
-                raise ProbeError('entity_not_found')
+                raise ProbeError('not_found')
             for actor in actors:
                 actor['order'] = dict(type=kind, target_id=self._input_id(params.get('target_id'), 'characters'), position=deepcopy(params.get('position')))
             return dict(accepted=True, type=kind, affected_characters=len(actors))
@@ -987,8 +987,11 @@ class FakeProbe(FakePlugin):
                     reply = dict(id=request_id, result=result)
                 except SetupRefusal as exc:
                     reply = dict(id=request_id, error=dict(code=exc.code, message=exc.message))
-                except (ValueError, TypeError, KeyError, ProbeError) as exc:
-                    reply = dict(id=request_id, error=dict(code='invalid_request' if request_id is None else str(exc).split(':')[0], message=str(exc)))
+                except ProbeError as exc:
+                    # As a real probe: the code and the message in separate members.
+                    reply = dict(id=request_id, error=dict(code=exc.code or 'invalid_request', message=exc.message))
+                except (ValueError, TypeError, KeyError) as exc:
+                    reply = dict(id=request_id, error=dict(code='invalid_request', message=str(exc)))
                 if self.mode == 'wrong_id':
                     reply['id'] = 'wrong'
                 wire = (json.dumps(reply, allow_nan=False) + '\n').encode('utf-8')

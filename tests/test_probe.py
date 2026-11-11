@@ -48,12 +48,14 @@ def test_speed_pause_option_is_explicit_and_validated_before_transport(monkeypat
                      ('set_game_speed', dict(speed=2, preserve_pause=True))]
 
 
-@pytest.mark.parametrize('mode,match', [('hang', 'Jeu figé'), ('wrong_id', 'Identifiant'), ('invalid', 'invalide')])
-def test_failed_responses(mode, match):
+@pytest.mark.parametrize('mode,code', [('hang', 'no_reply'), ('wrong_id', 'invalid_reply'),
+                                       ('invalid', 'invalid_reply')])
+def test_failed_responses(mode, code):
     async def run():
         async with FakePlugin(mode) as fake:
-            with pytest.raises(ProbeError, match=match):
+            with pytest.raises(ProbeError, match='^' + code + ': ') as caught:
                 await Client(fake.port, .1).call('ping')
+            assert caught.value.code == code and caught.value.uncertain is (code == 'no_reply')
     asyncio.run(run())
 
 
@@ -903,7 +905,7 @@ def test_fake_snapshot_is_refused_while_mutated_and_orders_stay_id_only(tmp_path
     refusal(fake, 'save_scene_snapshot', dict(name='KenshiProbe_test_scene_a'),
             'not_allowed', 'the world was changed by scene setup; reload it before saving')
     for alias in (dict(squad_alias='bandits'), dict(target_alias='player')):
-        with pytest.raises(ProbeError, match='invalid_params'):
+        with pytest.raises(ProbeError, match='invalid_request'):
             asyncio.run(fake.call('issue_order', type='attack', character_id='hand:1:7:101:1:1001',
                                   target_id='hand:1:7:101:2:1002', **alias))
 
@@ -915,7 +917,8 @@ def test_fake_setup_refusal_crosses_the_wire_with_the_contract_code_and_message(
             client = Client(fake.port, 1)
             with pytest.raises(ProbeError) as raised:
                 await client.call('setup_heal', **HEAL)
-            assert str(raised.value) == str(dict(code='not_allowed', message=G2_TEXT))
+            assert str(raised.value) == 'not_allowed: ' + G2_TEXT
+            assert (raised.value.code, raised.value.message) == ('not_allowed', G2_TEXT)
     asyncio.run(run())
 
 
@@ -924,7 +927,7 @@ def test_fake_load_refused_before_acceptance_changes_nothing(tmp_path, params):
     fake = setup_fake(tmp_path)
     asyncio.run(fake.call('setup_heal', **HEAL))
     before = asyncio.run(fake.call('setup_info'))
-    with pytest.raises(ProbeError, match='invalid_params'):
+    with pytest.raises(ProbeError, match='invalid_request'):
         asyncio.run(fake.call('load_save', pause_on_ready=True, **params))
     after = asyncio.run(fake.call('setup_info'))
     assert after['gate'] == before['gate'] and after['gate']['allow_setup'] is True

@@ -24,7 +24,7 @@ from probe import Client, ProbeError
 
 
 class ScenarioError(ProbeError):
-    pass
+    """A scenario failure. It keeps the code of the probe error it reports, when there is one."""
 
 
 def timestamp():
@@ -531,7 +531,7 @@ def restoration_reference(params, *, original=None):
 
 def require_control_world(status, *, paused=None):
     if status.get('world_ready') is not True or status.get('load_pause_pending', False):
-        raise ScenarioError('world not ready during camera restoration')
+        raise ScenarioError('world not ready during camera restoration', 'world_not_ready')
     if paused is not None and status.get('paused') is not paused:
         raise ScenarioError('Restoration mismatch: paused at camera restoration boundary')
 
@@ -653,7 +653,7 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
             row['ping'] = before
             if (before.get('world_ready') is not True
                     or before.get('load_pause_pending', False)):
-                raise ScenarioError('world not ready during control stability observation')
+                raise ScenarioError('world not ready during control stability observation', 'world_not_ready')
             if expected is None and before.get('paused') is not True:
                 raise ScenarioError('Initial game pause is required before capturing scenario controls')
             if expected is not None and before.get('paused') != expected.get('paused'):
@@ -666,7 +666,7 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
             row['ping_after'] = after
             if (after.get('world_ready') is not True
                     or after.get('load_pause_pending', False)):
-                raise ScenarioError('world not ready after control stability observation')
+                raise ScenarioError('world not ready after control stability observation', 'world_not_ready')
             if expected is not None and after.get('paused') != expected.get('paused'):
                 raise ScenarioError('Restoration mismatch: paused after control observation')
             if expected is None:
@@ -716,8 +716,7 @@ async def wait_stable_controls(session, expected=None, *, observations=None,
             row['error'] = last_error = message
             # Only availability and verification failures are read again.
             # Identity changes and transport/other probe failures propagate.
-            transient = ('world not ready' in message.lower()
-                         or 'world_not_ready' in message.lower()
+            transient = (exc.code == 'world_not_ready'
                          or message.startswith(('Restoration ', 'Game clock changed ')))
             if not transient:
                 raise
@@ -1023,6 +1022,8 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
             caught = exc
             report['status'] = 'failed'
             report['error'] = type(exc).__name__ + ': ' + str(exc)
+            # The protocol code of a probe refusal or transport failure, null for any other error.
+            report['error_code'] = getattr(exc, 'code', None)
             if report['executions'] and report['executions'][-1]['status'] == 'running':
                 report['executions'][-1]['status'] = 'failed'
         finally:
@@ -1081,7 +1082,7 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                 # A cancelled request stays cancelled for its caller; the report says what was restored.
                 caught.add_note(where)
                 raise caught
-            raise ScenarioError(str(caught) + '; ' + where) from caught
+            raise ScenarioError(str(caught) + '; ' + where, getattr(caught, 'code', None)) from caught
         return dict(status=report['status'], executions=repetitions, output=str(root.resolve()),
                     report=str((root / 'report.json').resolve()), summary=str((root / 'report.md').resolve()),
                     restored=report['restoration']['verified'],

@@ -244,6 +244,6 @@ inline Value setupCommand(GameWorld* world,const std::string& command,const Valu
     if(command=="setup_spawn_squad")return setupSpawnSquad(world,p);
     if(command=="setup_set_relation")return setupSetRelation(world,p);
     if(command=="setup_heal")return setupHeal(world,p);
-    throw std::runtime_error("unknown command");
+    throw Error("not_implemented","unknown command");
 }
 }

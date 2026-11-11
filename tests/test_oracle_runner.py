@@ -1559,7 +1559,7 @@ def _sleep_on(command, seconds):
 
 
 def _lose_reply(fake, params, result):
-    raise ProbeError('Jeu figé ou non lancé : délai expiré ou connexion impossible')
+    raise ProbeError('no_reply: no reply within 10 s; the command may already have started', 'no_reply')
 
 
 def _restart_on_advance(fake):
@@ -1570,7 +1570,7 @@ def _restart_on_advance(fake):
     ('run_timeout', 'S3', 'run_until'),
     ('run_stalled', 'S3', 'deadline'),
     ('scenario deadline during heal', 'S5', 'scenario_timeout'),
-    ('lost spawn reply', 'S2', 'délai expiré'),
+    ('lost spawn reply', 'S2', 'no_reply: no reply within'),
     ('restart during settle', 'S3', 'restarted'),
 ])
 def test_setup_timeouts_and_lost_replies_fail_once_and_restore(tmp_path, case, step, match):

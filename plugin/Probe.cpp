@@ -200,11 +200,11 @@ static Value execute(GameWorld* world,const Value& r){
     else if(cmd.str=="prepare_scene_control")out=oracle::prepareSceneControl(world,p);
     else if(cmd.str=="commit_scene_control")out=oracle::commitSceneControl(world,p);
     else if(cmd.str=="get_frame_stats"){StatisticsDetail detail=parseStatisticsDetail(p);out=stats((int)numeric(p,"n",1,3600,true),detail);}
-    else if(cmd.str=="pause"){const Value& v=p.at("paused");if(v.type!=Value::BOOL)throw std::runtime_error("paused must be bool");if(!ready)throw std::runtime_error("world not ready");if(v.boolean){oracle::rememberSelectedSpeed(world,world->getFrameSpeedMultiplier(),"observed_running");oracle::stopRun(world,"cancelled");}world->userPause(v.boolean);out.object["paused"]=Value::flag(world->isPaused());}
+    else if(cmd.str=="pause"){const Value& v=p.at("paused");if(v.type!=Value::BOOL)throw std::runtime_error("paused must be bool");if(!ready)throw oracle::Error("world_not_ready","world not ready");if(v.boolean){oracle::rememberSelectedSpeed(world,world->getFrameSpeedMultiplier(),"observed_running");oracle::stopRun(world,"cancelled");}world->userPause(v.boolean);out.object["paused"]=Value::flag(world->isPaused());}
     else if(cmd.str=="set_game_speed"){
         if(oracle::active())throw oracle::Error("busy","cancel run_until before changing speed");float speed=(float)numeric(p,"speed",0,5,false);bool preservePause=optionalFlag(p,"preserve_pause");
         if(preservePause&&speed==0)throw std::runtime_error("preserve_pause requires positive speed; use pause for zero");
-        if(!ready)throw std::runtime_error("world not ready");
+        if(!ready)throw oracle::Error("world_not_ready","world not ready");
         bool wasPaused=world->isPaused();world->setGameSpeed(speed,false);
         // Both SDK calls finish in this command before originalLoop can advance time.
         if(preservePause)world->userPause(wasPaused);
@@ -213,24 +213,24 @@ static Value execute(GameWorld* world,const Value& r){
         out.object["frame_speed_multiplier"]=Value((double)world->getFrameSpeedMultiplier());out.object["paused"]=Value::flag(world->isPaused());
     }
     else if(cmd.str=="list_characters"){
-        const Value& detail=p.at("details");bool details=detail.type==Value::BOOL&&detail.boolean;if(detail.type!=Value::NIL&&detail.type!=Value::BOOL)throw std::runtime_error("details must be bool");int limit=(int)numeric(p,"limit",1,details?100:500,true);if(!world->initialized||world->gameResetting||world->isLoadingFromASaveGame())throw std::runtime_error("world not ready");Value list=Value::arr();std::vector<Faction*> factionCandidates;
+        const Value& detail=p.at("details");bool details=detail.type==Value::BOOL&&detail.boolean;if(detail.type!=Value::NIL&&detail.type!=Value::BOOL)throw std::runtime_error("details must be bool");int limit=(int)numeric(p,"limit",1,details?100:500,true);if(!world->initialized||world->gameResetting||world->isLoadingFromASaveGame())throw oracle::Error("world_not_ready","world not ready");Value list=Value::arr();std::vector<Faction*> factionCandidates;
         const ogre_unordered_set<Character*>::type& chars=world->getCharacterUpdateList();
         for(ogre_unordered_set<Character*>::type::const_iterator i=chars.begin();i!=chars.end()&&(int)list.array.size()<limit;++i){Character* c=*i;if(!c)continue;Value row=Value::obj();row.object["name"]=Value(c->getName());Faction* f=c->getFaction();row.object["faction"]=f?Value(f->getName()):Value();Ogre::Vector3 pos=c->getPosition();Value xyz=Value::arr();xyz.array.push_back(Value(pos.x));xyz.array.push_back(Value(pos.y));xyz.array.push_back(Value(pos.z));row.object["position"]=xyz;if(details){GameData* gd=c->getGameData();if(gd&&gd->type==CHARACTER&&!c->isPlayerCharacter()&&f)factionCandidates.push_back(f);row.object["template_id"]=gd?Value(gd->stringID):Value();row.object["template_type"]=gd?Value((double)gd->type):Value();row.object["character_template"]=Value::flag(gd&&gd->type==CHARACTER);row.object["is_player"]=Value::flag(c->isPlayerCharacter());row.object["dead"]=Value::flag(c->isDead());row.object["unconscious"]=Value::flag(c->isUnconcious());float age=c->getAge();row.object["age"]=_finite(age)?Value(age):Value();}list.array.push_back(row);}out.object["characters"]=list;out.object["total_update_list"]=Value((double)chars.size());if(details)out.object["faction_relations"]=battle::factionInventory(factionCandidates);
     }
-    else if(cmd.str=="get_scene_state"){if(!ready)throw std::runtime_error("world not ready");Value detail=p.object.count("thread_details")?p.at("thread_details"):Value();if(detail.type!=Value::NIL&&detail.type!=Value::BOOL)throw std::runtime_error("thread_details must be bool");out=sceneState(world,detail.type==Value::BOOL&&detail.boolean);}
+    else if(cmd.str=="get_scene_state"){if(!ready)throw oracle::Error("world_not_ready","world not ready");Value detail=p.object.count("thread_details")?p.at("thread_details"):Value();if(detail.type!=Value::NIL&&detail.type!=Value::BOOL)throw std::runtime_error("thread_details must be bool");out=sceneState(world,detail.type==Value::BOOL&&detail.boolean);}
     else if(cmd.str=="set_camera_free"){
-        if(!ready)throw std::runtime_error("world not ready");if(!world->isPaused())throw std::runtime_error("pause the disposable test world before changing camera");const Value& enabled=p.at("enabled");if(enabled.type!=Value::BOOL)throw std::runtime_error("enabled must be bool");
+        if(!ready)throw oracle::Error("world_not_ready","world not ready");if(!world->isPaused())throw std::runtime_error("pause the disposable test world before changing camera");const Value& enabled=p.at("enabled");if(enabled.type!=Value::BOOL)throw std::runtime_error("enabled must be bool");
         bool lock=optionalFlag(p,"lock_edge");bool release=optionalFlag(p,"release_edge");if(lock&&release)throw std::runtime_error("cannot lock and release camera together");if((lock||release)&&lastRequestedSave.empty())throw std::runtime_error("edge lock requires a save explicitly loaded through the probe");
         CameraClass* camera=sceneCamera(world);out.object["before"]=Value::flag(camera->isFreeCameraMode());if(camera->isFreeCameraMode()!=enabled.boolean)camera->setFreeCameraMode(enabled.boolean);if(lock)controlSceneCamera();if(release)restoreSceneCamera();out.object["edge_scrolling"]=::options?Value::flag(::options->edgeScrolling):Value();out.object["free_camera"]=Value::flag(camera->isFreeCameraMode());out.object["scene_camera_control_owned"]=Value::flag(sceneEdgeOwned);
     }
     else if(cmd.str=="list_towns"){
-        if(!ready)throw std::runtime_error("world not ready");int limit=(int)numeric(p,"limit",1,500,true);const Value& filter=p.at("name_filter");if(filter.type!=Value::STRING||filter.str.size()>128)throw std::runtime_error("invalid town filter");
+        if(!ready)throw oracle::Error("world_not_ready","world not ready");int limit=(int)numeric(p,"limit",1,500,true);const Value& filter=p.at("name_filter");if(filter.type!=Value::STRING||filter.str.size()>128)throw std::runtime_error("invalid town filter");
         lektor<RootObject*>& towns=townList()->getAllTowns();Value list=Value::arr();
         for(unsigned int i=0;i<towns.size()&&(int)list.array.size()<limit;++i){RootObject* town=towns[i];if(!town)continue;std::string name=town->getName();if(name.find(filter.str)==std::string::npos)continue;Value row=Value::obj();row.object["name"]=Value(name);row.object["position"]=vectorJSON(town->getPosition());Faction* faction=town->getFaction();row.object["faction"]=faction?Value(faction->getName()):Value();list.array.push_back(row);}
         out.object["towns"]=list;out.object["total_town_count"]=Value((double)towns.size());out.object["active_town_count"]=Value((double)townList()->getActiveTowns().size());
     }
     else if(cmd.str=="focus_town"){
-        if(!ready)throw std::runtime_error("world not ready");if(!world->isPaused())throw std::runtime_error("pause the disposable test world before changing camera");const Value& name=p.at("name");if(name.type!=Value::STRING||name.str.empty()||name.str.size()>128)throw std::runtime_error("invalid town name");
+        if(!ready)throw oracle::Error("world_not_ready","world not ready");if(!world->isPaused())throw std::runtime_error("pause the disposable test world before changing camera");const Value& name=p.at("name");if(name.type!=Value::STRING||name.str.empty()||name.str.size()>128)throw std::runtime_error("invalid town name");
         lektor<RootObject*>& towns=townList()->getAllTowns();RootObject* target=0;
         for(unsigned int i=0;i<towns.size();++i){if(towns[i]&&towns[i]->getName()==name.str){if(target)throw std::runtime_error("ambiguous town name");target=towns[i];}}
         if(!target)throw std::runtime_error("town not found");Ogre::Vector3 pos=target->getPosition();if(!_finite(pos.x)||!_finite(pos.y)||!_finite(pos.z))throw std::runtime_error("invalid town position");
@@ -261,7 +261,7 @@ static Value execute(GameWorld* world,const Value& r){
         if(args[1].empty()&&!args[2].empty())throw std::runtime_error("opponent faction requires an opponent template");
         controlSceneCamera();out=battle::prepare(world,sid.str,pairs,args[0],args[1],args[2]);
     }
-    else if(cmd.str=="save_scene_snapshot"){if(oracle::worldMutated)throw oracle::Error("not_allowed","the world was changed by scene setup; reload it before saving");if(!ready)throw std::runtime_error("world not ready");const Value& name=p.at("name");if(name.type!=Value::STRING)throw std::runtime_error("snapshot name must be string");out=snapshots::create(world,name.str);}
+    else if(cmd.str=="save_scene_snapshot"){if(oracle::worldMutated)throw oracle::Error("not_allowed","the world was changed by scene setup; reload it before saving");if(!ready)throw oracle::Error("world_not_ready","world not ready");const Value& name=p.at("name");if(name.type!=Value::STRING)throw std::runtime_error("snapshot name must be string");out=snapshots::create(world,name.str);}
     else if(cmd.str=="load_save"){
         const Value& name=p.at("name");
         if(name.type!=Value::STRING||name.str.empty()||name.str.size()>128||name.str=="."||name.str==".."||name.str.find_first_of("/\\:\r\n")!=std::string::npos||name.str.find('\0')!=std::string::npos)throw std::runtime_error("invalid save name");
@@ -272,7 +272,7 @@ static Value execute(GameWorld* world,const Value& r){
         oracle::stopRun(world,"cancelled");oracle::invalidateSelectedSpeed();oracle::invalidateSavedOrigins();restoreSceneCamera();if(lock)controlSceneCamera();battle::clear();bool tracking=snapshots::restoreTracking(name.str);bool pauseOnReady=explicitPause||tracking||name.str=="KenshiProbe_test";oracle::expectSavedOriginsLoad(name.str);saves->load(name.str);lastRequestedSave=name.str;oracle::acceptSetupLoad(name.str,allowSetup);loadPausePending=pauseOnReady;{Guard g;loadPending=true;}out.object["accepted"]=Value::flag(true);out.object["allow_setup"]=Value::flag(allowSetup);out.object["name"]=name;out.object["camera_edge_locked"]=Value::flag(lock);out.object["battle_tracking_restored"]=Value::flag(tracking);out.object["pause_on_ready"]=Value::flag(pauseOnReady);out.object["save_root"]=Value(saves->getSavePath());
     }
     else if(cmd.str.compare(0,6,"setup_")==0)out=oracle::setupCommand(world,cmd.str,p);
-    else throw std::runtime_error("unknown command");
+    else throw oracle::Error("not_implemented","unknown command");
     if(cmd.str=="ping"){out.object["rekenshi_settings_available"]=Value::flag(true);out.object["supported_schema_versions"]=oracle::supportedSchemaVersions();
         Value capabilities=Value::arr();capabilities.array.push_back(Value(std::string("scene_setup")));out.object["capabilities"]=capabilities;out.object["world_readiness"]=oracle::worldReadiness(world);out.object["world_mutated"]=Value::flag(oracle::worldMutated);out.object["build_commit"]=Value(oracle::buildCommit());out.object["state_schema_version"]=Value(std::string(oracle::schemaVersion));}
     Value response=Value::obj();response.object["id"]=r.at("id");response.object["result"].swap(out);return response;
@@ -290,7 +290,7 @@ static void drainCommands(GameWorld* world,bool menuService){
     for(int count=0;count<8;++count){boost::shared_ptr<Work> w;{Guard g;if(queue.empty())break;w=queue.front();queue.pop_front();if(w->cancelled)continue;if(menuService){const std::string& command=w->request.at("command").str;if(command!="ping"&&command!="load_save"&&command!="get_rekenshi_settings"&&!(command.compare(0,6,"setup_")==0&&!oracle::worldReady(world))){queue.push_front(w);break;}}}
         unsigned __int64 created=commandTimingEnabled?cachedThreadCreation(serviceIdentity,currentThreadCreation):0;
         double started=commandTimingEnabled?now():0;
-        try{Value completed=execute(world,w->request);w->response.swap(completed);DebugLog("[KenshiOracle] command completed");}catch(const oracle::Error& e){w->response=error(w->request.at("id"),e.what(),e.code.c_str());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(const std::exception& e){w->response=error(w->request.at("id"),e.what());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(...){w->response=error(w->request.at("id"),"internal error");DebugLog("[KenshiOracle] internal command error");}
+        try{Value completed=execute(world,w->request);w->response.swap(completed);DebugLog("[KenshiOracle] command completed");}catch(const oracle::Error& e){w->response=error(w->request.at("id"),e.what(),e.code.c_str());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(const std::exception& e){w->response=error(w->request.at("id"),e.what());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(...){w->response=error(w->request.at("id"),"internal error","internal_error");DebugLog("[KenshiOracle] internal command error");}
         double finished=commandTimingEnabled?now():0;
         if(commandTimingEnabled){try{attachServiceTiming(w->response,true,w->request.at("command").str,menuService,GetCurrentThreadId(),created,frame,w->queuedAt,started,finished);}catch(...){DebugLog("[KenshiOracle] service timing unavailable");}}
         SetEvent(w->done);
@@ -343,16 +343,16 @@ static DWORD WINAPI network(void*){
                         Value result=Value::obj();{Guard g;result.object["frame"]=Value((double)publishedFrame);result.object["timestamp_ms"]=Value(publishedTime);result.object["service_frame"]=Value((double)serviceFrame);result.object["service_timestamp_ms"]=Value(serviceTime);result.object["service_thread"]=Value((double)serviceThread);result.object["game_thread"]=Value((double)gameThread);result.object["loading"]=Value::flag(loadPending);}
                         reply=Value::obj();reply.object["id"]=id;reply.object["result"]=result;
                     }else{
-                        boost::shared_ptr<Work> w(new Work(request));{Guard g;if(queue.size()>=64)throw std::runtime_error("queue full");if(commandTimingEnabled)w->queuedAt=now();queue.push_back(w);}
+                        boost::shared_ptr<Work> w(new Work(request));{Guard g;if(queue.size()>=64)throw oracle::Error("busy","queue full");if(commandTimingEnabled)w->queuedAt=now();queue.push_back(w);}
                         DWORD wait=WaitForSingleObject(w->done,9000);
-                        if(wait!=WAIT_OBJECT_0){Guard g;w->cancelled=true;throw std::runtime_error("main thread timeout; execution may already have started");}
+                        if(wait!=WAIT_OBJECT_0){Guard g;w->cancelled=true;throw oracle::Error("timeout","main thread timeout; execution may already have started");}
                         // Success event publishes the complete response. Service no
                         // longer accesses it; this shared_ptr keeps Work alive.
                         reply.swap(w->response);
                         if(reply.object.count("result")&&reply.at("result").object.count("_oracle_state")){Value& result=reply.object["result"];Value published=oracle::publishFile(result.at("_oracle_state"),result.at("_oracle_filename").str);if(result.object.count("_oracle_identity_source"))published.object["identity_source"]=result.at("_oracle_identity_source");result.swap(published);}
                     }
-                }catch(const oracle::Error& e){reply=error(id,e.what(),e.code.c_str());}catch(const std::exception& e){reply=error(id,e.what());}catch(...){reply=error(id,"internal network error");}
-                std::string wire=json::dump(reply)+"\n";if(wire.size()>65536)wire=json::dump(error(id,"response too large; reduce n or limit"))+"\n";if(!sendAll(client,wire)){connected=false;break;}
+                }catch(const oracle::Error& e){reply=error(id,e.what(),e.code.c_str());}catch(const std::exception& e){reply=error(id,e.what());}catch(...){reply=error(id,"internal network error","internal_error");}
+                std::string wire=json::dump(reply)+"\n";if(wire.size()>65536)wire=json::dump(error(id,"response too large; reduce n or limit","response_too_large"))+"\n";if(!sendAll(client,wire)){connected=false;break;}
             }if(buffer.size()>65535){sendAll(client,json::dump(error(Value(),"line too long"))+"\n");break;}
         }closesocket(client);
     }closesocket(server);WSACleanup();return 0;
