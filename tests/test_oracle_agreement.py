@@ -268,7 +268,7 @@ def test_invalid_rules_are_refused(change):
 
 
 def test_the_example_rules_file_is_valid():
-    validate_rules(json.loads((ROOT / 'scenarios' / 'agreement-rules.example.json').read_text(encoding='utf-8')))
+    validate_rules(json.loads((ROOT / 'scenarios' / 'agreement-rules' / 'example.json').read_text(encoding='utf-8')))
 
 
 def test_a_changed_snapshot_or_another_experiment_is_refused(tmp_path):

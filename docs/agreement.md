@@ -82,7 +82,7 @@ floor is not evidence of a difference between engines.
 A rules file names classes of pairs that a documented cause explains, for
 example a load-order artefact of the reference engine. It is data: nothing
 about one save lives in the tool. See the
-[example](../scenarios/agreement-rules.example.json).
+[example](../scenarios/agreement-rules/example.json).
 
 ```json
 {
@@ -146,7 +146,7 @@ builds; it is not read back by the tool.
 ## A real example
 
 **Observed** on one hold of a slave-camp save (20 checkpoints, state 0.5), with
-a rules file holding the three classes of the [example](../scenarios/agreement-rules.example.json)
+a rules file holding the three classes of the [example](../scenarios/agreement-rules/example.json)
 adapted to that save:
 
 | Run compared with the original reference | All pairs | Classes set aside |

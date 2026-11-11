@@ -22,3 +22,5 @@ Before calling `run_scenario(path="absolute-path-to-your-copy.json", repeat=3)`,
 Outputs are stored under `runs/<name>/<timestamp>/<execution>/`. `report.json` and `report.md` distinguish stable, variable and missing fields and record restoration. An error may leave `runtime/oracle-restoration.json` with `restore_required:true`; use `restore_scenario()` once a ready world is available, without deleting the journal to bypass verification. If the captured controls belong to another known save, `restore_scenario(save="known-original-copy")` can name it explicitly. It is recorded in `recovery_save`; the journal remains required until restoration is verified. See [first run](../docs/first-run.md) and [protocol](../docs/protocol.md).
 
 Offline validation of the examples: `.venv/Scripts/python.exe -m pytest tests/test_oracle_examples.py -q`. This command does not launch Kenshi.
+
+[`agreement-rules/example.json`](agreement-rules/example.json) is not a scenario: it is an example rules file for [agreement between runs](../docs/agreement.md), kept in its own folder because every JSON file directly in this folder is validated as a scenario.
