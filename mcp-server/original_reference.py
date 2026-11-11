@@ -21,7 +21,7 @@ import uuid
 import psutil
 
 import launcher_clicker
-from oracle_runner import OracleSession, execute_scenario, markdown_report, scenario_lock, write_json
+from oracle_runner import OracleSession, execute_scenario, markdown_report, scenario_lock, shielded, write_json
 from oracle_schema import validate_scenario
 from probe import Client, ProbeError
 from rekenshi_profile import ReKenshiProfile
@@ -331,38 +331,43 @@ async def run_original_reference(scenario, cfg, repeat=None):
             raise
         finally:
             cleanup_errors = []
-            try:
-                await game.stop()
-                if captured:
-                    profile.restore()
-                    lifecycle['restoration_start'] = await game.start('restoration')
-                    evidence = await game.settings_evidence()
-                    profile.verify_restored_effective(evidence, validator=module_evidence)
-            except BaseException as exc:
-                cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
-            finally:
+
+            async def cleanup():
                 try:
                     await game.stop()
-                except BaseException as exc:
-                    cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
-                try:
                     if captured:
-                        # RE_Kenshi may rewrite the INI on initialization. The
-                        # profile journal checks exact restoration after shutdown.
-                        profile.restore(reapply=True)
+                        profile.restore()
+                        lifecycle['restoration_start'] = await game.start('restoration')
+                        evidence = await game.settings_evidence()
+                        profile.verify_restored_effective(evidence, validator=module_evidence)
                 except BaseException as exc:
                     cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
-                try:
-                    if settings_captured:
-                        lifecycle['game_settings_restored'] = restore_game_settings(
-                            settings, settings_journal, game.state)
-                except BaseException as exc:
-                    cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
-            if captured:
-                lifecycle['reference_profile'] = profile.provenance()
-            if getattr(game, 'launcher', None) is not None:
-                # Receipts only: a refused or absent click never fails the run.
-                lifecycle['launcher_click'] = await asyncio.to_thread(game.launcher.close)
+                finally:
+                    try:
+                        await game.stop()
+                    except BaseException as exc:
+                        cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
+                    try:
+                        if captured:
+                            # RE_Kenshi may rewrite the INI on initialization. The
+                            # profile journal checks exact restoration after shutdown.
+                            profile.restore(reapply=True)
+                    except BaseException as exc:
+                        cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
+                    try:
+                        if settings_captured:
+                            lifecycle['game_settings_restored'] = restore_game_settings(
+                                settings, settings_journal, game.state)
+                    except BaseException as exc:
+                        cleanup_errors.append(type(exc).__name__ + ': ' + str(exc))
+                if captured:
+                    lifecycle['reference_profile'] = profile.provenance()
+                if getattr(game, 'launcher', None) is not None:
+                    # Receipts only: a refused or absent click never fails the run.
+                    lifecycle['launcher_click'] = await asyncio.to_thread(game.launcher.close)
+
+            # Shielded: a cancelled request must still stop the owned game and put the profile back.
+            await shielded(cleanup)
             lifecycle['cleanup_errors'] = cleanup_errors
             lifecycle['owned_game_stopped'] = game.process is None or game.process.poll() is not None
             lifecycle['completed'] = result is not None and not cleanup_errors

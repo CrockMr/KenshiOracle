@@ -1513,8 +1513,9 @@ def _cancel_heal(fake, params, result):
 def test_cancellation_mid_setup_still_writes_the_failed_receipt(tmp_path):
     fake, cfg, _ = setup_fixture(tmp_path)
     fake.hooks['setup_heal'] = _cancel_heal
-    with pytest.raises(ScenarioError):
+    with pytest.raises(asyncio.CancelledError) as caught:
         run_setup(fake, cfg)
+    assert any(note.startswith('report: ') for note in caught.value.__notes__)
     report = report_for(cfg)
     assert report['error'] == 'CancelledError: '
     receipt = report['executions'][0]['setup']
@@ -1705,3 +1706,79 @@ def test_echoes_printed_in_shortest_float32_form_are_the_same_value():
     assert not oracle_setup.same_float32(736.6, 736.593)
     assert not oracle_setup.same_float32(True, 1) and not oracle_setup.same_float32(float('nan'), 0)
     assert not oracle_setup.same_float32(1e300, 1e300)
+
+
+class CancellingProbe(FakeProbe):
+    """Cancels the caller's anyio scope, as an MCP client's cancellation does, when ``command`` arrives."""
+
+    def __init__(self, *args, cancel_on, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cancel_on, self.scope = cancel_on, None
+
+    async def call(self, command, **params):
+        result = await super().call(command, **params)
+        if command == self.cancel_on and self.scope is not None:
+            scope, self.scope = self.scope, None
+            scope.cancel()
+        return result
+
+
+def run_in_cancel_scope(fake, operation):
+    """Run ``operation`` inside an anyio cancel scope that ``fake`` cancels; return whether it was cancelled."""
+    import anyio
+
+    async def main():
+        with anyio.CancelScope() as scope:
+            fake.scope = scope
+            await operation()
+        return scope.cancelled_caught
+    return asyncio.run(main())
+
+
+def test_a_request_cancelled_by_its_client_still_stops_the_run_and_restores(tmp_path):
+    # An anyio scope cancels again at every await: the cleanup must be shielded to run at all.
+    cfg = config(tmp_path)
+    cfg['run_until_timeout'] = 5
+    fake = CancellingProbe(cfg['oracle_output'], mode='run_stalled', cancel_on='run_until')
+    value = scenario()
+    value['repeat'] = 1
+    assert run_in_cancel_scope(fake, lambda: execute_scenario(value, cfg, client=fake)) is True
+    report = report_for(cfg)
+    assert report['status'] == 'failed' and report['error'].startswith('CancelledError')
+    assert 'restoration_error' not in report and report['restoration']['verified'] is True
+    assert guard_for(cfg)['restore_required'] is False
+    assert fake.calls.count('cancel_run_until') == 1
+    assert all(operation['status'] != 'running' for operation in fake.operations.values())
+    assert fake.loads == ['Synthetic save', 'Synthetic save']
+    assert fake.state['clock']['paused'] is True and fake.camera_owned is False
+
+
+def test_a_cancelled_standalone_run_until_is_cancelled_in_the_game(tmp_path):
+    cfg = config(tmp_path)
+    fake = CancellingProbe(cfg['oracle_output'], mode='run_stalled', cancel_on='run_until')
+
+    async def advance():
+        session = OracleSession(cfg, fake)
+        await session.load('Synthetic save', lock_edge=False)
+        await fake.call('set_game_speed', speed=1, preserve_pause=True)
+        await session.until(fake.state['clock']['elapsed_seconds'] + 60, 5)
+    assert run_in_cancel_scope(fake, advance) is True
+    assert fake.calls.count('cancel_run_until') == 1
+    assert all(operation['status'] != 'running' for operation in fake.operations.values())
+
+
+def test_without_the_shield_a_cancel_scope_stops_the_cleanup(tmp_path, monkeypatch):
+    # The failure the shield prevents, kept as a check that the tests above exercise it.
+    import oracle_runner
+
+    async def unshielded(operation):
+        return await operation()
+    monkeypatch.setattr(oracle_runner, 'shielded', unshielded)
+    cfg = config(tmp_path)
+    cfg['run_until_timeout'] = 5
+    fake = CancellingProbe(cfg['oracle_output'], mode='run_stalled', cancel_on='run_until')
+    value = scenario()
+    value['repeat'] = 1
+    assert run_in_cancel_scope(fake, lambda: execute_scenario(value, cfg, client=fake)) is True
+    assert report_for(cfg)['restoration_error'].startswith('CancelledError')
+    assert guard_for(cfg)['restore_required'] is True

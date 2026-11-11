@@ -91,6 +91,23 @@ def scenario_lock(runtime):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+async def shielded(operation):
+    """Await a cleanup to its end even while the calling request is being cancelled.
+
+    An MCP client cancels a tool call through an anyio cancel scope, which
+    cancels again at every await: without a shield a cleanup stops at its first
+    command, so a run_until keeps the game advancing and a scenario leaves its
+    restoration guard armed. Plain asyncio cancellation is delivered once, and
+    the cleanup that follows it already runs to its end.
+    """
+    try:
+        import anyio
+    except ImportError:  # The runner alone does not need the MCP SDK or anyio.
+        return await operation()
+    with anyio.CancelScope(shield=True):
+        return await operation()
+
+
 class OracleSession:
     def __init__(self, cfg, client=None):
         self.cfg = cfg
@@ -313,7 +330,7 @@ class OracleSession:
                     raise ScenarioError('run_until status belongs to a different operation')
         except BaseException as exc:
             try:
-                await self.cancel()
+                await shielded(self.cancel)
             except Exception as cleanup_error:
                 exc.add_note('Cancellation also failed: ' + str(cleanup_error))
             raise
@@ -1011,7 +1028,7 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
         finally:
             session.deadline = None  # Cleanup has its own bounded transport/load deadlines.
             if armed:
-                try:
+                async def restore():
                     try:
                         await session.cancel()
                     except Exception as exc:
@@ -1033,6 +1050,9 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
                     report['restoration'].update(verified=True, **restored)
                     guard['restore_required'] = False
                     write_json(guard_path, guard)
+                try:
+                    # Shielded: a cancelled request must still reload and restore the controls.
+                    await shielded(restore)
                 except BaseException as exc:
                     report['restoration_error'] = type(exc).__name__ + ': ' + str(exc)
                     report['status'] = 'failed'
@@ -1055,8 +1075,13 @@ async def execute_scenario(scenario, cfg, repeat=None, client=None, reference_pr
             write_json(root / 'report.json', report)
             (root / 'report.md').write_text(markdown_report(report), encoding='utf-8')
         if caught is not None:
-            raise ScenarioError(str(caught) + '; report: ' + str(root / 'report.json') +
-                                ('; restoration required: ' + str(guard_path) if report.get('restoration_error') else '')) from caught
+            where = ('report: ' + str(root / 'report.json') +
+                     ('; restoration required: ' + str(guard_path) if report.get('restoration_error') else ''))
+            if isinstance(caught, asyncio.CancelledError):
+                # A cancelled request stays cancelled for its caller; the report says what was restored.
+                caught.add_note(where)
+                raise caught
+            raise ScenarioError(str(caught) + '; ' + where) from caught
         return dict(status=report['status'], executions=repetitions, output=str(root.resolve()),
                     report=str((root / 'report.json').resolve()), summary=str((root / 'report.md').resolve()),
                     restored=report['restoration']['verified'],
