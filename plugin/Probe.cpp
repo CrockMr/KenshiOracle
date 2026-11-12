@@ -33,6 +33,7 @@
 #include <boost/shared_ptr.hpp>
 #include "json.h"
 #include "Version.h"
+#include "ProbeService.h"
 #include "NavTelemetry.h"
 #include "CallTelemetry.h"
 #include "ThreadIdentity.h"
@@ -92,6 +93,7 @@ static DWORD serviceThread=0, gameThread=0;
 static bool loadPending=false;
 static bool loadPausePending=false;
 static std::string lastRequestedSave;
+static oracle::LoopIdle loopIdle;
 static bool sceneEdgeOwned=false,sceneEdgePrevious=true;
 static bool profiling=false;
 static void (*originalLoop)(GameWorld*,float)=0;
@@ -286,11 +288,13 @@ static void drainCommands(GameWorld* world,bool menuService){
     // A bounded batch avoids a command flood taking over the game frame.
     // While the world is not ready, setup_* also run from the menu service so
     // their gate answers world_not_ready at once; in game they run only here
-    // from loopHook (docs/scene-setup.md).
-    for(int count=0;count<8;++count){boost::shared_ptr<Work> w;{Guard g;if(queue.empty())break;w=queue.front();queue.pop_front();if(w->cancelled)continue;if(menuService){const std::string& command=w->request.at("command").str;if(command!="ping"&&command!="load_save"&&command!="get_rekenshi_settings"&&!(command.compare(0,6,"setup_")==0&&!oracle::worldReady(world))){queue.push_front(w);break;}}}
+    // from loopHook (docs/scene-setup.md). Any other command waits for the loop,
+    // unless no loop runs and no world is ready (the main menu): it is then
+    // answered world_not_ready instead of timing out (ProbeService.h).
+    for(int count=0;count<8;++count){boost::shared_ptr<Work> w;bool refuse=false;{Guard g;if(queue.empty())break;w=queue.front();queue.pop_front();if(w->cancelled)continue;if(menuService){oracle::MenuServiceAction action=oracle::menuServiceAction(w->request.at("command").str,oracle::worldReady(world),loopIdle.frames);if(action==oracle::MenuWait){queue.push_front(w);break;}refuse=action==oracle::MenuRefuse;}}
         unsigned __int64 created=commandTimingEnabled?cachedThreadCreation(serviceIdentity,currentThreadCreation):0;
         double started=commandTimingEnabled?now():0;
-        try{Value completed=execute(world,w->request);w->response.swap(completed);DebugLog("[KenshiOracle] command completed");}catch(const oracle::Error& e){w->response=error(w->request.at("id"),e.what(),e.code.c_str());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(const std::exception& e){w->response=error(w->request.at("id"),e.what());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(...){w->response=error(w->request.at("id"),"internal error","internal_error");DebugLog("[KenshiOracle] internal command error");}
+        try{if(refuse)throw oracle::Error("world_not_ready","world is unavailable or a save is loading");Value completed=execute(world,w->request);w->response.swap(completed);DebugLog("[KenshiOracle] command completed");}catch(const oracle::Error& e){w->response=error(w->request.at("id"),e.what(),e.code.c_str());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(const std::exception& e){w->response=error(w->request.at("id"),e.what());DebugLog(std::string("[KenshiOracle] command error: ")+e.what());}catch(...){w->response=error(w->request.at("id"),"internal error","internal_error");DebugLog("[KenshiOracle] internal command error");}
         double finished=commandTimingEnabled?now():0;
         if(commandTimingEnabled){try{attachServiceTiming(w->response,true,w->request.at("command").str,menuService,GetCurrentThreadId(),created,frame,w->queuedAt,started,finished);}catch(...){DebugLog("[KenshiOracle] service timing unavailable");}}
         SetEvent(w->done);
@@ -315,7 +319,7 @@ static void loopHook(GameWorld* world,float dt){
 static void rendererHook(Renderer* renderer){
         DWORD thread=GetCurrentThreadId();bool sameThread;
         {Guard g;++serviceFrame;serviceTime=now();serviceThread=thread;sameThread=!gameThread||thread==gameThread;}
-        if(sameThread){oracle::synchronizeWorld(ou);if(oracle::active()&&(!ou||ou->gameResetting||ou->isLoadingFromASaveGame()))oracle::stopRun(ou,"cancelled");pauseProtectedLoadWhenReady(ou);drainCommands(ou,true);}
+        if(sameThread){loopIdle.observe(frame);oracle::synchronizeWorld(ou);if(oracle::active()&&(!ou||ou->gameResetting||ou->isLoadingFromASaveGame()))oracle::stopRun(ou,"cancelled");pauseProtectedLoadWhenReady(ou);oracle::observeSetupLoad(ou);drainCommands(ou,true);}
         if(sameThread&&ou&&ou->initialized&&!ou->gameResetting&&!ou->isLoadingFromASaveGame()){
             SaveManager* saves=SaveManager::getSingleton();if(saves&&!saves->signal&&!loadPausePending){Guard g;loadPending=false;}
         }

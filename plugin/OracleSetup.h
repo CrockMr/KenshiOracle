@@ -18,34 +18,42 @@
 #include <kenshi/FactionRelations.h>
 #include <kenshi/Platoon.h>
 #include <set>
+#include "ProbeService.h"
 
 namespace oracle {
 static const unsigned int setupMaximumPlayers=64,setupMaximumMembers=64,setupMaximumSpawnRows=32,setupMaximumRelationRows=100;
 // Load lifecycle (Q1). requested*: the last accepted load_save. It completes on
-// the first ready frame where the epoch accepts it and SaveManager::getCurrentGame()
-// equals it (Observed equal in local runs; see docs/scene-setup.md); loaded* then holds that
-// load and the epoch serial it completed in. A failed load never completes, and
-// a UI load changes the serial, which closes the gate without clearing worldMutated.
+// the first ready frame where the epoch accepts it, once the world was seen
+// unavailable after the request (LoadWitness, ProbeService.h) and while the save
+// manager's last requested name is still that save; see docs/scene-setup.md.
+// loaded* then holds that load and the epoch serial it completed in. A failed
+// load never completes, and a UI load changes the serial, which closes the gate
+// without clearing worldMutated.
 struct SetupLoad {
-    bool pending,requestedAllow,loadedAllow;std::string requestedSave,loadedSave;unsigned long loadedEpoch;
-    SetupLoad():pending(false),requestedAllow(false),loadedAllow(false),loadedEpoch(0){}
+    bool requestedAllow,loadedAllow;std::string requestedSave,loadedSave;unsigned long loadedEpoch;LoadWitness witness;
+    SetupLoad():requestedAllow(false),loadedAllow(false),loadedEpoch(0){}
 };
 static SetupLoad setupLoad;
 // Set immediately before a mutating engine call, even if the call then fails;
 // cleared only when a probe load completes.
 static bool worldMutated=false;
-inline void acceptSetupLoad(const std::string& save,bool allow){setupLoad.pending=true;setupLoad.requestedSave=save;setupLoad.requestedAllow=allow;setupLoad.loadedSave.clear();setupLoad.loadedAllow=false;setupLoad.loadedEpoch=0;}
+inline void acceptSetupLoad(const std::string& save,bool allow){setupLoad.witness.request();setupLoad.requestedSave=save;setupLoad.requestedAllow=allow;setupLoad.loadedSave.clear();setupLoad.loadedAllow=false;setupLoad.loadedEpoch=0;}
 inline void observeSetupLoad(GameWorld* world){
     // Never throws. synchronizeWorld first, so the recorded serial is the one of
-    // this ready frame and not of an earlier unavailable read.
-    if(!setupLoad.pending)return;
+    // this ready frame and not of an earlier unavailable read. Called from the
+    // loop hook and from the Renderer hook, which alone runs at the main menu.
+    if(!setupLoad.witness.pending)return;
     try{
-        synchronizeWorld(world);if(!worldReady(world)||lastRequestedSave!=setupLoad.requestedSave||!savedOriginEpoch.acceptsSaveName(setupLoad.requestedSave))return;
-        SaveManager* saves=SaveManager::getSingleton();if(!saves||saves->getCurrentGame()!=setupLoad.requestedSave)return;
+        synchronizeWorld(world);bool available=world&&world->initialized&&!world->gameResetting&&!world->isLoadingFromASaveGame();
+        bool ready=available&&worldReady(world)&&lastRequestedSave==setupLoad.requestedSave&&savedOriginEpoch.acceptsSaveName(setupLoad.requestedSave);
+        // SaveManager::name is the engine's own last load or save request: a UI
+        // load or a save made since the request names something else.
+        if(ready){SaveManager* saves=SaveManager::getSingleton();ready=saves&&!saves->signal&&saves->name==setupLoad.requestedSave;}
+        if(!setupLoad.witness.observe(available,ready))return;
     }catch(...){return;}
-    setupLoad.pending=false;setupLoad.loadedSave=setupLoad.requestedSave;setupLoad.loadedAllow=setupLoad.requestedAllow;setupLoad.loadedEpoch=savedOriginEpoch.serial();worldMutated=false;
+    setupLoad.loadedSave=setupLoad.requestedSave;setupLoad.loadedAllow=setupLoad.requestedAllow;setupLoad.loadedEpoch=savedOriginEpoch.serial();worldMutated=false;
 }
-inline bool setupProbeLoadCurrent(){return !setupLoad.pending&&!setupLoad.loadedSave.empty()&&setupLoad.loadedEpoch==savedOriginEpoch.serial()&&lastRequestedSave==setupLoad.loadedSave&&savedOriginEpoch.acceptsSaveName(setupLoad.loadedSave);}
+inline bool setupProbeLoadCurrent(){return !setupLoad.witness.pending&&!setupLoad.loadedSave.empty()&&setupLoad.loadedEpoch==savedOriginEpoch.serial()&&lastRequestedSave==setupLoad.loadedSave&&savedOriginEpoch.acceptsSaveName(setupLoad.loadedSave);}
 struct SetupRefusal {
     const char* code;const char* message;
     SetupRefusal():code(0),message(0){}
