@@ -29,8 +29,8 @@ OUTPUT = ROOT / 'dist' / TAG
 # Reviewed 0.13.0 binaries. KenshiProbe.dll was built from a clean tree and
 # reports its build commit through ping; the bootstrap embeds no commit.
 DLL_HASHES = {
-    'KenshiProbe.dll': '81aa2f88379f123630bd9111a8a344d024a8c4f13978f6dd8b8920a759f4ec1d',
-    'KenshiProbeBootstrap.dll': '99a1902957a494fb9fdc2483e25b9dc7ab495ca0a8adef80b99130cc463e4f90',
+    'KenshiProbe.dll': '243bbf023ffa7167f6d24ee250ddfbb2a31726f56e9946017068079a480cb898',
+    'KenshiProbeBootstrap.dll': '8c70d6821279a4bd40004a1fd9beb47a83b69a8094ce931834de8f7716903930',
 }
 MAIN_ZIP = 'KenshiProbe-' + TAG + '-win-x64.zip'
 
