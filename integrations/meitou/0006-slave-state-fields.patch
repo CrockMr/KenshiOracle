@@ -1,4 +1,4 @@
-From cd5a194dc9013ec8a81d1b339686bda649e3cc5f Mon Sep 17 00:00:00 2001
+From ce1618b52c384f8129c95bfe5c08bedde40fcec4 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 08:32:24 +0100
 Subject: [PATCH] Expose slave state and owner faction in oracle state 0.3
@@ -25,6 +25,7 @@ fixture is the public 65-case copy, three 0.3 cases included, and its
 pin is refreshed to that identity.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 41080c31c414aa67661ea3151f381ff4f74438ab)
 ---
  docs/oracle.md                                |  19 +-
  src/Meitou.Game/GameHost.Oracle.cs            |   2 +-
@@ -39,7 +40,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  10 files changed, 412 insertions(+), 11 deletions(-)
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index 6b44138d..cf6972dd 100644
+index 6b44138d9..cf6972ddb 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
 @@ -61,7 +61,8 @@ return `not_implemented`.
@@ -83,23 +84,23 @@ index 6b44138d..cf6972dd 100644
  and its first draws; it replaces the save's stored seed without rewriting that
  file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
-index c97604ae..c0b50be1 100644
+index 92db9831a..306974eb6 100644
 --- a/src/Meitou.Game/GameHost.Oracle.cs
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
-@@ -213,7 +213,7 @@ sealed partial class GameHost
+@@ -241,7 +241,7 @@ sealed partial class GameHost
          string filename = OracleText(p, "filename", 105);
          OracleHostPolicy.ValidateFilename(filename);
          string version = p.TryGetProperty("schema_version", out _) ? OracleText(p, "schema_version", 8) : "0.2";
 -        if (version is not ("0.1" or "0.2")) throw new ArgumentException("unsupported state schema_version");
 +        if (version is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("unsupported state schema_version");
-         var state = oracleState!.Capture(session, popData!, version);
+         var state = _oracleState!.Capture(Session, PopData!, version);
          byte[] bytes = OracleCanonicalJson.Serialize(state);
          if (bytes.Length > 64 * 1024 * 1024) throw new OracleHostError("state_unavailable", "state exceeds 64 MiB");
 diff --git a/src/Meitou.Game/GameHost.OracleSetup.cs b/src/Meitou.Game/GameHost.OracleSetup.cs
-index ef179b4c..32c9d57f 100644
+index 5739a0e34..6dd3d1dc1 100644
 --- a/src/Meitou.Game/GameHost.OracleSetup.cs
 +++ b/src/Meitou.Game/GameHost.OracleSetup.cs
-@@ -441,7 +441,7 @@ internal static partial class OracleSetupPolicy
+@@ -451,7 +451,7 @@ internal static partial class OracleSetupPolicy
      internal static JsonObject PingIdentity() => new()
      {
          ["target"] = "meitou", ["plugin_version"] = OracleProtocol.AdapterVersion, ["game_version"] = "MeitouClient",
@@ -109,7 +110,7 @@ index ef179b4c..32c9d57f 100644
      };
  
 diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
-index 2fa42efb..26155d4d 100644
+index 2fa42efbc..26155d4d3 100644
 --- a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 +++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 @@ -15,7 +15,7 @@ internal static class OracleCanonicalJson
@@ -122,26 +123,26 @@ index 2fa42efb..26155d4d 100644
          var output = new StringBuilder();
          Append(output, copy);
 diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
-index 34d1b67f..30fa6002 100644
+index d11e5ce5d..b04c6fa55 100644
 --- a/src/Meitou.Game/Oracle/OracleState.cs
 +++ b/src/Meitou.Game/Oracle/OracleState.cs
-@@ -37,7 +37,7 @@ internal sealed class OracleState
+@@ -39,7 +39,7 @@ internal sealed class OracleState
  
      internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = "0.2")
      {
 -        if (schemaVersion is not ("0.1" or "0.2")) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
 +        if (schemaVersion is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
-         if (!ReferenceEquals(world, session.World))
+         if (!ReferenceEquals(_world, session.World))
          {
-             world = session.World;
-@@ -120,12 +120,19 @@ internal sealed class OracleState
+             _world = session.World;
+@@ -122,12 +122,19 @@ internal sealed class OracleState
                  // A Meitou movement/AI task is not by itself proof of the original TaskType.
                  ["order"] = null,
              };
 -            if (schemaVersion == "0.2")
 +            if (schemaVersion != "0.1")
              {
-                 row["identity_origin"] = savedCharacters.Contains(id) ? "saved" : null;
+                 row["identity_origin"] = _savedCharacters.Contains(id) ? "saved" : null;
                  row["current_town_id"] = null; row["town_assignment"] = null;
                  row["in_combat"] = combat.TryGetValue(id, out bool mode) ? JsonValue.Create(mode) : null;
              }
@@ -155,17 +156,17 @@ index 34d1b67f..30fa6002 100644
              characters.Add(row);
          }
          var squadRows = new JsonArray();
-@@ -136,7 +143,7 @@ internal sealed class OracleState
-                          .Select(id => characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
-             var row = new JsonObject { ["id"] = squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
+@@ -138,7 +145,7 @@ internal sealed class OracleState
+                          .Select(id => _characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
+             var row = new JsonObject { ["id"] = _squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
                  ["leader_id"] = CharacterIdentity(squad.Leader) };
 -            if (schemaVersion == "0.2")
 +            if (schemaVersion != "0.1")
              {
-                 row["identity_origin"] = savedSquads.Contains(squad.Id) ? "saved" : null;
+                 row["identity_origin"] = _savedSquads.Contains(squad.Id) ? "saved" : null;
                  row["template_id"] = KnownId(squad.TemplateId); row["origin_town_id"] = null;
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
-index 77cd11ed..08571804 100644
+index 77cd11edf..085718040 100644
 --- a/tests/Meitou.Tests/Oracle/Fixtures/README.md
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 @@ -1,6 +1,7 @@
@@ -179,7 +180,7 @@ index 77cd11ed..08571804 100644
 +and three more check the additive state 0.3 slave fields.
  Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
-index 7115229e..f1d6688b 100644
+index 7115229e3..f1d6688ba 100644
 --- a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 @@ -4900,6 +4900,291 @@
@@ -475,7 +476,7 @@ index 7115229e..f1d6688b 100644
    ]
  }
 diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
-index 1060b5ff..851fe462 100644
+index 1060b5ffd..851fe462a 100644
 --- a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 @@ -9,7 +9,7 @@ namespace Meitou.Tests.Oracle;
@@ -521,10 +522,10 @@ index 1060b5ff..851fe462 100644
      public void Float_is_promoted_to_binary64_before_quantisation()
      {
 diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-index 249b1051..b0b30342 100644
+index aa8777708..ce9750cff 100644
 --- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-@@ -100,6 +100,7 @@ public class OracleSetupTests
+@@ -102,6 +102,7 @@ public class OracleSetupTests
          Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
          Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
          Assert.Equal("0.2", ping["state_schema_version"]!.GetValue<string>());
@@ -533,7 +534,7 @@ index 249b1051..b0b30342 100644
      }
  
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-index a550f091..a25ece43 100644
+index 72976aa11..350af7bb1 100644
 --- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 @@ -1,5 +1,7 @@
@@ -544,7 +545,7 @@ index a550f091..a25ece43 100644
  using Meitou.Data;
  using Meitou.Data.Fcs;
  using Meitou.Data.Gameplay;
-@@ -143,6 +145,70 @@ public class OracleStateTests
+@@ -146,6 +148,70 @@ public class OracleStateTests
          Assert.Equal("0.1", old["schema_version"]!.GetValue<string>());
      }
  

@@ -1,4 +1,4 @@
-From 8677d68da41e8961972e387c565c0f678618e79b Mon Sep 17 00:00:00 2001
+From 1730fec7519fbe6ffa64fd5236623b51dee084d6 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 22:48:51 +0100
 Subject: [PATCH] Expose state 0.4 fields and task-row orders in the oracle
@@ -46,6 +46,7 @@ is the 69-case copy of KenshiOracle schema/canonical-vectors.json
 pin updated.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 681f9f5a7c1afd2dd9d74fdd09f2d4be8cfaba8a)
 ---
  docs/oracle.md                                |  37 +-
  src/Meitou.Game/GameHost.Oracle.cs            |   4 +-
@@ -64,7 +65,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  create mode 100644 tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index cf6972dd..e70f2aaf 100644
+index cf6972ddb..e70f2aafd 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
 @@ -61,8 +61,8 @@ return `not_implemented`.
@@ -133,10 +134,10 @@ index cf6972dd..e70f2aaf 100644
  and its first draws; it replaces the save's stored seed without rewriting that
  file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
-index c0b50be1..edc2fbfe 100644
+index 306974eb6..3a3cf9e0f 100644
 --- a/src/Meitou.Game/GameHost.Oracle.cs
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
-@@ -212,8 +212,8 @@ sealed partial class GameHost
+@@ -240,8 +240,8 @@ sealed partial class GameHost
          OracleKeys(p, "filename", "schema_version"); RequireOracleWorld(true);
          string filename = OracleText(p, "filename", 105);
          OracleHostPolicy.ValidateFilename(filename);
@@ -144,14 +145,14 @@ index c0b50be1..edc2fbfe 100644
 -        if (version is not ("0.1" or "0.2" or "0.3")) throw new ArgumentException("unsupported state schema_version");
 +        string version = p.TryGetProperty("schema_version", out _) ? OracleText(p, "schema_version", 8) : OracleState.DefaultSchemaVersion;
 +        if (!OracleState.SchemaVersions.Contains(version)) throw new ArgumentException("unsupported state schema_version");
-         var state = oracleState!.Capture(session, popData!, version);
+         var state = _oracleState!.Capture(Session, PopData!, version);
          byte[] bytes = OracleCanonicalJson.Serialize(state);
          if (bytes.Length > 64 * 1024 * 1024) throw new OracleHostError("state_unavailable", "state exceeds 64 MiB");
 diff --git a/src/Meitou.Game/GameHost.OracleSetup.cs b/src/Meitou.Game/GameHost.OracleSetup.cs
-index 32c9d57f..11b2a32d 100644
+index 6dd3d1dc1..fae09e762 100644
 --- a/src/Meitou.Game/GameHost.OracleSetup.cs
 +++ b/src/Meitou.Game/GameHost.OracleSetup.cs
-@@ -441,7 +441,8 @@ internal static partial class OracleSetupPolicy
+@@ -451,7 +451,8 @@ internal static partial class OracleSetupPolicy
      internal static JsonObject PingIdentity() => new()
      {
          ["target"] = "meitou", ["plugin_version"] = OracleProtocol.AdapterVersion, ["game_version"] = "MeitouClient",
@@ -162,7 +163,7 @@ index 32c9d57f..11b2a32d 100644
      };
  
 diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
-index 26155d4d..c809a14c 100644
+index 26155d4d3..c809a14cc 100644
 --- a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 +++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 @@ -15,7 +15,7 @@ internal static class OracleCanonicalJson
@@ -175,7 +176,7 @@ index 26155d4d..c809a14c 100644
          var output = new StringBuilder();
          Append(output, copy);
 diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
-index 30fa6002..b0af38c8 100644
+index b04c6fa55..e617b6bab 100644
 --- a/src/Meitou.Game/Oracle/OracleState.cs
 +++ b/src/Meitou.Game/Oracle/OracleState.cs
 @@ -4,6 +4,7 @@ using System.Security.Cryptography;
@@ -185,10 +186,10 @@ index 30fa6002..b0af38c8 100644
 +using Meitou.Data.Gameplay.Ai;
  using Meitou.Data.Gameplay.Bodies;
  using Meitou.Data.Save;
- using Meitou.Engine;
-@@ -35,9 +36,15 @@ internal sealed class OracleState
+ using Meitou.Game.Host;
+@@ -37,9 +38,15 @@ internal sealed class OracleState
      internal static string SavedHandId(Hand hand) => string.Create(CultureInfo.InvariantCulture,
-         $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.CS)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
+         $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.Cs)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
  
 -    internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = "0.2")
 +    /// <summary>The state schemas the adapter writes, oldest first; each adds keys to the one before and never changes them.</summary>
@@ -201,10 +202,10 @@ index 30fa6002..b0af38c8 100644
 +        int level = Array.IndexOf(SchemaVersions, schemaVersion);
 +        if (level < 0) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
 +        bool v02 = level >= 1, v03 = level >= 2, v04 = level >= 3;
-         if (!ReferenceEquals(world, session.World))
+         if (!ReferenceEquals(_world, session.World))
          {
-             world = session.World;
-@@ -104,9 +111,15 @@ internal sealed class OracleState
+             _world = session.World;
+@@ -106,9 +113,15 @@ internal sealed class OracleState
                  {
                      string partId = part.Template.StringId + Side(part.Template.Side);
                      if (KnownId(part.Template.StringId) is null || !partIds.Add(partId)) { health = null; break; }
@@ -222,7 +223,7 @@ index 30fa6002..b0af38c8 100644
                  }
              }
              var row = new JsonObject
-@@ -117,22 +130,23 @@ internal sealed class OracleState
+@@ -119,22 +132,23 @@ internal sealed class OracleState
                  ["position"] = Position(hot[id.Slot].Position),
                  ["state"] = medical is null ? null : medical.Dead ? "dead" : medical.Unconscious ? "unconscious" : "alive",
                  ["health"] = health,
@@ -234,7 +235,7 @@ index 30fa6002..b0af38c8 100644
 -            if (schemaVersion != "0.1")
 +            if (v02)
              {
-                 row["identity_origin"] = savedCharacters.Contains(id) ? "saved" : null;
+                 row["identity_origin"] = _savedCharacters.Contains(id) ? "saved" : null;
                  row["current_town_id"] = null; row["town_assignment"] = null;
                  row["in_combat"] = combat.TryGetValue(id, out bool mode) ? JsonValue.Create(mode) : null;
              }
@@ -250,14 +251,14 @@ index 30fa6002..b0af38c8 100644
              characters.Add(row);
          }
          var squadRows = new JsonArray();
-@@ -143,11 +157,13 @@ internal sealed class OracleState
-                          .Select(id => characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
-             var row = new JsonObject { ["id"] = squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
+@@ -145,11 +159,13 @@ internal sealed class OracleState
+                          .Select(id => _characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
+             var row = new JsonObject { ["id"] = _squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
                  ["leader_id"] = CharacterIdentity(squad.Leader) };
 -            if (schemaVersion != "0.1")
 +            if (v02)
              {
-                 row["identity_origin"] = savedSquads.Contains(squad.Id) ? "saved" : null;
+                 row["identity_origin"] = _savedSquads.Contains(squad.Id) ? "saved" : null;
                  row["template_id"] = KnownId(squad.TemplateId); row["origin_town_id"] = null;
              }
 +            // The squad's purse in cats (platoon save key money): an integer, null outside the oracle's numeric range.
@@ -265,7 +266,7 @@ index 30fa6002..b0af38c8 100644
              squadRows.Add(row);
          }
          var factions = new JsonArray();
-@@ -185,6 +201,80 @@ internal sealed class OracleState
+@@ -187,6 +203,80 @@ internal sealed class OracleState
          return "local:" + kind + ":" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
      }
  
@@ -348,7 +349,7 @@ index 30fa6002..b0af38c8 100644
      static JsonNode? Number(double value) => double.IsFinite(value) && Math.Abs(value) <= 1e9 ? JsonValue.Create(value) : null;
 diff --git a/src/Meitou.Game/Oracle/OracleTaskNames.cs b/src/Meitou.Game/Oracle/OracleTaskNames.cs
 new file mode 100644
-index 00000000..071d19fc
+index 000000000..071d19fc8
 --- /dev/null
 +++ b/src/Meitou.Game/Oracle/OracleTaskNames.cs
 @@ -0,0 +1,310 @@
@@ -663,7 +664,7 @@ index 00000000..071d19fc
 +    ];
 +}
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
-index 08571804..2d95c186 100644
+index 085718040..2d95c1862 100644
 --- a/tests/Meitou.Tests/Oracle/Fixtures/README.md
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 @@ -1,7 +1,8 @@
@@ -678,7 +679,7 @@ index 08571804..2d95c186 100644
 +state 0.4 fields (medical, stats, part care, holding and carrying, squad money).
  Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
-index f1d6688b..2a753bac 100644
+index f1d6688ba..2a753bacb 100644
 --- a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 @@ -5185,6 +5185,704 @@
@@ -1387,7 +1388,7 @@ index f1d6688b..2a753bac 100644
    ]
  }
 diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
-index 851fe462..90f541e4 100644
+index 851fe462a..90f541e4b 100644
 --- a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 @@ -9,7 +9,7 @@ namespace Meitou.Tests.Oracle;
@@ -1441,10 +1442,10 @@ index 851fe462..90f541e4 100644
      public void Float_is_promoted_to_binary64_before_quantisation()
      {
 diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-index b0b30342..7c4f60af 100644
+index ce9750cff..86943f015 100644
 --- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-@@ -99,8 +99,9 @@ public class OracleSetupTests
+@@ -101,8 +101,9 @@ public class OracleSetupTests
          var ping = OracleSetupPolicy.PingIdentity();
          Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
          Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
@@ -1457,7 +1458,7 @@ index b0b30342..7c4f60af 100644
      }
  
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-index a25ece43..21d8e80d 100644
+index 350af7bb1..e07c674fb 100644
 --- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 @@ -1,10 +1,12 @@
@@ -1472,16 +1473,16 @@ index a25ece43..21d8e80d 100644
 +using Meitou.Data.Gameplay.Ai;
  using Meitou.Data.Gameplay.Bodies;
  using Meitou.Data.Save;
- using Meitou.Engine;
-@@ -12,6 +14,7 @@ using Meitou.Engine.Time;
+ using Meitou.Game.Host;
+@@ -12,6 +14,7 @@ using Meitou.Simulation.Session;
  using Meitou.Game.Oracle;
  using Meitou.Simulation;
  using Meitou.Simulation.Bodies;
 +using Meitou.Simulation.Locks;
  using Meitou.Simulation.Saving;
- 
- namespace Meitou.Tests.Oracle;
-@@ -38,6 +41,49 @@ public class OracleStateTests
+ using Meitou.Simulation.Factions;
+ using Meitou.Simulation.Movement;
+@@ -41,6 +44,49 @@ public class OracleStateTests
          return new SavedCharacterLink { Source = character, PlatoonName = platoon.Name, Slot = 10 };
      }
  
@@ -1504,7 +1505,7 @@ index a25ece43..21d8e80d 100644
 +        {
 +            Name = "Medic", Save = saved, SquadId = 4, Faction = 1, Medical = Body(40), Stats = stats, SlaveState = 1, SlaveOwner = 0,
 +            Carrying = patient, TreatTarget = patient,
-+            Running = new RunningTask(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, TaskSource.Order, -1, patient, null, 0),
++            Running = new RunningTask(CharacterTask.Treat, TaskType.FirstAidOrder, TaskSource.Order, -1, patient, null, 0),
 +        };
 +        var medic = session.World.Characters.Spawn(new CharacterHot { Position = new Vector3(1, 2, 3), Task = (byte)CharacterTask.Treat }, medicCold, 0);
 +        patientCold.CarriedBy = medic;
@@ -1531,7 +1532,7 @@ index a25ece43..21d8e80d 100644
      [Fact]
      public void Full_saved_hand_uses_all_unsigned_component_bits()
      {
-@@ -197,7 +243,8 @@ public class OracleStateTests
+@@ -200,7 +246,8 @@ public class OracleStateTests
              "identity_origin", "current_town_id", "town_assignment", "in_combat"], v02["characters"]![0]!.AsObject().Select(pair => pair.Key));
          Assert.Equal(["id", "faction_id", "members", "leader_id", "identity_origin", "template_id", "origin_town_id"],
              v02["squads"]![0]!.AsObject().Select(pair => pair.Key));
@@ -1541,7 +1542,7 @@ index a25ece43..21d8e80d 100644
          var v03 = projection.Capture(session, Data(), "0.3");
          string canonical03 = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(v03));
          // Canonical scalar key order places the new keys between race_id and squad_id.
-@@ -206,7 +253,187 @@ public class OracleStateTests
+@@ -209,7 +256,187 @@ public class OracleStateTests
          stripped["schema_version"] = "0.2";
          foreach (var row in stripped["characters"]!.AsArray()) { row!.AsObject().Remove("slave_state"); row.AsObject().Remove("slave_owner_faction_id"); }
          Assert.Equal(OracleCanonicalJson.Serialize(v02), OracleCanonicalJson.Serialize(stripped));
@@ -1668,15 +1669,15 @@ index a25ece43..21d8e80d 100644
 +    }
 +
 +    [Theory]
-+    [InlineData(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, CharacterTask.Treat, "first_aid_order", true)]
-+    [InlineData(CharacterTask.GoTo, TaskType.MOVE_CUS_ORDERED, CharacterTask.GoTo, "move_cus_ordered", false)]
-+    [InlineData(CharacterTask.Treat, TaskType.SPLINT_ORDER, CharacterTask.Treat, "splint_order", true)]
++    [InlineData(CharacterTask.Treat, TaskType.FirstAidOrder, CharacterTask.Treat, "first_aid_order", true)]
++    [InlineData(CharacterTask.GoTo, TaskType.MoveCusOrdered, CharacterTask.GoTo, "move_cus_ordered", false)]
++    [InlineData(CharacterTask.Treat, TaskType.SplintOrder, CharacterTask.Treat, "splint_order", true)]
 +    // Task_Blank goal rows: an attack's goal (16), the medic job (58) and the splint job (250) are no order.
-+    [InlineData(CharacterTask.Attack, TaskType.ATTACK_ENEMIES, CharacterTask.Attack, null, true)]
-+    [InlineData(CharacterTask.Treat, TaskType.JOB_MEDIC, CharacterTask.Treat, null, true)]
-+    [InlineData(CharacterTask.Treat, TaskType.SPLINT_JOB, CharacterTask.Treat, null, true)]
++    [InlineData(CharacterTask.Attack, TaskType.AttackEnemies, CharacterTask.Attack, null, true)]
++    [InlineData(CharacterTask.Treat, TaskType.JobMedic, CharacterTask.Treat, null, true)]
++    [InlineData(CharacterTask.Treat, TaskType.SplintJob, CharacterTask.Treat, null, true)]
 +    // A stale provenance (the character runs another task now) and row 0 are no order.
-+    [InlineData(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, CharacterTask.Idle, null, true)]
++    [InlineData(CharacterTask.Treat, TaskType.FirstAidOrder, CharacterTask.Idle, null, true)]
 +    [InlineData(CharacterTask.GoTo, TaskType.None, CharacterTask.GoTo, null, false)]
 +    // 289 and 290 have no Meitou enum name, but the native table names them by number.
 +    [InlineData(CharacterTask.Follow, TaskType.Unnamed289, CharacterTask.Follow, "stay_close_to_target_animal", true)]
@@ -1710,7 +1711,7 @@ index a25ece43..21d8e80d 100644
 +        var gone = session.World.Characters.Spawn(new CharacterHot(), new CharacterCold(), 0);
 +        session.World.Characters.Remove(gone);
 +        session.World.Characters.Spawn(new CharacterHot { Task = (byte)CharacterTask.Treat }, new CharacterCold { Name = "medic",
-+            Running = new RunningTask(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, TaskSource.Order, -1, gone, null, 0) }, 0);
++            Running = new RunningTask(CharacterTask.Treat, TaskType.FirstAidOrder, TaskSource.Order, -1, gone, null, 0) }, 0);
 +        session.World.Characters.Spawn(new CharacterHot { Task = (byte)CharacterTask.GoTo }, new CharacterCold { Name = "walker" }, 0);
 +        var state = new OracleState().Capture(session, Data(), "0.4");
 +        JsonNode Row(string name) => state["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!;
@@ -1724,15 +1725,15 @@ index a25ece43..21d8e80d 100644
 +    {
 +        Assert.Equal(147, OracleState.TaskBlankRows.Count);
 +        Assert.All(OracleState.TaskBlankRows, row => Assert.InRange(row, 1, 290));
-+        Assert.Contains((int)TaskType.ATTACK_ENEMIES, OracleState.TaskBlankRows);
-+        Assert.DoesNotContain((int)TaskType.FIRST_AID_ORDER, OracleState.TaskBlankRows);
-+        Assert.DoesNotContain((int)TaskType.MOVE_CUS_ORDERED, OracleState.TaskBlankRows);
++        Assert.Contains((int)TaskType.AttackEnemies, OracleState.TaskBlankRows);
++        Assert.DoesNotContain((int)TaskType.FirstAidOrder, OracleState.TaskBlankRows);
++        Assert.DoesNotContain((int)TaskType.MoveCusOrdered, OracleState.TaskBlankRows);
      }
  
      [Fact]
 diff --git a/tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs b/tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs
 new file mode 100644
-index 00000000..33cbca5f
+index 000000000..06a178b6f
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleTaskNamesTests.cs
 @@ -0,0 +1,42 @@
@@ -1762,10 +1763,10 @@ index 00000000..33cbca5f
 +    [Fact]
 +    public void Table_agrees_with_the_meitou_enum_numbering_except_the_known_renames()
 +    {
-+        // Meitou's TaskType has the same numbers (0 to 290) as KenshiLib's enum; where the symbols agree, the native name is the symbol lowercased.
++        // Meitou's TaskType has the same numbers (0 to 290) as KenshiLib's enum; where the symbols agree, the native lower_snake name without its underscores is the PascalCase symbol lowercased.
 +        Assert.Equal(Enumerable.Range(0, 291), Enum.GetValues<TaskType>().Select(t => (int)t).Order());
 +        var differences = Enumerable.Range(0, 291)
-+            .Where(row => OracleTaskNames.Of(row) != ((TaskType)row).ToString().ToLowerInvariant()).ToArray();
++            .Where(row => OracleTaskNames.Of(row)?.Replace("_", "") != ((TaskType)row).ToString().ToLowerInvariant()).ToArray();
 +        Assert.Equal(KnownDifferences, differences);
 +        Assert.Equal("stand_at_guard_node_homebuilding_in_out", OracleTaskNames.Of(38));
 +        Assert.Equal("get_up_stay_down_though", OracleTaskNames.Of(52));
@@ -1774,7 +1775,7 @@ index 00000000..33cbca5f
 +        Assert.Equal("gather_prisoners_from_cages_if_female_or_beast", OracleTaskNames.Of(245));
 +        Assert.Equal("stay_close_to_target_animal", OracleTaskNames.Of(289));
 +        Assert.Equal("bash_gate_player_order", OracleTaskNames.Of(290));
-+        Assert.Equal("first_aid_order", OracleTaskNames.Of((int)TaskType.FIRST_AID_ORDER));
-+        Assert.Equal("move_cus_ordered", OracleTaskNames.Of((int)TaskType.MOVE_CUS_ORDERED));
++        Assert.Equal("first_aid_order", OracleTaskNames.Of((int)TaskType.FirstAidOrder));
++        Assert.Equal("move_cus_ordered", OracleTaskNames.Of((int)TaskType.MoveCusOrdered));
 +    }
 +}

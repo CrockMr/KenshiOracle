@@ -1,31 +1,30 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
-  "upstream_base": "88ae71a1eeb65bc7081751f19763f032093b2621",
-  "fork_tip": "3a862bf0f5054a14bfd45f42318134402d2ef366",
+  "upstream_base": "8ae1141a2c91598a161eefd68dc277cc0aeaabb4",
+  "fork_tip": "e3a37180abe706c05f866e1da2135f0f0ebf0d31",
   "upstream_review": {
     "head_seen": {
-      "commit": "c80362dc27bdcf155bbc59efff1df3b241da6956",
+      "commit": "8ae1141a2c91598a161eefd68dc277cc0aeaabb4",
       "date": "2026-11-12",
-      "commits_after_base": 1757,
-      "source": "GitHub comparison of the base with master; nothing applied or built"
+      "commits_after_base": 0,
+      "source": "local mirror of upstream master, fetched 2026-11-12 after the rebase"
     },
     "last_application_check": {
-      "commit": "8d79ee9e4928e3c1073f28bba7c023ee175c5a9f",
-      "date": "2026-11-02",
-      "commits_after_base": 250,
-      "applies": false,
-      "first_conflict": {
-        "patch": "0002-opt-in-oracle-adapter.patch",
-        "files": [
-          "src/Meitou.Game/GameOptions.cs"
-        ]
-      },
-      "source": "local git am --3way check; report not distributed"
+      "commit": "8ae1141a2c91598a161eefd68dc277cc0aeaabb4",
+      "date": "2026-11-12",
+      "commits_after_base": 0,
+      "applies": true,
+      "built": true,
+      "source": "git am of the published patches on a scratch checkout of the base; Release build and tests with .NET SDK 11.0.100"
     },
-    "unpublished_port": {
+    "previous_base": {
+      "commit": "88ae71a1eeb65bc7081751f19763f032093b2621",
+      "commits_before_base": 1759
+    },
+    "findings_builds": {
       "commit": "c09ed01c3d26eeb69433dbd6c69fae7dc71b554f",
-      "commits_after_base": 1324,
-      "note": "private builds behind the findings after 2026-11-03; not reproducible from this series"
+      "commits_before_base": 435,
+      "note": "private builds behind the MeitouClient findings after 2026-11-03; no hold or campaign has run on this series"
     }
   },
   "license": "GPL-3.0-or-later",
@@ -33,63 +32,63 @@
   "patches": [
     {
       "file": "0001-exact-camera-restoration.patch",
-      "source_commit": "e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c",
-      "sha256": "d36a1aa39be270b2d2a61cd5d376a08a6ab68766a2c6a68cf52bd5e88954a89f",
-      "bytes": 6476
+      "source_commit": "8e8d83bcfe98d7e6d468e0248b5843176e71b316",
+      "sha256": "118e64a1e0c931b0238d8950590ca6acabcf8f0ca6fed55e191b49ff80e10e22",
+      "bytes": 6763
     },
     {
       "file": "0002-opt-in-oracle-adapter.patch",
-      "source_commit": "2b10478095651fdfbb5fd7ea38c8a20ef9e75750",
-      "sha256": "a77ceb9f55507c51acdb455fcefb221962f9a849bdd43affffbbd8b8fecd8276",
-      "bytes": 334064
+      "source_commit": "b9cf5f3c6735ab6b60d8bb84f550b4b8874d911e",
+      "sha256": "a0ce9ba345ea2a3861c915775543cececd69d2b33f635c4c55a5e52dc01dc187",
+      "bytes": 337600
     },
     {
       "file": "0003-scene-setup-simulation.patch",
-      "source_commit": "8b255b96d877094e184edce14b212afbd893ada4",
-      "sha256": "3d8bd3d011294ef133df5017843d77ee71876398df9444a8027c47d492ceef75",
-      "bytes": 14676
+      "source_commit": "24bcadb0fd6fcb317afa8657256ca15933bc1759",
+      "sha256": "4de0bc1c09efba166eeaabef1cfcfe3315330932e4f20919ca35f3be53880a9d",
+      "bytes": 14484
     },
     {
       "file": "0004-scene-setup-adapter.patch",
-      "source_commit": "893114dec3a8543ade4147fb8f2f4040ac4cf365",
-      "sha256": "0632138778c0c1cd1294da61442f35905cd64cc3bd6faf68ee1ad765f0a9e711",
-      "bytes": 67753
+      "source_commit": "9035e0a05b07bcb0b8d66b019affdb3923e127c4",
+      "sha256": "52f3dd95c3c7e289e04819eb11cfa5d611cbb28e196006bcafe0611445daef0f",
+      "bytes": 68888
     },
     {
       "file": "0005-calculated-health-maxima.patch",
-      "source_commit": "5ab88d9a8960e75241965c1e48b3760544db264e",
-      "sha256": "0ad1b6d007624001f4fb2b0dfda5b04c6d09229c9f51b34d3ccfb88434530e53",
-      "bytes": 7712
+      "source_commit": "2416f2d1486f84da1558f6e94eb987b71e42af35",
+      "sha256": "cdabc2f5760e76110ee7f338fae5b223182684997f1641ffc0165bbe912eeb32",
+      "bytes": 7787
     },
     {
       "file": "0006-slave-state-fields.patch",
-      "source_commit": "cd5a194dc9013ec8a81d1b339686bda649e3cc5f",
-      "sha256": "b57a2bcd00db17069094b14ad1c9cdcdfc3b38baa3d27723c7d27f999cb93459",
-      "bytes": 35074
+      "source_commit": "ce1618b52c384f8129c95bfe5c08bedde40fcec4",
+      "sha256": "d246f57d813c3ec5b005add4313c67748109f5b72ca4a3b5d882d06b31650e75",
+      "bytes": 35170
     },
     {
       "file": "0007-state-04-fields-and-task-orders.patch",
-      "source_commit": "8677d68da41e8961972e387c565c0f678618e79b",
-      "sha256": "78bc1caa1f396b6efe511a59c8680bcfab56a50adecfeff5f744b3c61b8968de",
-      "bytes": 102368
+      "source_commit": "1730fec7519fbe6ffa64fd5236623b51dee084d6",
+      "sha256": "691552eb7c326a951d93ea59aee9ba02fbd83f374490bcba94ea8b7c8f6d7c3e",
+      "bytes": 102561
     },
     {
       "file": "0008-state-05-goals-and-plan-step-orders.patch",
-      "source_commit": "198f4f8149aa06589c39d52f7688925591d67197",
-      "sha256": "c8891e376c1306ba1590d42275cf1f5603c874b0732446e43d764c5f52ca28fe",
-      "bytes": 71535
+      "source_commit": "d34c3bbafb8d7201a9b55105933b41079dcb8105",
+      "sha256": "2f4d4ad39672674ff56a661d831dad36aa293fc745e17a297652cf4d6b0a6996",
+      "bytes": 71581
     },
     {
       "file": "0009-captive-job-goals.patch",
-      "source_commit": "9e16733617a47f647ed91ef98f62994bf3580d12",
-      "sha256": "a8a39977fff75ebc4709a02c347dfa826f2c850e20ef8d7fafd5d34e92d0dbb5",
-      "bytes": 11457
+      "source_commit": "957405fa156c3d56cbf7ee4f09cddc1d1053dd26",
+      "sha256": "1c905cc6d3788867673f9d51ee538835901fb043d9608f8605f48dad32dd346c",
+      "bytes": 7809
     },
     {
       "file": "0010-adapter-version-0.12.0.patch",
-      "source_commit": "3a862bf0f5054a14bfd45f42318134402d2ef366",
-      "sha256": "1dce42fb0e8e60f263e6dcad7a7f1a32b9fe3f38dc1c9d272148ad31ce5296c6",
-      "bytes": 2996
+      "source_commit": "e3a37180abe706c05f866e1da2135f0f0ebf0d31",
+      "sha256": "2557593688fe2146f9dd0e67022af1ee49e12622911e19dce9623353a77ac13f",
+      "bytes": 3073
     }
   ]
 }

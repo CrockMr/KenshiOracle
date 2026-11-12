@@ -17,9 +17,10 @@ records what the oracle found. It is not a MeitouClient changelog.
 - **The follow-up holds** ran the same scenario with the fix applied in a private build, one fix at a time.
 - **Statuses** are those of 2026-11-12.
 - **Reproducibility:** the holds after the 0.5 check ran on private builds where the adapter was carried by hand onto
-  later MeitouClient commits, the last one `c09ed01c`. That port is not published: the
-  [patch series](../integrations/meitou/README.md#upstream-drift) still targets `88ae71a1`, so the figures of those holds
-  cannot be rebuilt from this repository alone.
+  later MeitouClient commits, the last one `c09ed01c`. That port is not published. The
+  [patch series](../integrations/meitou/README.md#upstream-drift) has since been rebased onto `8ae1141a` (2026-11-12), which
+  contains the merged fixes below, but no hold has run on it: the figures of those holds are not reproduced from this
+  repository yet.
 
 ## Findings at Rebirth
 

@@ -1,26 +1,29 @@
-From e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c Mon Sep 17 00:00:00 2001
+From 8e8d83bcfe98d7e6d468e0248b5843176e71b316 Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:41:14 +0100
 Subject: [PATCH] Add exact camera pose restoration for controlled sessions
 
 (cherry picked from commit bf0753b9853dd15935c154f236fb43297e7bb34f)
 (cherry picked from commit 99add603ab4077e924020ea5a1ffb4d37d55ee20)
+(cherry picked from commit 460b5bbbd6964518cd57a0f7da856c0db613b04f)
 ---
- src/Meitou.Engine/Cameras/CameraRig.cs        | 14 +++++
- src/Meitou.Engine/Cameras/StrategyCamera.cs   | 20 +++++++
+ src/Meitou.Game/Host/Cameras/CameraRig.cs     | 16 ++++++
+ .../Host/Cameras/StrategyCamera.cs            | 29 ++++++++++
  .../Engine/OracleCameraRestoreTests.cs        | 54 +++++++++++++++++++
- 3 files changed, 88 insertions(+)
+ 3 files changed, 99 insertions(+)
  create mode 100644 tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs
 
-diff --git a/src/Meitou.Engine/Cameras/CameraRig.cs b/src/Meitou.Engine/Cameras/CameraRig.cs
-index 71d52118..17a0672b 100644
---- a/src/Meitou.Engine/Cameras/CameraRig.cs
-+++ b/src/Meitou.Engine/Cameras/CameraRig.cs
-@@ -64,6 +64,20 @@ public sealed class CameraRig
-         states.Snap(Strategy.State);
+diff --git a/src/Meitou.Game/Host/Cameras/CameraRig.cs b/src/Meitou.Game/Host/Cameras/CameraRig.cs
+index 35a22582b..086856fe0 100644
+--- a/src/Meitou.Game/Host/Cameras/CameraRig.cs
++++ b/src/Meitou.Game/Host/Cameras/CameraRig.cs
+@@ -102,6 +102,22 @@ public sealed class CameraRig
+         _states.Snap(Strategy.State);
      }
  
-+    /// <summary>Restores a captured camera pose as a cut, including strategy pivot height. Free flight starts at rest and retains its existing ground clearance rule.</summary>
++    /// <summary>
++    /// Restores a captured camera pose as a cut, including strategy pivot height. Free flight starts at rest and retains its existing ground clearance rule.
++    /// </summary>
 +    public void RestorePose(Vector3 target, float yaw, float pitch, float distance, bool free)
 +    {
 +        // The strategy method validates before either camera is changed and removes old turn/tilt input history.
@@ -31,59 +34,68 @@ index 71d52118..17a0672b 100644
 +            Free.Enter(new CameraState(eye, Vector3.Normalize(target - eye), Vector3.UnitY, target, yaw, pitch, distance, true));
 +        }
 +        IsFree = free;
-+        states.Snap(free ? Free.State : Strategy.State);
++        _states.Snap(free ? Free.State : Strategy.State);
 +    }
 +
      /// <summary>
      /// Cuts to the free camera at <paramref name="from"/>'s eye looking the same way (a host's camera handed back, e.g. after the
      /// cinematic camera flew it: only the free camera can stand at any eye); with <paramref name="strategy"/> it then leaves free flight
-diff --git a/src/Meitou.Engine/Cameras/StrategyCamera.cs b/src/Meitou.Engine/Cameras/StrategyCamera.cs
-index eafb87a2..e44bb319 100644
---- a/src/Meitou.Engine/Cameras/StrategyCamera.cs
-+++ b/src/Meitou.Engine/Cameras/StrategyCamera.cs
-@@ -80,6 +80,24 @@ public sealed class StrategyCamera
+diff --git a/src/Meitou.Game/Host/Cameras/StrategyCamera.cs b/src/Meitou.Game/Host/Cameras/StrategyCamera.cs
+index a2c173140..318928b27 100644
+--- a/src/Meitou.Game/Host/Cameras/StrategyCamera.cs
++++ b/src/Meitou.Game/Host/Cameras/StrategyCamera.cs
+@@ -129,6 +129,26 @@ public sealed class StrategyCamera
          State = Compute();
      }
  
-+    /// <summary>Restores a captured pivot including its current height and clears pending turn/tilt smoothing. The next normal update still applies ground clearance.</summary>
++    /// <summary>
++    /// Restores a captured pivot including its current height and clears pending turn/tilt smoothing. The next normal update still applies ground clearance.
++    /// </summary>
 +    public void RestorePose(Vector3 pivot, float yaw, float pitch, float distance)
 +    {
 +        if (!float.IsFinite(pivot.X) || !float.IsFinite(pivot.Y) || !float.IsFinite(pivot.Z) || !float.IsFinite(yaw)
 +            || !float.IsFinite(pitch) || MathF.Abs(pitch) >= MathF.PI / 2 || !float.IsFinite(distance)
 +            || distance < KenshiCamera.MinDistance || distance > KenshiCamera.MaxDistance)
 +            throw new ArgumentOutOfRangeException(nameof(pivot), "a finite camera pose within the boom and pitch limits is required");
-+        PivotXZ = new Vector2(pivot.X, pivot.Z);
-+        pivotY = heightGoal = pivot.Y;
-+        heightSpeed = 0;
++        PivotXz = new Vector2(pivot.X, pivot.Z);
++        _pivotY = _heightGoal = pivot.Y;
++        _heightSpeed = 0;
 +        Yaw = Interp.WrapAngle(yaw);
 +        Pitch = pitch;
 +        Distance = distance;
-+        yawInput.Clear();
-+        pitchInput.Clear();
++        _yawInput.Clear();
++        _pitchInput.Clear();
 +        State = Compute();
 +    }
 +
-     /// <summary>One zoom step of <paramref name="notches"/> wheel notches (positive zooms in).</summary>
-     public void Zoom(float notches)
-     {
-@@ -270,6 +288,8 @@ public sealed class StrategyCamera
-         readonly float[] samples = new float[frames];
-         int newest;
+     /// <summary>
+     /// One zoom step of <paramref name="notches"/> wheel notches (positive zooms in).
+     /// </summary>
+@@ -347,6 +367,15 @@ public sealed class StrategyCamera
+         /// </summary>
+         int _newest;
  
-+        public void Clear() { Array.Clear(samples); newest = 0; }
++        /// <summary>
++        /// Forgets the kept frames, so the next average starts from rest.
++        /// </summary>
++        public void Clear()
++        {
++            Array.Clear(_samples);
++            _newest = 0;
++        }
 +
-         public float Push(float value)
-         {
-             newest = (newest + 1) % samples.Length;
+         /// <summary>
+         /// Adds a frame's input and returns the weighted average.
+         /// </summary>
 diff --git a/tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs b/tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs
 new file mode 100644
-index 00000000..95c2019d
+index 000000000..4290621c9
 --- /dev/null
 +++ b/tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs
 @@ -0,0 +1,54 @@
 +using System.Numerics;
-+using Meitou.Engine.Cameras;
-+using Meitou.Engine.Input;
++using Meitou.Game.Host.Cameras;
++using Meitou.Game.Host.Input;
 +
 +namespace Meitou.Tests.Engine;
 +

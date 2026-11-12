@@ -13,8 +13,8 @@ The public series has exactly ten patches, in order: exact camera restoration,
 the opt-in Oracle adapter, the scene-setup simulation entry points, the
 scene-setup adapter commands, the calculated health maxima in the state
 dump, the slave state and owner faction in state 0.3, the state 0.4 fields
-and task-row orders, the state 0.5 goals and plan-step orders, the captive job
-goals in state 0.5, then the adapter version 0.12.0. [series.json](../integrations/meitou/series.json)
+and task-row orders, the state 0.5 goals and plan-step orders, the check of
+captive job goals in state 0.5, then the adapter version 0.12.0. [series.json](../integrations/meitou/series.json)
 is the source of truth for the upstream base, the fork tip, and each patch's
 source commit, SHA-256 and byte size. A maintainer may carry further local
 commits on top (diagnostic instrumentation, test-only commands); they are not
@@ -142,6 +142,32 @@ upstream commit or release tag, `$OracleRoot` this KenshiOracle checkout.
 
 8. Freeze the new build into a new directory with its own fingerprints, and
    rebase any private layers on top of the new series separately.
+
+### When upstream restructures
+
+**Observed** on the rebase from `88ae71a1` to `8ae1141a` (2026-11-12, 1759
+commits): upstream had merged a project into another, split the host into
+several classes, renamed private fields and enum members and made its build
+enforce the naming. `git am --3way` stopped at the first patch and could not
+follow the moved code. What worked:
+
+- Rebuild the series commit by commit instead of merging it. Take each
+  adapter-owned file whole from its commit and bring it to the new names with
+  the same rules every time (host members, private-field naming, moved
+  namespaces, renamed enum members), so that the ten commits stay consistent
+  with each other.
+- Place each hook into an upstream file again by a small, exact anchor that
+  fails loudly when upstream moved it. Prefer two short anchors to one long
+  block: the follow-camera hook needed that as soon as upstream changed a line
+  between them.
+- Let the compiler find the rest: missing namespaces and naming violations
+  come out as errors, since upstream treats warnings as errors.
+- Check whether upstream now does what a patch did. Patch 9's change to
+  MeitouClient was dropped for that reason; its tests stayed.
+- Keep what the series touches in upstream files as small as it can be. The
+  command-line options moved into the adapter's own file for that.
+
+Then run steps 3 to 8 as usual. Record what was not checked.
 
 A clean `git am`, a passing focused suite and one quick city run are evidence
 for that base and that environment only. They do not establish scenario

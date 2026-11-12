@@ -1,120 +1,49 @@
-From 9e16733617a47f647ed91ef98f62994bf3580d12 Mon Sep 17 00:00:00 2001
+From 957405fa156c3d56cbf7ee4f09cddc1d1053dd26 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Tue, 3 Nov 2026 23:25:45 +0100
-Subject: [PATCH] Report a captive job's goal as the state 0.5 goal of its
+Subject: [PATCH] Check a captive job's goal as the state 0.5 goal of its
  worker
 
 MeitouClient runs captive work (gathering slaves from cages, working them, getting into a cage...)
-as CaptiveSystem jobs. The AI holds no worker of a job, so its mind keeps the goal it had before,
-and state 0.5 reported that stale goal: a slaver read stay_in_home while it gathered or worked
-slaves, where the original's census shows gather_slaves_from_cages or work_the_slaves.
+as CaptiveSystem jobs. Upstream now gives the job's goal to the worker's mind when the job starts
+(AiSystem.TakeCaptiveGoal), so state 0.5, which reads the mind's goal, reports
+gather_slaves_from_cages or work_the_slaves while the job runs, as the original's census shows.
 
-The captive sweep now records on each job the AI goal it started the job for (CaptiveJob.Goal, a
-role list's or the race's). While a job runs, the worker's 0.5 goal is that goal, by row number
-with its tier; otherwise it is the mind's goal as before. 0.1 to 0.4 output is unchanged.
+On the earlier base this patch recorded the goal on the job (CaptiveJob.Goal) and the adapter read
+it from there. That change is no longer needed and is dropped: the patch touches no MeitouClient
+source file any more.
+
+What remains is the check: two tests on a captive sweep (the worker's 0.5 goal is the job's goal
+while it runs, and its mind's goal again once the job is over) and the adapter's documentation.
+0.1 to 0.4 output is unchanged.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
 ---
- docs/oracle.md                                |  5 +-
- src/Meitou.Game/Oracle/OracleState.cs         | 17 +++--
- src/Meitou.Simulation/Kidnap/CaptiveSystem.cs |  4 ++
- tests/Meitou.Tests/Oracle/OracleStateTests.cs | 66 +++++++++++++++++++
- 4 files changed, 86 insertions(+), 6 deletions(-)
+ docs/oracle.md                                |  4 +-
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs | 76 +++++++++++++++++++
+ 2 files changed, 79 insertions(+), 1 deletion(-)
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index acdd8de6..f9d3d4c3 100644
+index acdd8de66..114f2e2c0 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
-@@ -156,7 +156,10 @@ state hash (**Verified**, `OracleStateTests`).
+@@ -156,7 +156,9 @@ state hash (**Verified**, `OracleStateTests`).
  
  State 0.5 is 0.4 plus character `goal`; 0.1 to 0.4 bytes, `order` included, are
  unchanged (**Verified**, hashes pinned on patch 0007 in `OracleStateTests`).
 -`goal` is `CharacterCold.Ai.Goal`: `type` its row's native name by row number,
-+`goal` is the goal of the captive job the character works while one runs
-+(`CaptiveJob.Goal`, the AI goal the captive sweep started it for: the AI holds no
-+job's worker, so its mind keeps the goal it had), else `CharacterCold.Ai.Goal`:
-+`type` its row's native name by row number,
++`goal` is `CharacterCold.Ai.Goal`. While the character works a captive job that
++is the job's goal: the captive sweep gives it to the mind when the job starts
++(`AiSystem.TakeCaptiveGoal`). `type` is its row's native name by row number,
  Task_Blank rows included; `priority` its AI_TASK `classification`, 0 to 4 as
  `just_action`, `fluff`, `non_urgent`, `urgent`, `obedience` (both enums number
  alike, **Verified** by reading them), other values null; `target_id` null
-diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
-index 4bd891f5..9284615a 100644
---- a/src/Meitou.Game/Oracle/OracleState.cs
-+++ b/src/Meitou.Game/Oracle/OracleState.cs
-@@ -68,6 +68,11 @@ internal sealed class OracleState
-             if (!currentCharacters.TryAdd(characterIds[id], id)) throw new JsonException("Ambiguous saved character identity");
-             live.Add(id);
-         }
-+        // 0.5: the goal of a captive job the character works, which runs outside its mind's goal (CaptiveJob.Goal).
-+        var captiveGoals = new Dictionary<CharacterId, AiGoal>();
-+        if (v05)
-+            foreach (var job in world.Systems.OfType<Meitou.Simulation.Kidnap.CaptiveSystem>().SelectMany(s => s.Jobs))
-+                if (job.Goal is { } running) captiveGoals[job.Worker] = running;
-         var squads = world.Squads.All.ToArray();
-         foreach (var squad in squads)
-         {
-@@ -148,7 +153,7 @@ internal sealed class OracleState
-                 row["slave_owner_faction_id"] = cold is null ? null : Faction(cold.SlaveOwner);
-             }
-             if (v04) AddState04(row, cold);
--            if (v05) row["goal"] = Goal(cold);
-+            if (v05) row["goal"] = Goal(cold, captiveGoals.GetValueOrDefault(id));
-             characters.Add(row);
-         }
-         var squadRows = new JsonArray();
-@@ -263,12 +268,14 @@ internal sealed class OracleState
-             && AiSystem.Carried(step) ? OracleTaskNames.Of((int)step) : null;
- 
-     /// <summary>
--    /// State 0.5's goal: the mind's current goal (<see cref="AiMind.Goal"/>) named by row number, Task_Blank rows included, with its AI_TASK tier;
--    /// null without a mind, before its first think or for a row without a native name. <see cref="AiGoal"/> has no target, so target_id is null.
-+    /// State 0.5's goal: the goal of the captive job the character works while one runs (<paramref name="captive"/>, <c>CaptiveJob.Goal</c>: the AI holds
-+    /// no worker of a job, so its mind keeps the goal it had before), else the mind's current goal (<see cref="AiMind.Goal"/>); named by row number,
-+    /// Task_Blank rows included, with its AI_TASK tier; null without either, before the mind's first think or for a row without a native name.
-+    /// <see cref="AiGoal"/> has no target, so target_id is null.
-     /// </summary>
--    static JsonObject? Goal(CharacterCold? cold)
-+    static JsonObject? Goal(CharacterCold? cold, AiGoal? captive)
-     {
--        if (cold?.Ai?.Goal is not { } goal || OracleTaskNames.Of((int)goal.Task.Type) is not { } type) return null;
-+        if ((captive ?? cold?.Ai?.Goal) is not { } goal || OracleTaskNames.Of((int)goal.Task.Type) is not { } type) return null;
-         return new JsonObject { ["type"] = type, ["priority"] = Priority(goal.Task.Priority), ["target_id"] = null };
-     }
- 
-diff --git a/src/Meitou.Simulation/Kidnap/CaptiveSystem.cs b/src/Meitou.Simulation/Kidnap/CaptiveSystem.cs
-index a51c083c..2d44c534 100644
---- a/src/Meitou.Simulation/Kidnap/CaptiveSystem.cs
-+++ b/src/Meitou.Simulation/Kidnap/CaptiveSystem.cs
-@@ -103,6 +103,8 @@ public sealed class CaptiveJob
-     /// <summary>The town the job is in (its kill timer), -1: none.</summary>
-     public int Site { get; init; } = -1;
-     public CaptivePhase Phase { get; set; }
-+    /// <summary>The AI goal the sweep started the job for (a role list's or the race's); null for a job started any other way.</summary>
-+    public AiGoal? Goal { get; set; }
-     /// <summary>Game seconds in the phase and of the whole job.</summary>
-     public float Time { get; set; }
-     public float Age { get; set; }
-@@ -400,6 +402,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
-                     if (!roles[g].InWindow(hour)) continue;
-                     if (TryStart(world, squad, board, slot, cold, roles[g].Task.Type) is { } job)
-                     {
-+                        job.Goal = roles[g];
-                         jobs.Add(job);
-                         cold.Engaged = true;
-                         Note(world, CaptiveEventKind.Started, job);
-@@ -412,6 +415,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
-                     foreach (var goal in raceGoals)
-                         if (TryStart(world, squad, board, slot, cold, goal.Task.Type) is { } job)
-                         {
-+                            job.Goal = goal;
-                             jobs.Add(job);
-                             cold.Engaged = true;
-                             Note(world, CaptiveEventKind.Started, job);
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-index f8b987e1..d9038544 100644
+index fd47f27c0..74c5cfc85 100644
 --- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-@@ -207,6 +207,72 @@ public class OracleStateTests
+@@ -210,6 +210,82 @@ public class OracleStateTests
          Assert.Null(new OracleState().Capture(session, Data(), "0.5")["characters"]![0]!["goal"]);
      }
  
@@ -124,9 +53,10 @@ index f8b987e1..d9038544 100644
 +    /// </summary>
 +    static (WorldSession Session, Meitou.Simulation.Kidnap.CaptiveSystem Captive, CharacterId Worker) CaptiveWork()
 +    {
-+        var captive = new Meitou.Simulation.Kidnap.CaptiveSystem(Data(), null);
++        // The shout job gives up after 10 s: with no dialogue it would keep its slave until GiveUpSeconds (it ends on its line).
++        var captive = new Meitou.Simulation.Kidnap.CaptiveSystem(Data(), null, new Meitou.Simulation.Kidnap.CaptiveSettings { GiveUpSeconds = 10 });
 +        var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, clock: new GameClock(12.5, 2), systems: [captive]);
-+        var task = new AiTask("fixture-shout", "Working the slaves", TaskType.WORK_THE_SLAVES, TaskPriority.NonUrgent, TaskTargetType.Specific, TaskEndEvent.Nothing);
++        var task = new AiTask("fixture-shout", "Working the slaves", TaskType.WorkTheSlaves, TaskPriority.NonUrgent, TaskTargetType.Specific, TaskEndEvent.Nothing);
 +        var board = new Blackboard([new(0, new AiPackage { Id = "fixture-package", Name = "Fixture package", Roles = [[], [], [new AiGoal(task, 0, 24, 1)], [], []] })]);
 +        board.Update();
 +        var squad = new Squad { Id = 5, TemplateId = "fixture-template", Faction = 1, Ai = board };
@@ -140,7 +70,7 @@ index f8b987e1..d9038544 100644
 +            squad.Members.Add(id);
 +            return id;
 +        }
-+        var worker = Member("worker", Vector3.Zero, c => c.Ai = Mind(squad, TaskType.STAY_IN_HOME, TaskPriority.Fluff));
++        var worker = Member("worker", Vector3.Zero, c => c.Ai = Mind(squad, TaskType.StayInHome, TaskPriority.Fluff));
 +        squad.Leader = worker;
 +        Member("slave", new Vector3(90, 0, 0), c => (c.SlaveState, c.SlaveOwner, c.Role) = (1, 1, (int)SquadRole.Slave));
 +        return (session, captive, worker);
@@ -150,9 +80,9 @@ index f8b987e1..d9038544 100644
 +        new OracleState().Capture(session, Data(), "0.5")["characters"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == name)!["goal"];
 +
 +    /// <summary>
-+    /// While a captive job runs, a worker's 0.5 goal is the goal the job runs (here 188 at its tier), not the goal its mind kept (the AI holds no job's
-+    /// worker). Catches the adapter reporting the stale mind goal, which made every Meitou slaver read <c>stay_in_home</c> while it gathered or
-+    /// worked slaves.
++    /// While a captive job runs, a worker's 0.5 goal is the goal the job runs (here 188 at its tier), not the goal its mind held before: the captive
++    /// sweep gives the job's goal to the mind (<c>AiSystem.TakeCaptiveGoal</c>) and the state reads the mind. Catches a slaver reading
++    /// <c>stay_in_home</c> while it gathers or works slaves.
 +    /// </summary>
 +    [Fact]
 +    public void Schema_05_goal_of_a_captive_worker_is_the_goal_its_job_runs()
@@ -160,7 +90,8 @@ index f8b987e1..d9038544 100644
 +        var (session, captive, worker) = CaptiveWork();
 +        using var _ = session;
 +        for (int t = 0; t < 120 && !captive.Jobs.Any(j => j.Worker == worker); t++) session.World.RunTicks(1);
-+        Assert.Contains(captive.Jobs, j => j.Worker == worker && j.Goal?.Task.Type == TaskType.WORK_THE_SLAVES);
++        Assert.Contains(captive.Jobs, j => j.Worker == worker);
++        Assert.Equal(TaskType.WorkTheSlaves, session.World.Characters.Cold(worker.Slot)!.Ai!.Goal?.Task.Type);
 +
 +        var goal = GoalOf(session, "worker")!;
 +        Assert.Equal(("work_the_slaves", "non_urgent"), (goal["type"]!.GetValue<string>(), goal["priority"]!.GetValue<string>()));
@@ -169,7 +100,10 @@ index f8b987e1..d9038544 100644
 +        Assert.Null(GoalOf(session, "slave"));
 +    }
 +
-+    /// <summary>Once the job is over, the worker's 0.5 goal is its mind's goal again. Catches a job's goal kept after the job ended.</summary>
++    /// <summary>
++    /// Once the job is over and the worker has chosen again, its 0.5 goal is its mind's goal again (the job's goal is the mind's until that think;
++    /// this session has no AI, so the test sets the goal the think would choose). Catches a job's goal kept after the job ended.
++    /// </summary>
 +    [Fact]
 +    public void Schema_05_goal_of_a_worker_is_its_mind_goal_again_once_the_job_is_over()
 +    {
@@ -177,8 +111,13 @@ index f8b987e1..d9038544 100644
 +        using var _ = session;
 +        for (int t = 0; t < 120 && !captive.Jobs.Any(j => j.Worker == worker); t++) session.World.RunTicks(1);
 +        Assert.Contains(captive.Jobs, j => j.Worker == worker);
++        // Its one slave is freed: the job gives up after GiveUpSeconds and no other can start.
++        var slave = session.World.Squads.All.SelectMany(s => s.Members).First(m => session.World.Characters.Cold(m.Slot)!.Name == "slave");
++        session.World.Characters.Cold(slave.Slot)!.SlaveState = 0;
 +        for (int t = 0; t < 900 && captive.Jobs.Any(j => j.Worker == worker); t++) session.World.RunTicks(1);
 +        Assert.DoesNotContain(captive.Jobs, j => j.Worker == worker);
++        var mind = session.World.Characters.Cold(worker.Slot)!.Ai!;
++        mind.Goal = Mind(mind.Squad, TaskType.StayInHome, TaskPriority.Fluff).Goal;
 +
 +        var goal = GoalOf(session, "worker")!;
 +        Assert.Equal(("stay_in_home", "fluff"), (goal["type"]!.GetValue<string>(), goal["priority"]!.GetValue<string>()));

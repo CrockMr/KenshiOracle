@@ -1,4 +1,4 @@
-From 5ab88d9a8960e75241965c1e48b3760544db264e Mon Sep 17 00:00:00 2001
+From 2416f2d1486f84da1558f6e94eb987b71e42af35 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Sun, 1 Nov 2026 17:10:10 +0100
 Subject: [PATCH] Expose calculated health maxima in the oracle state dump
@@ -18,6 +18,7 @@ worn-away, NaN, infinite and above-cap parts and checks that the state
 hash is unchanged. order stays null.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 0ee8ce6669be52824c632a74dff741aa0286bb84)
 ---
  docs/oracle.md                                | 18 +++++++--
  src/Meitou.Game/Oracle/OracleState.cs         |  4 +-
@@ -25,7 +26,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  3 files changed, 55 insertions(+), 6 deletions(-)
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index 64195121..6b44138d 100644
+index 64195121f..6b44138d9 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
 @@ -92,9 +92,21 @@ The additive 0.2 fields expose saved-origin evidence, broad melee/ranged combat
@@ -54,10 +55,10 @@ index 64195121..6b44138d 100644
  In Oracle mode, `--seed` is applied to the in-memory save before `SaveLoader`
  and its first draws; it replaces the save's stored seed without rewriting that
 diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
-index 66d033a0..34d1b67f 100644
+index 98edc53ba..d11e5ce5d 100644
 --- a/src/Meitou.Game/Oracle/OracleState.cs
 +++ b/src/Meitou.Game/Oracle/OracleState.cs
-@@ -105,8 +105,8 @@ internal sealed class OracleState
+@@ -107,8 +107,8 @@ internal sealed class OracleState
                      string partId = part.Template.StringId + Side(part.Template.Side);
                      if (KnownId(part.Template.StringId) is null || !partIds.Add(partId)) { health = null; break; }
                      health.Add(new JsonObject { ["id"] = partId, ["current"] = Number(part.Flesh), ["stun"] = Number(part.Stun),
@@ -69,10 +70,10 @@ index 66d033a0..34d1b67f 100644
              }
              var row = new JsonObject
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-index aa8631e5..a550f091 100644
+index 8775aeefa..72976aa11 100644
 --- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-@@ -64,7 +64,7 @@ public class OracleStateTests
+@@ -67,7 +67,7 @@ public class OracleStateTests
          Assert.Equal("saved", state["squads"]![0]!["identity_origin"]!.GetValue<string>());
          Assert.Equal("hand:34:7:8:0:9", row["squad_id"]!.GetValue<string>());
          Assert.Equal(-13, row["health"]![0]!["current"]!.GetValue<double>());
@@ -81,7 +82,7 @@ index aa8631e5..a550f091 100644
          Assert.Null(row["in_combat"]); Assert.Null(row["current_town_id"]); Assert.Null(row["town_assignment"]); Assert.Null(row["order"]);
          Assert.True(projection.TryResolveCharacter(row["id"]!.GetValue<string>(), out var resolved)); Assert.Equal(id, resolved);
          Assert.Equal(row["id"]!.GetValue<string>(), projection.CharacterIdentity(id));
-@@ -75,6 +75,43 @@ public class OracleStateTests
+@@ -78,6 +78,43 @@ public class OracleStateTests
          Assert.Equal("saved", projection.Capture(session, Data())["characters"]![0]!["identity_origin"]!.GetValue<string>());
      }
  

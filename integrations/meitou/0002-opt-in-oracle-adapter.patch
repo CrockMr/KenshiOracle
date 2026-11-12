@@ -1,38 +1,41 @@
-From 2b10478095651fdfbb5fd7ea38c8a20ef9e75750 Mon Sep 17 00:00:00 2001
+From b9cf5f3c6735ab6b60d8bb84f550b4b8874d911e Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:42:53 +0100
 Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
 
 (cherry picked from commit 118b16488d1b9e71389ad168ecca70692cd37a28)
 (cherry picked from commit 5ed31178cc6e4ea6a81ee6ab8b7e2ef3a7278ae6)
+(cherry picked from commit e774df7b985aced28253edd4c604907f59ded60f)
 ---
  docs/README.md                                |    1 +
  docs/launch-options.md                        |    3 +
  docs/oracle.md                                |  124 +
- src/Meitou.Game/GameHost.Interactive.cs       |    3 +-
- src/Meitou.Game/GameHost.Metal.cs             |    4 +-
- src/Meitou.Game/GameHost.Oracle.cs            |  540 ++
- src/Meitou.Game/GameHost.Sandbox.cs           |   11 +-
- src/Meitou.Game/GameHost.Saving.cs            |    4 +-
- src/Meitou.Game/GameHost.Transition.cs        |    5 +-
- src/Meitou.Game/GameHost.cs                   |    4 +-
- src/Meitou.Game/GameOptions.cs                |   17 +
+ src/Meitou.Game/GameHost.Oracle.cs            |  568 ++
+ src/Meitou.Game/GameHost.Transition.cs        |    4 +-
+ src/Meitou.Game/GameHost.cs                   |    3 +
+ src/Meitou.Game/Host/GameLoop.cs              |    3 +-
+ src/Meitou.Game/Host/GameOptions.cs           |   18 +-
+ src/Meitou.Game/Host/GameSaves.cs             |    6 +-
+ src/Meitou.Game/Host/MetalGameLoop.cs         |    4 +-
+ src/Meitou.Game/Host/Program.cs               |    5 +
  src/Meitou.Game/Oracle/OracleCanonicalJson.cs |  148 +
+ src/Meitou.Game/Oracle/OracleOptions.cs       |   52 +
  src/Meitou.Game/Oracle/OracleProtocol.cs      |  164 +
  src/Meitou.Game/Oracle/OracleServer.cs        |  276 +
- src/Meitou.Game/Oracle/OracleState.cs         |  183 +
- src/Meitou.Game/Program.cs                    |    5 +
+ src/Meitou.Game/Oracle/OracleState.cs         |  185 +
+ src/Meitou.Game/Scenarios/SandboxScenario.cs  |    8 +-
  tests/Meitou.Tests/Oracle/Fixtures/README.md  |    6 +
  .../Oracle/Fixtures/canonical-vectors.json    | 4905 +++++++++++++++++
  .../Oracle/OracleCanonicalJsonTests.cs        |   73 +
  .../Oracle/OracleHostPolicyTests.cs           |  101 +
  .../Oracle/OracleProtocolTests.cs             |   75 +
  .../Meitou.Tests/Oracle/OracleServerTests.cs  |  226 +
- tests/Meitou.Tests/Oracle/OracleStateTests.cs |  133 +
- 23 files changed, 7003 insertions(+), 8 deletions(-)
+ tests/Meitou.Tests/Oracle/OracleStateTests.cs |  136 +
+ 24 files changed, 7087 insertions(+), 7 deletions(-)
  create mode 100644 docs/oracle.md
  create mode 100644 src/Meitou.Game/GameHost.Oracle.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleCanonicalJson.cs
+ create mode 100644 src/Meitou.Game/Oracle/OracleOptions.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleProtocol.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleServer.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleState.cs
@@ -45,25 +48,25 @@ Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
  create mode 100644 tests/Meitou.Tests/Oracle/OracleStateTests.cs
 
 diff --git a/docs/README.md b/docs/README.md
-index 861f7cdf..43ef96f5 100644
+index e4f6aaeb3..cd265ab35 100644
 --- a/docs/README.md
 +++ b/docs/README.md
-@@ -27,6 +27,7 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until
- - [metal-effects-parity-plan](metal-effects-parity-plan.md): MEP-I, the remaining Metal effect-parity milestones and ship gates
+@@ -30,6 +30,7 @@ Not built, by design: the original's in-game level editor and fog editor (`Kensh
  - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
- - [modding](modding.md): C# modding API, preliminary concept (manifest, per-mod load context, tick systems, sidecar saves)
+ - [modding](modding.md): code mods: `meitou.json`, per-mod load context, one game-shipped Harmony, tick anchors, dialogue codes, sidecar saves, UI, F10 rows
+ - [modding-dependencies](modding-dependencies.md): code mods building on code mods: versions, `dependencies`, shared assemblies, Arrange
 +- [oracle](oracle.md): local opt-in KenshiOracle adapter, transport, state coverage and limits
  - [native-ui](native-ui.md)
  - [render-clouds](render-clouds.md)
  - [render-distance-benchmark](render-distance-benchmark.md)
 diff --git a/docs/launch-options.md b/docs/launch-options.md
-index 4971c8c0..dfcc0a26 100644
+index 4980941f0..97a61affd 100644
 --- a/docs/launch-options.md
 +++ b/docs/launch-options.md
-@@ -17,6 +17,9 @@ Authority: `src/Meitou.Game/GameOptions.cs` (`Split`, `Usage`), `src/Meitou.Game
- | `--new-game [start]` | start name | Wanderer | New game: squad at its town, camera on it. |
- | `--list-starts` | | | Print the available starts and exit. |
+@@ -20,6 +20,9 @@ Authority: `src/Meitou.Game/Host/GameOptions.cs` (`Split`, `Usage`), `src/Meitou
+ | `--data-check` | | | Print every game data and level file problem of the load order (missing mod, changed record type...) and exit: 0 none, 1 some. |
  | `--load <folder>` | save folder | none | Start in a save, Meitou's or the original game's. With `--screenshot` too. |
+ | `--continue` | | off | Start in the newest save of the folders the game lists saves from (`SaveModList.Roots`), as `--load` would; no check that its mods are the enabled ones. Excludes `--load`; exit 1 without a save. |
 +| `--oracle` | | off | Local branch: enable the loopback KenshiOracle adapter in the interactive saved-world loop; disables autosaves. [Contract and limits](oracle.md). |
 +| `--oracle-port <n>` | 1..65535 | 47801 | With `--oracle`: IPv4 127.0.0.1 listening port. |
 +| `--oracle-output <dir>` | folder | `oracle-dumps` | With `--oracle`: new snapshot files beneath this folder, relative to the working directory. |
@@ -72,7 +75,7 @@ index 4971c8c0..dfcc0a26 100644
  | `--move-to <x> <z>` | two numbers | none | With `--new-game`: select the squad and walk it there (pictures). |
 diff --git a/docs/oracle.md b/docs/oracle.md
 new file mode 100644
-index 00000000..137bd11e
+index 000000000..137bd11ed
 --- /dev/null
 +++ b/docs/oracle.md
 @@ -0,0 +1,124 @@
@@ -200,70 +203,20 @@ index 00000000..137bd11e
 +host seam on the local branch; updating/rebasing upstream is explicit, followed
 +by functional verification. A future mod needs host loading, seed, lifecycle
 +and paused-service APIs before it can replace this seam.
-diff --git a/src/Meitou.Game/GameHost.Interactive.cs b/src/Meitou.Game/GameHost.Interactive.cs
-index c9b47a5c..5ef1f826 100644
---- a/src/Meitou.Game/GameHost.Interactive.cs
-+++ b/src/Meitou.Game/GameHost.Interactive.cs
-@@ -548,7 +548,7 @@ sealed partial class GameHost
-                 session.Input.Consume();
-             }
-             // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
--            session.Camera.Settings.EdgeScroll = config.EdgeScroll != false;
-+            session.Camera.Settings.EdgeScroll = OracleEdgeScroll(config.EdgeScroll != false);
-             session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
-             session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off } || g.PlayBench is not null;
-             if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
-@@ -563,6 +563,7 @@ sealed partial class GameHost
-             HandleNewGame();
-             HandleMainMenu();
-             StepSceneLoad();
-+            ServiceOracle();
-             animSeconds += frameDt;
-             animClock = true;
-             UpdateNav();
-diff --git a/src/Meitou.Game/GameHost.Metal.cs b/src/Meitou.Game/GameHost.Metal.cs
-index e26f7d26..2553949c 100644
---- a/src/Meitou.Game/GameHost.Metal.cs
-+++ b/src/Meitou.Game/GameHost.Metal.cs
-@@ -602,6 +602,7 @@ sealed partial class GameHost
-                 SettleNewWorld();
-                 hud.FollowSelected();
-                 FinishLoadNotice(summary);
-+                OracleFinishedLoad(g.Load ?? "");
-                 ApplyCamera(session.Camera.Current);
-             }
-             catch (SceneLoadFailed e)
-@@ -1149,7 +1150,7 @@ sealed partial class GameHost
-             if (!still)
-             {
-                 // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
--                session.Camera.Settings.EdgeScroll = config.EdgeScroll != false;
-+                session.Camera.Settings.EdgeScroll = OracleEdgeScroll(config.EdgeScroll != false);
-                 session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
-                     hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
-                 // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.
-@@ -1168,6 +1169,7 @@ sealed partial class GameHost
-                     HandleMainMenu();
-                 }
-                 StepSceneLoad();
-+                ServiceOracle();
-                 AdvanceSkyArrival(dt);
-                 // The squad tour and character flights hold the camera while they fly; otherwise the rig owns the view.
-                 if (!tourHolds) ApplyCamera(session.CameraAt());
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
 new file mode 100644
-index 00000000..95d54c35
+index 000000000..35eb1a35f
 --- /dev/null
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
-@@ -0,0 +1,540 @@
+@@ -0,0 +1,568 @@
 +using System.Globalization;
 +using System.Numerics;
 +using System.Text.Json;
 +using System.Text.Json.Nodes;
 +using Meitou.Data.Save;
 +using Meitou.Data.World;
-+using Meitou.Engine;
-+using Meitou.Engine.Cameras;
++using Meitou.Game.Host;
++using Meitou.Game.Host.Cameras;
 +using Meitou.Game.Oracle;
 +using Meitou.Simulation;
 +using Meitou.Simulation.Saving;
@@ -273,24 +226,24 @@ index 00000000..95d54c35
 +/// <summary>The opt-in oracle is serviced between world ticks. Its network workers never receive a world or actor.</summary>
 +sealed partial class GameHost
 +{
-+    OracleServer? oracleServer;
-+    OracleState? oracleState;
-+    readonly string oracleInstance = g.Oracle ? Guid.NewGuid().ToString("N") : "";
-+    string oracleOutput = "", oracleSaveRoot = "";
-+    ulong oracleSeed;
-+    string oracleSeedSource = "default";
-+    bool oracleSeedApplied, oracleLoadPending;
-+    string? oracleLoadError;
-+    long oracleFrame;
-+    double? oracleSelectedSpeed;
-+    bool oracleEdgeOwned;
-+    bool? oracleEdgeSetting;
-+    Vector3 oracleFollowOffset;
-+    bool oracleFollowRestored;
-+    OracleControl? oraclePreparedControl;
-+    string? oracleControlToken;
-+    int oracleControlEpoch;
-+    OracleRun? oracleRun;
++    OracleServer? _oracleServer;
++    OracleState? _oracleState;
++    readonly string _oracleInstance = g.Oracle ? Guid.NewGuid().ToString("N") : "";
++    string _oracleOutput = "", _oracleSaveRoot = "";
++    ulong _oracleSeed;
++    string _oracleSeedSource = "default";
++    bool _oracleSeedApplied, _oracleLoadPending;
++    string? _oracleLoadError;
++    long _oracleFrame;
++    double? _oracleSelectedSpeed;
++    bool _oracleEdgeOwned;
++    bool? _oracleEdgeSetting;
++    Vector3 _oracleFollowOffset;
++    bool _oracleFollowRestored;
++    OracleControl? _oraclePreparedControl;
++    string? _oracleControlToken;
++    int _oracleControlEpoch;
++    OracleRun? _oracleRun;
 +
 +    sealed class OracleHostError(string code, string message) : Exception(message)
 +    {
@@ -310,77 +263,105 @@ index 00000000..95d54c35
 +
 +    void StartOracle()
 +    {
-+        if (!g.Oracle) return;
-+        oracleSeed = g.Seed;
-+        oracleSeedSource = g.SeedGiven ? "command_line" : "oracle_default";
-+        oracleOutput = Path.GetFullPath(g.OracleOutput ?? "oracle-dumps");
-+        oracleSaveRoot = g.Load is { } folder
++        if (!GameOptions.Oracle) return;
++        _oracleSeed = GameOptions.Seed;
++        _oracleSeedSource = GameOptions.SeedGiven ? "command_line" : "oracle_default";
++        _oracleOutput = Path.GetFullPath(GameOptions.OracleOutput ?? "oracle-dumps");
++        _oracleSaveRoot = GameOptions.Load is { } folder
 +            ? Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)))!
 +            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save");
-+        oracleLoadPending = g.Load is not null;
-+        oracleState = new OracleState();
-+        oracleServer = new OracleServer(g.OraclePort);
-+        oracleServer.PublishHeartbeat(new { frame = 0, timestamp_ms = 0, service_frame = 0,
++        _oracleLoadPending = GameOptions.Load is not null;
++        _oracleState = new OracleState();
++        _oracleServer = new OracleServer(GameOptions.OraclePort);
++        _oracleServer.PublishHeartbeat(new { frame = 0, timestamp_ms = 0, service_frame = 0,
 +            service_timestamp_ms = 0, service_thread = 0, game_thread = 0, loading = true });
-+        Console.WriteLine($"[MeitouOracle] loopback port {oracleServer.LocalPort}; seed {oracleSeed}; output {oracleOutput}");
++        Console.WriteLine($"[MeitouOracle] loopback port {_oracleServer.LocalPort}; seed {_oracleSeed}; output {_oracleOutput}");
 +    }
 +
 +    // Called before SaveLoader.Load and its first random draws, on this load's private in-memory SaveGame only.
-+    void ApplyOracleSeed(SaveGame save)
++    internal void ApplyOracleSeed(SaveGame save)
 +    {
-+        if (!g.Oracle) return;
-+        save.Camera.Record.Strings[SaveLoader.SeedKey] = oracleSeed.ToString(CultureInfo.InvariantCulture);
-+        oracleSeedApplied = true;
-+        oracleSelectedSpeed = null;
-+        oraclePreparedControl = null;
-+        oracleControlToken = null;
-+        oracleFollowOffset = Vector3.Zero;
-+        oracleFollowRestored = false;
++        if (!GameOptions.Oracle) return;
++        save.Camera.Record.Strings[SaveLoader.SeedKey] = _oracleSeed.ToString(CultureInfo.InvariantCulture);
++        _oracleSeedApplied = true;
++        _oracleSelectedSpeed = null;
++        _oraclePreparedControl = null;
++        _oracleControlToken = null;
++        _oracleFollowOffset = Vector3.Zero;
++        _oracleFollowRestored = false;
 +        StopOracleRun("cancelled");
 +    }
 +
-+    void OracleFinishedLoad(string folder)
++    internal void OracleFinishedLoad(string folder)
 +    {
-+        if (!g.Oracle) return;
-+        session.Simulation.SetSpeed(0);
-+        oracleLoadPending = false;
-+        oracleLoadError = null;
-+        saveInUse = folder;
++        if (!GameOptions.Oracle) return;
++        Session.Simulation.SetSpeed(0);
++        _oracleLoadPending = false;
++        _oracleLoadError = null;
++        Saves.SaveInUse = folder;
 +    }
 +
 +    void OracleLoadFailed(string error)
 +    {
-+        if (!g.Oracle || !oracleLoadPending) return;
-+        oracleLoadPending = false;
-+        oracleLoadError = error;
-+        session?.Simulation.SetSpeed(0);
++        if (!GameOptions.Oracle || !_oracleLoadPending) return;
++        _oracleLoadPending = false;
++        _oracleLoadError = error;
++        Session?.Simulation.SetSpeed(0);
 +    }
 +
-+    bool OracleReady => session is not null && player is not null && popData is not null && loadedSave is not null
-+        && !Covered && !oracleLoadPending && oracleLoadError is null;
-+    bool OracleRunning => oracleRun?.Status == "running";
-+    bool OracleEdgeScroll(bool configured) => !g.Oracle ? configured : !oracleEdgeOwned && (oracleEdgeSetting ?? configured);
++    bool OracleReady => Session is not null && Player is not null && PopData is not null && Saves.LoadedSave is not null
++        && !Covered && !_oracleLoadPending && _oracleLoadError is null;
++    bool OracleRunning => _oracleRun?.Status == "running";
++    internal bool OracleEdgeScroll(bool configured) => !GameOptions.Oracle ? configured : !_oracleEdgeOwned && (_oracleEdgeSetting ?? configured);
 +
-+    void ServiceOracle()
++    /// <summary>
++    /// A prepared camera restoration holds the camera: the follow camera leaves it alone until the commit.
++    /// </summary>
++    internal bool OracleHoldsCamera => GameOptions.Oracle && _oraclePreparedControl is not null;
++
++    /// <summary>
++    /// The followed character's captured offset from the camera centre of a restored follow; zero without the oracle.
++    /// </summary>
++    internal Vector3 OracleFollowOffset => GameOptions.Oracle ? _oracleFollowOffset : Vector3.Zero;
++
++    /// <summary>
++    /// While paused after a restored follow, puts the strategy pivot exactly on <paramref name="pivot"/> (its height too) and returns true; false when
++    /// the ordinary pivot move applies.
++    /// </summary>
++    internal bool OracleRestoreFollowPose(Vector3 pivot)
 +    {
-+        if (oracleServer is null) return;
-+        ++oracleFrame;
++        if (!GameOptions.Oracle || !_oracleFollowRestored || !Session.Simulation.IsPaused) return false;
++
++        var view = Session.Camera.Current;
++        Session.Camera.RestorePose(pivot, view.Yaw, view.Pitch, view.Distance, false);
++        return true;
++    }
++
++    /// <summary>
++    /// Closes the oracle's listener at the end of the run.
++    /// </summary>
++    void DisposeOracle() => _oracleServer?.Dispose();
++
++    internal void ServiceOracle()
++    {
++        if (_oracleServer is null) return;
++        ++_oracleFrame;
 +        // Drawing joins its worker. Settling the completed tick also advances the clock, so live state and time agree.
-+        session.EndTickAhead();
-+        if (OracleRunning) session.SettleAhead();
++        Session.EndTickAhead();
++        if (OracleRunning) Session.SettleAhead();
 +        if (OracleRunning)
 +        {
-+            if (!OracleReady || oracleRun!.Epoch != worldEpoch) StopOracleRun("cancelled");
-+            else if (OracleSeconds >= oracleRun.Target) StopOracleRun("completed");
-+            else if (realTime.Elapsed.TotalSeconds >= oracleRun.Deadline) StopOracleRun("timed_out");
++            if (!OracleReady || _oracleRun!.Epoch != Saves.WorldEpoch) StopOracleRun("cancelled");
++            else if (OracleSeconds >= _oracleRun.Target) StopOracleRun("completed");
++            else if (RealTime.Elapsed.TotalSeconds >= _oracleRun.Deadline) StopOracleRun("timed_out");
 +        }
 +        int drained = 0;
-+        while (drained++ < 64 && oracleServer.TryDequeue(out var request))
++        while (drained++ < 64 && _oracleServer.TryDequeue(out var request))
 +        {
 +            if (request is null || request.IsCancelled) continue;
 +            try
 +            {
-+                session.SettleAhead();
++                Session.SettleAhead();
 +                if (request.IsCancelled) continue;
 +                request.Complete(ExecuteOracle(request.Command, request.Params));
 +            }
@@ -390,21 +371,21 @@ index 00000000..95d54c35
 +            { request.Fail("io_error", e.Message); }
 +            catch (Exception e) { request.Fail("state_unavailable", e.Message); }
 +        }
-+        double stamp = realTime.Elapsed.TotalMilliseconds;
-+        oracleServer.PublishHeartbeat(new { frame = oracleFrame, timestamp_ms = stamp, service_frame = oracleFrame,
++        double stamp = RealTime.Elapsed.TotalMilliseconds;
++        _oracleServer.PublishHeartbeat(new { frame = _oracleFrame, timestamp_ms = stamp, service_frame = _oracleFrame,
 +            service_timestamp_ms = stamp, service_thread = Environment.CurrentManagedThreadId,
 +            game_thread = Environment.CurrentManagedThreadId, loading = !OracleReady });
 +    }
 +
-+    double OracleSeconds => session.Clock.TotalHours * 3600;
-+    object OracleClock() => new { day = session.Clock.Day, hour = session.Clock.HourOfDay,
-+        elapsed_seconds = OracleSeconds, speed = session.Simulation.IsPaused ? 0 : session.Simulation.Speed,
-+        paused = session.Simulation.IsPaused };
++    double OracleSeconds => Session.Clock.TotalHours * 3600;
++    object OracleClock() => new { day = Session.Clock.Day, hour = Session.Clock.HourOfDay,
++        elapsed_seconds = OracleSeconds, speed = Session.Simulation.IsPaused ? 0 : Session.Simulation.Speed,
++        paused = Session.Simulation.IsPaused };
 +
 +    void RequireOracleWorld(bool paused = false)
 +    {
-+        if (!OracleReady) throw new OracleHostError("world_not_ready", oracleLoadError ?? "a saved world is unavailable or loading");
-+        if (paused && (!session.Simulation.IsPaused || OracleRunning))
++        if (!OracleReady) throw new OracleHostError("world_not_ready", _oracleLoadError ?? "a saved world is unavailable or loading");
++        if (paused && (!Session.Simulation.IsPaused || OracleRunning))
 +            throw new OracleHostError("invalid_request", "this command requires a paused checkpoint with no active advance");
 +    }
 +
@@ -416,13 +397,13 @@ index 00000000..95d54c35
 +                OracleKeys(p);
 +                return new { target = "meitou", plugin_version = OracleProtocol.AdapterVersion, game_version = "MeitouClient",
 +                    schema_version = "0.2", supported_schema_versions = new[] { "0.1", "0.2" },
-+                    instance_id = oracleInstance, process_id = Environment.ProcessId, oracle_available = true,
-+                    world_ready = OracleReady, frame = oracleFrame, timestamp_ms = realTime.Elapsed.TotalMilliseconds,
-+                    paused = session.Simulation.IsPaused, load_pause_pending = oracleLoadPending || Covered,
-+                    current_save = saveInUse is null ? null : Path.GetFileName(Path.TrimEndingDirectorySeparator(saveInUse)),
-+                    save_root = oracleSaveRoot, saved_origins_required = false, rekenshi_settings_available = false,
-+                    seed = oracleSeed.ToString(CultureInfo.InvariantCulture), seed_source = oracleSeedSource,
-+                    seed_applied_before_load = oracleSeedApplied, load_error = oracleLoadError,
++                    instance_id = _oracleInstance, process_id = Environment.ProcessId, oracle_available = true,
++                    world_ready = OracleReady, frame = _oracleFrame, timestamp_ms = RealTime.Elapsed.TotalMilliseconds,
++                    paused = Session.Simulation.IsPaused, load_pause_pending = _oracleLoadPending || Covered,
++                    current_save = Saves.SaveInUse is null ? null : Path.GetFileName(Path.TrimEndingDirectorySeparator(Saves.SaveInUse)),
++                    save_root = _oracleSaveRoot, saved_origins_required = false, rekenshi_settings_available = false,
++                    seed = _oracleSeed.ToString(CultureInfo.InvariantCulture), seed_source = _oracleSeedSource,
++                    seed_applied_before_load = _oracleSeedApplied, load_error = _oracleLoadError,
 +                    startup_boundary = "population_prepared_without_simulation_tick",
 +                    set_game_speed_preserve_pause_available = true, camera_load_edge_lock_available = true,
 +                    autosave_disabled_for_oracle = true };
@@ -434,8 +415,8 @@ index 00000000..95d54c35
 +                OracleKeys(p, "paused"); RequireOracleWorld();
 +                bool pause = OracleBool(p, "paused");
 +                if (pause) StopOracleRun("cancelled");
-+                session.Simulation.SetSpeed(pause ? 0 : oracleSelectedSpeed ?? session.Simulation.LastNonZeroSpeed);
-+                return new { paused = session.Simulation.IsPaused };
++                Session.Simulation.SetSpeed(pause ? 0 : _oracleSelectedSpeed ?? Session.Simulation.LastNonZeroSpeed);
++                return new { paused = Session.Simulation.IsPaused };
 +            case "set_game_speed": return SetOracleSpeed(p);
 +            case "run_until": return StartOracleRun(p);
 +            case "run_until_status": return QueryOracleRun(p, false);
@@ -449,9 +430,9 @@ index 00000000..95d54c35
 +            case "commit_scene_control": return CommitOracleControl(p);
 +            case "restore_scene_control":
 +                var control = ReadOracleControl(p); RequireOracleWorld(true); ApplyOracleControl(control);
-+                oracleEdgeOwned = false; oracleEdgeSetting = control.Edge;
-+                session.Simulation.SetSpeed(control.Paused ? 0 : control.Speed);
-+                oraclePreparedControl = null; oracleControlToken = null;
++                _oracleEdgeOwned = false; _oracleEdgeSetting = control.Edge;
++                Session.Simulation.SetSpeed(control.Paused ? 0 : control.Speed);
++                _oraclePreparedControl = null; _oracleControlToken = null;
 +                return OracleControlResult(false, true);
 +            case "issue_order": return IssueOracleOrder(p);
 +            default: throw new OracleHostError("not_implemented", $"oracle command {command} is not implemented");
@@ -465,19 +446,19 @@ index 00000000..95d54c35
 +        OracleHostPolicy.ValidateFilename(filename);
 +        string version = p.TryGetProperty("schema_version", out _) ? OracleText(p, "schema_version", 8) : "0.2";
 +        if (version is not ("0.1" or "0.2")) throw new ArgumentException("unsupported state schema_version");
-+        var state = oracleState!.Capture(session, popData!, version);
++        var state = _oracleState!.Capture(Session, PopData!, version);
 +        byte[] bytes = OracleCanonicalJson.Serialize(state);
 +        if (bytes.Length > 64 * 1024 * 1024) throw new OracleHostError("state_unavailable", "state exceeds 64 MiB");
-+        OracleHostPolicy.EnsureNoLinks(oracleOutput);
-+        Directory.CreateDirectory(oracleOutput);
-+        string path = Path.Combine(oracleOutput, filename);
++        OracleHostPolicy.EnsureNoLinks(_oracleOutput);
++        Directory.CreateDirectory(_oracleOutput);
++        string path = Path.Combine(_oracleOutput, filename);
 +        OracleHostPolicy.EnsureNoLinks(path);
 +        if (File.Exists(path)) throw new OracleHostError("already_exists", "snapshot already exists");
 +        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
 +        { file.Write(bytes); file.Flush(true); }
 +        return new { path, schema_version = version, bytes = bytes.Length,
-+            seed = oracleSeed.ToString(CultureInfo.InvariantCulture), seed_source = oracleSeedSource,
-+            seed_applied_before_load = oracleSeedApplied };
++            seed = _oracleSeed.ToString(CultureInfo.InvariantCulture), seed_source = _oracleSeedSource,
++            seed_applied_before_load = _oracleSeedApplied };
 +    }
 +
 +    object LoadOracleSave(JsonElement p)
@@ -488,23 +469,23 @@ index 00000000..95d54c35
 +        bool edge = p.TryGetProperty("lock_edge", out _) && OracleBool(p, "lock_edge");
 +        bool paused = !p.TryGetProperty("pause_on_ready", out _) || OracleBool(p, "pause_on_ready");
 +        if (!paused) throw new ArgumentException("oracle loads require pause_on_ready:true");
-+        ulong seed = p.TryGetProperty("seed", out var seedJson) ? OracleHostPolicy.ReadSeed(seedJson) : oracleSeed;
-+        if (!SavesAvailable(out string why) || Busy()) throw new OracleHostError("busy", why.Length > 0 ? why : "a save or load is in progress");
-+        string folder = Path.Combine(oracleSaveRoot, name);
++        ulong seed = p.TryGetProperty("seed", out var seedJson) ? OracleHostPolicy.ReadSeed(seedJson) : _oracleSeed;
++        if (!Saves.SavesAvailable(out string why) || Saves.Busy()) throw new OracleHostError("busy", why.Length > 0 ? why : "a save or load is in progress");
++        string folder = Path.Combine(_oracleSaveRoot, name);
 +        OracleHostPolicy.EnsureNoLinks(folder);
 +        if (!File.Exists(Path.Combine(folder, SaveFolder.QuickSaveName))) throw new OracleHostError("not_found", "save folder contains no quick.save");
 +        StopOracleRun("cancelled");
-+        session.Simulation.SetSpeed(0);
-+        oracleSeed = seed;
-+        if (p.TryGetProperty("seed", out _)) oracleSeedSource = "load_save";
-+        oracleSeedApplied = false;
-+        oracleSelectedSpeed = null;
-+        oraclePreparedControl = null; oracleControlToken = null;
-+        oracleLoadError = null;
-+        oracleLoadPending = true;
-+        if (edge) oracleEdgeOwned = true;
-+        BeginQuickLoad(folder);
-+        if (sceneLoad is null) { oracleLoadPending = false; throw new OracleHostError("load_failed", "load was not scheduled"); }
++        Session.Simulation.SetSpeed(0);
++        _oracleSeed = seed;
++        if (p.TryGetProperty("seed", out _)) _oracleSeedSource = "load_save";
++        _oracleSeedApplied = false;
++        _oracleSelectedSpeed = null;
++        _oraclePreparedControl = null; _oracleControlToken = null;
++        _oracleLoadError = null;
++        _oracleLoadPending = true;
++        if (edge) _oracleEdgeOwned = true;
++        Saves.BeginQuickLoad(folder);
++        if (ActiveSceneLoad is null) { _oracleLoadPending = false; throw new OracleHostError("load_failed", "load was not scheduled"); }
 +        return new { accepted = true, pause_on_ready = true, name, lock_edge = edge,
 +            seed = seed.ToString(CultureInfo.InvariantCulture) };
 +    }
@@ -517,42 +498,42 @@ index 00000000..95d54c35
 +        OracleHostPolicy.ValidateSpeed(speed);
 +        bool preserve = p.TryGetProperty("preserve_pause", out _) && OracleBool(p, "preserve_pause");
 +        if (preserve && speed == 0) throw new ArgumentException("preserve_pause requires a positive speed");
-+        bool wasPaused = session.Simulation.IsPaused;
-+        session.Simulation.SetSpeed(speed);
-+        if (preserve && wasPaused) session.Simulation.SetSpeed(0);
-+        if (speed > 0) oracleSelectedSpeed = speed;
++        bool wasPaused = Session.Simulation.IsPaused;
++        Session.Simulation.SetSpeed(speed);
++        if (preserve && wasPaused) Session.Simulation.SetSpeed(0);
++        if (speed > 0) _oracleSelectedSpeed = speed;
 +        return new { requested_speed = speed, preserve_pause = preserve, paused_before = wasPaused,
-+            paused = session.Simulation.IsPaused, frame_speed_multiplier = session.Simulation.IsPaused ? 0 : speed };
++            paused = Session.Simulation.IsPaused, frame_speed_multiplier = Session.Simulation.IsPaused ? 0 : speed };
 +    }
 +
 +    void StopOracleRun(string status)
 +    {
 +        if (!OracleRunning) return;
-+        oracleRun!.Status = status;
-+        if (session is not null) session.Simulation.SetSpeed(0);
++        _oracleRun!.Status = status;
++        if (Session is not null) Session.Simulation.SetSpeed(0);
 +    }
 +
-+    object OracleRunResult() => new { operation_id = oracleRun!.Id, status = oracleRun.Status,
-+        target_seconds = oracleRun.Target, clock = OracleClock() };
++    object OracleRunResult() => new { operation_id = _oracleRun!.Id, status = _oracleRun.Status,
++        target_seconds = _oracleRun.Target, clock = OracleClock() };
 +
 +    object StartOracleRun(JsonElement p)
 +    {
 +        OracleKeys(p, "target_seconds", "timeout_seconds"); RequireOracleWorld(true);
 +        double target = OracleNumber(p, "target_seconds", 0, 1e9);
 +        double timeout = p.TryGetProperty("timeout_seconds", out _) ? OracleNumber(p, "timeout_seconds", .1, 3600) : 120;
-+        if (session.Simulation.RequestedPause) throw new OracleHostError("invalid_request", "close the modal interface before advancing");
-+        if (target > OracleSeconds && oracleSelectedSpeed is not > 0)
++        if (Session.Simulation.RequestedPause) throw new OracleHostError("invalid_request", "close the modal interface before advancing");
++        if (target > OracleSeconds && _oracleSelectedSpeed is not > 0)
 +            throw new OracleHostError("invalid_request", "select a positive speed with preserve_pause:true after loading");
-+        oracleRun = new OracleRun(oracleInstance + ":" + Guid.NewGuid().ToString("N"), target, realTime.Elapsed.TotalSeconds + timeout, worldEpoch);
-+        if (target <= OracleSeconds) oracleRun.Status = "completed";
-+        else session.Simulation.SetSpeed(oracleSelectedSpeed!.Value);
++        _oracleRun = new OracleRun(_oracleInstance + ":" + Guid.NewGuid().ToString("N"), target, RealTime.Elapsed.TotalSeconds + timeout, Saves.WorldEpoch);
++        if (target <= OracleSeconds) _oracleRun.Status = "completed";
++        else Session.Simulation.SetSpeed(_oracleSelectedSpeed!.Value);
 +        return OracleRunResult();
 +    }
 +
 +    object QueryOracleRun(JsonElement p, bool cancel)
 +    {
 +        OracleKeys(p, "operation_id"); RequireOracleWorld();
-+        if (oracleRun is null || OracleText(p, "operation_id", 200) != oracleRun.Id)
++        if (_oracleRun is null || OracleText(p, "operation_id", 200) != _oracleRun.Id)
 +            throw new OracleHostError("not_found", "unknown run_until operation");
 +        if (cancel) StopOracleRun("cancelled");
 +        return OracleRunResult();
@@ -561,22 +542,22 @@ index 00000000..95d54c35
 +    JsonObject OracleScene()
 +    {
 +        // Rebuild only the identity lookup here; no world reference crosses into the listener.
-+        oracleState!.Capture(session, popData!, "0.2");
-+        var view = session.Camera.Current;
++        _oracleState!.Capture(Session, PopData!, "0.2");
++        var view = Session.Camera.Current;
 +        var (q, zoom) = KenshiCamera.ToSaved(view.Yaw, view.Pitch, view.Distance);
 +        return new JsonObject
 +        {
 +            ["camera_center"] = OracleVector(view.Target), ["camera_position"] = OracleVector(view.Eye),
 +            ["camera_orientation"] = new JsonArray(q.X, q.Y, q.Z, q.W), ["camera_zoom"] = zoom,
-+            ["free_camera"] = session.Camera.IsFree, ["edge_scrolling"] = OracleEdgeScroll(config.EdgeScroll != false),
-+            ["scene_camera_control_owned"] = oracleEdgeOwned, ["camera_restore_token"] = oracleControlToken,
-+            ["camera_follow_id"] = player.Follow is { } follow ? oracleState.CharacterIdentity(follow) : null,
-+            ["selected_game_speed"] = oracleSelectedSpeed, ["paused"] = session.Simulation.IsPaused,
-+            ["frame_speed_multiplier"] = session.Simulation.IsPaused ? 0 : session.Simulation.Speed,
-+            ["game_total_hours"] = session.Clock.TotalHours, ["game_time_stamp"] = session.Clock.GameSeconds,
-+            ["game_hour_real_seconds"] = Meitou.Engine.Time.GameClock.SecondsPerGameHour,
-+            ["world_ready"] = OracleReady, ["load_pause_pending"] = oracleLoadPending || Covered,
-+            ["frame"] = oracleFrame, ["observed_qpc_ms"] = realTime.Elapsed.TotalMilliseconds,
++            ["free_camera"] = Session.Camera.IsFree, ["edge_scrolling"] = OracleEdgeScroll(Config.EdgeScroll != false),
++            ["scene_camera_control_owned"] = _oracleEdgeOwned, ["camera_restore_token"] = _oracleControlToken,
++            ["camera_follow_id"] = Player.Follow is { } follow ? _oracleState.CharacterIdentity(follow) : null,
++            ["selected_game_speed"] = _oracleSelectedSpeed, ["paused"] = Session.Simulation.IsPaused,
++            ["frame_speed_multiplier"] = Session.Simulation.IsPaused ? 0 : Session.Simulation.Speed,
++            ["game_total_hours"] = Session.Clock.TotalHours, ["game_time_stamp"] = Session.Clock.GameSeconds,
++            ["game_hour_real_seconds"] = Meitou.Simulation.Session.GameClock.SecondsPerGameHour,
++            ["world_ready"] = OracleReady, ["load_pause_pending"] = _oracleLoadPending || Covered,
++            ["frame"] = _oracleFrame, ["observed_qpc_ms"] = RealTime.Elapsed.TotalMilliseconds,
 +        };
 +    }
 +
@@ -587,12 +568,12 @@ index 00000000..95d54c35
 +        bool held = p.TryGetProperty("lock_edge", out _) && OracleBool(p, "lock_edge");
 +        bool release = p.TryGetProperty("release_edge", out _) && OracleBool(p, "release_edge");
 +        if (held && release) throw new ArgumentException("cannot lock and release edge scrolling together");
-+        bool before = session.Camera.IsFree;
-+        if (free != before) session.Camera.TakeOver(session.Camera.Current, strategy: !free);
-+        if (held) oracleEdgeOwned = true;
-+        if (release) oracleEdgeOwned = false;
-+        return new { before, free_camera = session.Camera.IsFree,
-+            edge_scrolling = OracleEdgeScroll(config.EdgeScroll != false), scene_camera_control_owned = oracleEdgeOwned };
++        bool before = Session.Camera.IsFree;
++        if (free != before) Session.Camera.TakeOver(Session.Camera.Current, strategy: !free);
++        if (held) _oracleEdgeOwned = true;
++        if (release) _oracleEdgeOwned = false;
++        return new { before, free_camera = Session.Camera.IsFree,
++            edge_scrolling = OracleEdgeScroll(Config.EdgeScroll != false), scene_camera_control_owned = _oracleEdgeOwned };
 +    }
 +
 +    OracleControl ReadOracleControl(JsonElement p)
@@ -620,60 +601,60 @@ index 00000000..95d54c35
 +    void ApplyOracleControl(OracleControl control)
 +    {
 +        // Resolve and validate every target before mutating camera, pause or ownership.
-+        oracleState!.Capture(session, popData!, "0.2");
++        _oracleState!.Capture(Session, PopData!, "0.2");
 +        CharacterId? followed = null;
 +        if (control.Follow is not null)
 +        {
-+            if (!oracleState.TryResolveCharacter(control.Follow, out var id)) throw new OracleHostError("not_found", "camera follow target is not loaded");
++            if (!_oracleState.TryResolveCharacter(control.Follow, out var id)) throw new OracleHostError("not_found", "camera follow target is not loaded");
 +            followed = id;
 +        }
 +        var (yaw, pitch, distance) = KenshiCamera.FromSaved(control.Orientation, control.Zoom);
-+        session.Camera.RestorePose(control.Center, yaw, pitch, distance, control.Free);
-+        player.Follow = followed;
-+        oracleFollowOffset = Vector3.Zero;
-+        oracleFollowRestored = followed is not null;
-+        if (followed is { } actor && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == actor) is { } c)
-+            oracleFollowOffset = control.Center - c.Position;
-+        oracleSelectedSpeed = control.Speed;
-+        session.Simulation.SetSpeed(0);
++        Session.Camera.RestorePose(control.Center, yaw, pitch, distance, control.Free);
++        Player.Follow = followed;
++        _oracleFollowOffset = Vector3.Zero;
++        _oracleFollowRestored = followed is not null;
++        if (followed is { } actor && Session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == actor) is { } c)
++            _oracleFollowOffset = control.Center - c.Position;
++        _oracleSelectedSpeed = control.Speed;
++        Session.Simulation.SetSpeed(0);
 +    }
 +
 +    object PrepareOracleControl(JsonElement p)
 +    {
 +        var control = ReadOracleControl(p); RequireOracleWorld(true);
-+        if (oraclePreparedControl is not null) throw new OracleHostError("camera_restore_busy", "a camera restoration is already prepared");
++        if (_oraclePreparedControl is not null) throw new OracleHostError("camera_restore_busy", "a camera restoration is already prepared");
 +        ApplyOracleControl(control);
-+        oracleEdgeOwned = true;
-+        oracleControlEpoch = worldEpoch;
-+        oracleControlToken = oracleInstance + ":camera:" + Guid.NewGuid().ToString("N");
-+        oraclePreparedControl = control;
++        _oracleEdgeOwned = true;
++        _oracleControlEpoch = Saves.WorldEpoch;
++        _oracleControlToken = _oracleInstance + ":camera:" + Guid.NewGuid().ToString("N");
++        _oraclePreparedControl = control;
 +        return OracleControlResult(true, false);
 +    }
 +
 +    object CommitOracleControl(JsonElement p)
 +    {
 +        OracleKeys(p, "token"); RequireOracleWorld(true);
-+        if (oraclePreparedControl is not { } control || oracleControlToken != OracleText(p, "token", 200) || oracleControlEpoch != worldEpoch)
++        if (_oraclePreparedControl is not { } control || _oracleControlToken != OracleText(p, "token", 200) || _oracleControlEpoch != Saves.WorldEpoch)
 +            throw new OracleHostError("camera_restore_state_changed", "camera preparation is missing or belongs to an old world");
-+        if (!oracleEdgeOwned || session.Camera.IsFree != control.Free || oracleSelectedSpeed != control.Speed)
++        if (!_oracleEdgeOwned || Session.Camera.IsFree != control.Free || _oracleSelectedSpeed != control.Speed)
 +            throw new OracleHostError("camera_restore_state_changed", "prepared camera controls changed");
-+        var view = session.Camera.Current;
++        var view = Session.Camera.Current;
 +        var (observed, zoom) = KenshiCamera.ToSaved(view.Yaw, view.Pitch, view.Distance);
 +        float quaternionError = Math.Min(Vector4.DistanceSquared(observed, control.Orientation), Vector4.DistanceSquared(observed, -control.Orientation));
 +        if (quaternionError > 1e-8 || Math.Abs(zoom - control.Zoom) > .0001
-+            || (player.Follow is { } id ? oracleState!.CharacterIdentity(id) : null) != control.Follow)
++            || (Player.Follow is { } id ? _oracleState!.CharacterIdentity(id) : null) != control.Follow)
 +            throw new OracleHostError("camera_restore_state_changed", "prepared camera pose or follow changed");
 +        ApplyOracleControl(control);
-+        oracleEdgeOwned = false; oracleEdgeSetting = control.Edge;
-+        session.Simulation.SetSpeed(control.Paused ? 0 : control.Speed);
-+        oraclePreparedControl = null; oracleControlToken = null;
++        _oracleEdgeOwned = false; _oracleEdgeSetting = control.Edge;
++        Session.Simulation.SetSpeed(control.Paused ? 0 : control.Speed);
++        _oraclePreparedControl = null; _oracleControlToken = null;
 +        return OracleControlResult(false, true);
 +    }
 +
 +    JsonObject OracleControlResult(bool prepared, bool restored)
 +    {
 +        var result = OracleScene();
-+        result["prepared"] = prepared; result["restored"] = restored; result["token"] = oracleControlToken;
++        result["prepared"] = prepared; result["restored"] = restored; result["token"] = _oracleControlToken;
 +        return result;
 +    }
 +
@@ -684,16 +665,16 @@ index 00000000..95d54c35
 +        if (type is not ("move" or "attack")) throw new OracleHostError("not_implemented", "only move and attack orders are implemented");
 +        bool character = p.TryGetProperty("character_id", out _), squad = p.TryGetProperty("squad_id", out _);
 +        if (character == squad) throw new ArgumentException("provide exactly one character_id or squad_id");
-+        oracleState!.Capture(session, popData!, "0.2");
++        _oracleState!.Capture(Session, PopData!, "0.2");
 +        List<CharacterId> actors = [];
 +        if (character)
 +        {
-+            if (!oracleState.TryResolveCharacter(OracleText(p, "character_id", 200), out var id)) throw new OracleHostError("not_found", "character is not loaded");
++            if (!_oracleState.TryResolveCharacter(OracleText(p, "character_id", 200), out var id)) throw new OracleHostError("not_found", "character is not loaded");
 +            actors.Add(id);
 +        }
 +        else
 +        {
-+            if (!oracleState.TryResolveSquad(OracleText(p, "squad_id", 200), out var id) || session.World.Squads.Find(id) is not { } found)
++            if (!_oracleState.TryResolveSquad(OracleText(p, "squad_id", 200), out var id) || Session.World.Squads.Find(id) is not { } found)
 +                throw new OracleHostError("not_found", "squad is not loaded");
 +            actors.AddRange(found.Members);
 +        }
@@ -702,16 +683,16 @@ index 00000000..95d54c35
 +        if (type == "move")
 +        {
 +            if (p.TryGetProperty("target_id", out _)) throw new ArgumentException("move uses position, not target_id");
-+            order = new MoveOrder(actors, OraclePosition(p, "position")) { Tick = session.World.Tick };
++            order = new MoveOrder(actors, OraclePosition(p, "position")) { Tick = Session.World.Tick };
 +        }
 +        else
 +        {
 +            if (p.TryGetProperty("position", out _)) throw new ArgumentException("attack uses target_id, not position");
-+            if (!oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var target)) throw new OracleHostError("not_found", "attack target is not loaded");
-+            order = new Meitou.Simulation.Combat.AttackOrder(actors, target) { Tick = session.World.Tick };
++            if (!_oracleState.TryResolveCharacter(OracleText(p, "target_id", 200), out var target)) throw new OracleHostError("not_found", "attack target is not loaded");
++            order = new Meitou.Simulation.Combat.AttackOrder(actors, target) { Tick = Session.World.Tick };
 +        }
-+        session.World.Commands.Enqueue(order);
-+        session.World.ApplyPausedInterfaceCommands();
++        Session.World.Commands.Enqueue(order);
++        Session.World.ApplyPausedInterfaceCommands();
 +        return new { accepted = true, type, characters = actors.Count };
 +    }
 +
@@ -796,166 +777,213 @@ index 00000000..95d54c35
 +                throw new IOException("oracle paths must not traverse links or junctions");
 +    }
 +}
-diff --git a/src/Meitou.Game/GameHost.Sandbox.cs b/src/Meitou.Game/GameHost.Sandbox.cs
-index 38563161..9f1d61b5 100644
---- a/src/Meitou.Game/GameHost.Sandbox.cs
-+++ b/src/Meitou.Game/GameHost.Sandbox.cs
-@@ -209,9 +209,16 @@ sealed partial class GameHost
-     void FollowCamera()
-     {
-         if (player.Follow is not { } id || session.Camera.IsFree) return;
-+        if (g.Oracle && oraclePreparedControl is not null) return;
-         if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } followed) { player.Follow = null; return; }
--        session.Camera.MovePivot(new Vector2(followed.Position.X, followed.Position.Z));
--        camera.Target = DrawnPosition(followed);
-+        var offset = g.Oracle ? oracleFollowOffset : Vector3.Zero;
-+        if (g.Oracle && oracleFollowRestored && session.Simulation.IsPaused)
-+        {
-+            var view = session.Camera.Current;
-+            session.Camera.RestorePose(followed.Position + offset, view.Yaw, view.Pitch, view.Distance, false);
-+        }
-+        else session.Camera.MovePivot(new Vector2(followed.Position.X + offset.X, followed.Position.Z + offset.Z));
-+        camera.Target = DrawnPosition(followed) + offset;
-     }
- 
-     void SandboxFollowCamera()
-diff --git a/src/Meitou.Game/GameHost.Saving.cs b/src/Meitou.Game/GameHost.Saving.cs
-index 2209ab43..6ff4110e 100644
---- a/src/Meitou.Game/GameHost.Saving.cs
-+++ b/src/Meitou.Game/GameHost.Saving.cs
-@@ -147,6 +147,7 @@ sealed partial class GameHost
-     /// </summary>
-     void Autosave(double realDt)
-     {
-+        if (g.Oracle) return;   // process-local isolation; do not persist a different gameplay/config setting
-         if (autosaveDue)
-         {
-             autosaveDue = false;
-@@ -261,7 +262,7 @@ sealed partial class GameHost
-             Stage("read", () => read = Task.Run(() => SaveGame.Load(SaveFolder.Open(folder), ReadArrivalHour))),
-             Stage("systems", () => { prepared = PrepareSystems(read!, interactive: true); return null; }, duringAscent: true),
-             Stage("build", () => SwapInSave(read!, interactive: true, out summary, prepared: prepared)),
--            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); PauseAfterLoad(); saveInUse = folder; return null; }));
-+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); PauseAfterLoad(); saveInUse = folder; OracleFinishedLoad(folder); return null; }));
-     }
- 
-     /// <summary>
-@@ -333,6 +334,7 @@ sealed partial class GameHost
-     Task SwapInSave(Task<SaveGame> read, bool interactive, out string summary, SaveLoadOptions? loadOptions = null, PreparedSystems? prepared = null)
-     {
-         var watch = Stopwatch.StartNew();
-+        ApplyOracleSeed(read.Result);
-         LoadedSave? loaded = null;
-         var (built, nextData, nextDifficulty) = prepared ?? PrepareSystems(read, interactive);
-         try
 diff --git a/src/Meitou.Game/GameHost.Transition.cs b/src/Meitou.Game/GameHost.Transition.cs
-index cf8fa158..f5d492ce 100644
+index 4ecf0af44..6fd706169 100644
 --- a/src/Meitou.Game/GameHost.Transition.cs
 +++ b/src/Meitou.Game/GameHost.Transition.cs
-@@ -87,6 +87,7 @@ sealed partial class GameHost
+@@ -163,6 +163,7 @@ sealed partial class GameHost
          }
          catch (Exception e)
          {
 +            OracleLoadFailed(e.Message);
-             sceneLoad = null;
-             skyArrival = null;
-             presentationHour = null;
-@@ -207,12 +208,12 @@ sealed partial class GameHost
-         presentationHour = skyArrival?.Apply(camera, TitleVisible ? TitleHour : (float)session.Clock.HourOfDay, warming);
-     }
- 
--    /// <summary>The host's side of a new world: the camera focus sent again, the first tick (it publishes the snapshot), the draw list and the mouse state dropped, the menus closed.</summary>
-+    /// <summary>The host's side of a new world: the camera focus sent again, the initial snapshot, the draw list and the mouse state dropped, the menus closed. Oracle loading prepares population without an unclocked simulation tick.</summary>
-     void SettleNewWorld()
+             ActiveSceneLoad = null;
+             SkyArrival = null;
+             PresentationHour = null;
+@@ -336,7 +337,8 @@ sealed partial class GameHost
      {
-         sentFocus = false;
+         _sentFocus = false;
          SendFocus();
--        session.World.RunTick();
-+        OracleHostPolicy.PrepareLoadedWorld(session, session.Camera.Current.Target, g.Oracle);
-         indexedFor = null;
-         previousById.Clear();
-         player.Reset();
+-        Session.World.RunTick();
++        // Oracle loading prepares the population without an unclocked simulation tick; every other run takes the first tick here.
++        OracleHostPolicy.PrepareLoadedWorld(Session, Session.Camera.Current.Target, GameOptions.Oracle);
+         IndexedFor = null;
+         PreviousById.Clear();
+         Player.Reset();
 diff --git a/src/Meitou.Game/GameHost.cs b/src/Meitou.Game/GameHost.cs
-index 0c30ad56..a3316320 100644
+index 54aa9289f..b04bb73d9 100644
 --- a/src/Meitou.Game/GameHost.cs
 +++ b/src/Meitou.Game/GameHost.cs
-@@ -97,6 +97,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
-     {
+@@ -493,6 +493,7 @@ sealed partial class GameHost(
+         CreateFeatures();
          try
          {
 +            StartOracle();
  #if MEITOU_METAL
-             if (g.Renderer == "metal") return Metal();
+             if (GameOptions.Renderer == "metal") return Metal();
  #endif
-@@ -107,7 +108,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
-             }
-             return o.Screenshot is not null ? Screenshot() : Interactive();
+@@ -506,6 +507,7 @@ sealed partial class GameHost(
          }
--        finally { DisposeAudio(); DisposeTitleScene(); session?.Dispose(); nav?.Dispose(); ragdollGeometry?.Dispose(); ownedScene?.Dispose(); }
-+        finally { oracleServer?.Dispose(); DisposeAudio(); DisposeTitleScene(); session?.Dispose(); nav?.Dispose(); ragdollGeometry?.Dispose(); ownedScene?.Dispose(); }
+         finally
+         {
++            DisposeOracle();
+             Sound.DisposeAudio();
+             TitleScreen.DisposeTitleScene();
+             Session?.Dispose();
+@@ -969,6 +971,7 @@ sealed partial class GameHost(
+         AwaitLoading(navmesh);
+         SettleNewWorld();
+         Saves.FinishLoadNotice(summary);
++        OracleFinishedLoad(folder);
      }
  
-     /// <summary>The start opens on the title (no start, save, sandbox or duel was asked for).</summary>
-@@ -407,6 +408,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
-             AwaitLoading(navmesh);
-             SettleNewWorld();
-             FinishLoadNotice(summary);
-+            OracleFinishedLoad(folder);
+     #endregion
+diff --git a/src/Meitou.Game/Host/GameLoop.cs b/src/Meitou.Game/Host/GameLoop.cs
+index a82d3e0a0..803527f6a 100644
+--- a/src/Meitou.Game/Host/GameLoop.cs
++++ b/src/Meitou.Game/Host/GameLoop.cs
+@@ -1329,7 +1329,7 @@ sealed class GameLoop(GameHost host)
+             host.Session.Input.Consume();
          }
-         if (interactive)
-         {
-diff --git a/src/Meitou.Game/GameOptions.cs b/src/Meitou.Game/GameOptions.cs
-index 81674ea4..8e3cd0e5 100644
---- a/src/Meitou.Game/GameOptions.cs
-+++ b/src/Meitou.Game/GameOptions.cs
-@@ -59,6 +59,10 @@ sealed class GameOptions
-     public double? QuitAfter;
-     /// <summary>A save folder (Meitou's or the original game's) started in instead of a new world, loaded as the game menu's Load does (<c>--load</c>).</summary>
-     public string? Load;
-+    /// <summary>Opt-in loopback oracle; ordinary runs create no listener or oracle output.</summary>
+         // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
+-        host.Session.Camera.Settings.EdgeScroll = host.Config.EdgeScroll != false;
++        host.Session.Camera.Settings.EdgeScroll = host.OracleEdgeScroll(host.Config.EdgeScroll != false);
+         bool edgeOff = host.Covered || host.TitleScreen.TitleVisible || _panel?.Visible == true || host.AgentChannel.InterfaceHidden
+             || _cinemaHolds || _cinema.EditorVisible;
+         host.Session.Camera.Strategy.EdgePointer = edgeOff ? null : _window is null ? null : WindowPointer.InWindow(_window);
+@@ -1347,6 +1347,7 @@ sealed class GameLoop(GameHost host)
+         host.NewGame.HandleNewGame();
+         host.NewGame.HandleMainMenu();
+         host.StepSceneLoad();
++        host.ServiceOracle();
+         host.AnimSeconds += frameDt;
+         host.AnimClock = true;
+         host.UpdateNav();
+diff --git a/src/Meitou.Game/Host/GameOptions.cs b/src/Meitou.Game/Host/GameOptions.cs
+index d7ae108fe..d257cbf18 100644
+--- a/src/Meitou.Game/Host/GameOptions.cs
++++ b/src/Meitou.Game/Host/GameOptions.cs
+@@ -192,6 +192,18 @@ sealed class GameOptions
+     /// </summary>
+     public string? ShotOut;
+     /// <summary>
++    /// <c>--oracle</c>: the opt-in loopback oracle (docs/oracle.md); ordinary runs create no listener and no oracle output.
++    /// </summary>
 +    public bool Oracle;
++    /// <summary>
++    /// <c>--oracle-port &lt;n&gt;</c>: the oracle's 127.0.0.1 listening port.
++    /// </summary>
 +    public int OraclePort = 47801;
++    /// <summary>
++    /// <c>--oracle-output &lt;dir&gt;</c>: where the oracle writes new snapshot files (default <c>oracle-dumps</c>).
++    /// </summary>
 +    public string? OracleOutput;
-     /// <summary><c>--play-bench &lt;dir&gt;</c>: the interactive game driven by a script, every frame measured, the results written there (GameHost.PlayBench.cs).</summary>
++    /// <summary>
+     /// <c>--play-bench &lt;dir&gt;</c>: the interactive game driven by a script, every frame measured, the results written there (PlayBench).
+     /// </summary>
      public string? PlayBench;
-     /// <summary><c>--no-precompile</c>: the methods are compiled on their first call only, not ahead on a background thread (JitWarmup).</summary>
-@@ -115,6 +119,9 @@ sealed class GameOptions
-                                      (frame, update, world tick steps and systems, render stages, GPU stages, collections); writes frames.csv and summary.md there and
-                                      quits; frame limit and vsync off; MEITOU_BENCH_ONLY=a,b keeps those segments
+@@ -281,6 +293,9 @@ sealed class GameOptions
+           --screenshot-out <png>     where --screenshot-after saves (default <control-dir>/shot.png, else ./meitou-shot.png)
            --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
-+          --oracle                  enable the loopback state/scenario adapter (interactive saves only; autosave disabled for this run)
-+          --oracle-port <n>         oracle TCP port (default 47801; needs --oracle)
-+          --oracle-output <dir>     new snapshot files here (default oracle-dumps; needs --oracle)
+           --continue                 start in the newest save of Meitou's and the original game's save folders, as --load would
++          --oracle                   enable the loopback state/scenario adapter (interactive saves only; autosave disabled for this run)
++          --oracle-port <n>          oracle TCP port (default 47801; needs --oracle)
++          --oracle-output <dir>      new snapshot files here (default oracle-dumps; needs --oracle)
            --renderer <vulkan|metal>  the renderer for the whole frame: vulkan (the default) or metal (macOS: the scene, HUD and faithful panels, the port's current slice)
            --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
            world options as meitou-viewer --world: --at, --zone, --town, --radius, --time, --screenshot, --size, --no-foliage, ...
-@@ -211,6 +218,12 @@ sealed class GameOptions
-                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
-                 case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
-                 case "--load": g.Load = Next(); break;
-+                case "--oracle": g.Oracle = true; break;
-+                case "--oracle-port":
-+                    g.OraclePort = int.Parse(Next(), CultureInfo.InvariantCulture);
-+                    if (g.OraclePort is < 1 or > 65535) throw new ArgumentException("--oracle-port must be 1..65535");
-+                    break;
-+                case "--oracle-output": g.OracleOutput = Next(); break;
-                 case "--renderer":
-                 {
-                     string renderer = Next().ToLowerInvariant();
-@@ -228,6 +241,10 @@ sealed class GameOptions
-                 default: rest.Add(a); break;
-             }
+@@ -305,7 +320,7 @@ sealed class GameOptions
+             string a = args[i];
+             if (ParseScreenOption(g, a, args, ref i) || ParseStartOption(g, a, args, ref i) || ParseRunOption(g, a, args, ref i)
+                 || ParseAgentOption(g, a, args, ref i) || ParseSandboxOption(g, a, args, ref i) || ParseBattleOption(g, a, args, ref i)
+-                || ParseSceneOption(g, a, args, ref i))
++                || ParseSceneOption(g, a, args, ref i) || global::Meitou.Game.Oracle.OracleOptions.Parse(g, a, args, ref i))
+                 continue;
+ 
+             switch (a)
+@@ -328,6 +343,7 @@ sealed class GameOptions
+             g.UiMode = Data.Ui.UiMode.Faithful;
+             g.MeitouMainMenu = false;
          }
-+        if (!g.Oracle && (args.Contains("--oracle-port") || g.OracleOutput is not null))
-+            throw new ArgumentException("--oracle-port and --oracle-output need --oracle");
-+        if (g.Oracle && (g.Sandbox > 0 || g.Duel || g.Battle is not null || g.NoPopulation || g.TerrainSandbox is not null || g.PlayBench is not null))
-+            throw new ArgumentException("--oracle needs the interactive saved world; drop sandbox, duel, battle, no-population and play-bench modes");
++        global::Meitou.Game.Oracle.OracleOptions.Validate(g, args);
          return (g, rest.ToArray());
      }
- }
+ 
+diff --git a/src/Meitou.Game/Host/GameSaves.cs b/src/Meitou.Game/Host/GameSaves.cs
+index 197df2fb3..4985394ed 100644
+--- a/src/Meitou.Game/Host/GameSaves.cs
++++ b/src/Meitou.Game/Host/GameSaves.cs
+@@ -97,6 +97,8 @@ sealed class GameSaves(GameHost host)
+     /// </summary>
+     void Autosave(double realDt)
+     {
++        // Process-local isolation: the oracle run writes no autosave and persists no other gameplay or config setting.
++        if (host.GameOptions.Oracle) return;
+         if (_autosaveDue)
+         {
+             _autosaveDue = false;
+@@ -296,7 +298,7 @@ sealed class GameSaves(GameHost host)
+     /// Starts loading a save under the loading screen (GameHost.Transition.cs): the files are read on a worker, the new world is made, the navmesh
+     /// round the player waits.
+     /// </summary>
+-    void BeginQuickLoad(string? source = null)
++    internal void BeginQuickLoad(string? source = null)
+     {
+         if (!SavesAvailable(out string reason))
+         {
+@@ -334,6 +336,7 @@ sealed class GameSaves(GameHost host)
+                 FinishLoadNotice(summary);
+                 PauseAfterLoad();
+                 SaveInUse = folder;
++                host.OracleFinishedLoad(folder);
+                 return null;
+             }));
+     }
+@@ -445,6 +448,7 @@ sealed class GameSaves(GameHost host)
+         PreparedSystems? prepared = null)
+     {
+         var watch = Stopwatch.StartNew();
++        host.ApplyOracleSeed(read.Result);
+         LoadedSave? loaded = null;
+         var (built, nextData, nextDifficulty) = prepared ?? PrepareSystems(read, interactive);
+         try
+diff --git a/src/Meitou.Game/Host/MetalGameLoop.cs b/src/Meitou.Game/Host/MetalGameLoop.cs
+index b0b4f2ac8..e3e74759a 100644
+--- a/src/Meitou.Game/Host/MetalGameLoop.cs
++++ b/src/Meitou.Game/Host/MetalGameLoop.cs
+@@ -1038,6 +1038,7 @@ sealed class MetalGameLoop(GameHost host, Data.Gameplay.NewGameStart? start)
+                 host.SettleNewWorld();
+                 _hud.FollowSelected();
+                 host.Saves.FinishLoadNotice(summary);
++                host.OracleFinishedLoad(host.GameOptions.Load ?? "");
+                 host.ApplyCamera(host.Session.Camera.Current);
+             }
+             catch (GameHost.SceneLoadFailed e)
+@@ -2323,7 +2324,7 @@ sealed class MetalGameLoop(GameHost host, Data.Gameplay.NewGameStart? start)
+     void AdvanceSession(double dt)
+     {
+         // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
+-        host.Session.Camera.Settings.EdgeScroll = host.Config.EdgeScroll != false;
++        host.Session.Camera.Settings.EdgeScroll = host.OracleEdgeScroll(host.Config.EdgeScroll != false);
+         host.Session.Camera.Strategy.EdgePointer = host.Covered || _hud is not null && host.TitleScreen.TitleVisible || _settings?.Visible == true ||
+             _hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(_window);
+         // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.
+@@ -2342,6 +2343,7 @@ sealed class MetalGameLoop(GameHost host, Data.Gameplay.NewGameStart? start)
+             host.NewGame.HandleMainMenu();
+         }
+         host.StepSceneLoad();
++        host.ServiceOracle();
+         host.AdvanceSkyArrival(dt);
+     }
+ 
+diff --git a/src/Meitou.Game/Host/Program.cs b/src/Meitou.Game/Host/Program.cs
+index d69b78dcf..08ea7ea14 100644
+--- a/src/Meitou.Game/Host/Program.cs
++++ b/src/Meitou.Game/Host/Program.cs
+@@ -76,6 +76,11 @@ static class Program
+     /// </summary>
+     static int? CheckScreenshotOptions(GameOptions game, WorldOptions world)
+     {
++        if (game.Oracle && world.Screenshot is not null)
++        {
++            Console.Error.WriteLine("--oracle needs the interactive frame loop; drop --screenshot.");
++            return 2;
++        }
+         if (game.UiShowcase && world.Screenshot is null)
+         {
+             Console.Error.WriteLine("--ui-showcase needs --screenshot <path>.");
 diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 new file mode 100644
-index 00000000..2fa42efb
+index 000000000..2fa42efbc
 --- /dev/null
 +++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 @@ -0,0 +1,148 @@
@@ -1107,9 +1135,67 @@ index 00000000..2fa42efb
 +        output.Append('"');
 +    }
 +}
+diff --git a/src/Meitou.Game/Oracle/OracleOptions.cs b/src/Meitou.Game/Oracle/OracleOptions.cs
+new file mode 100644
+index 000000000..c12f2dd9d
+--- /dev/null
++++ b/src/Meitou.Game/Oracle/OracleOptions.cs
+@@ -0,0 +1,52 @@
++using System.Globalization;
++using Meitou.Game.Host;
++
++namespace Meitou.Game.Oracle;
++
++/// <summary>
++/// The oracle's command-line options (<c>--oracle</c>, <c>--oracle-port</c>, <c>--oracle-output</c>), parsed and checked here so that
++/// <see cref="GameOptions"/> only names them (docs/oracle.md).
++/// </summary>
++static class OracleOptions
++{
++    /// <summary>
++    /// Takes <paramref name="a"/> when it is an oracle option (its value too, stepping <paramref name="index"/> past it); false when it is none.
++    /// </summary>
++    internal static bool Parse(GameOptions g, string a, string[] args, ref int index)
++    {
++        switch (a)
++        {
++            case "--oracle":
++                g.Oracle = true;
++                return true;
++            case "--oracle-port":
++                g.OraclePort = int.Parse(Value(args, ref index, a), CultureInfo.InvariantCulture);
++                if (g.OraclePort is < 1 or > 65535) throw new ArgumentException("--oracle-port must be 1..65535");
++                return true;
++            case "--oracle-output":
++                g.OracleOutput = Value(args, ref index, a);
++                return true;
++            default:
++                return false;
++        }
++    }
++
++    /// <summary>
++    /// Refuses oracle options without <c>--oracle</c>, and <c>--oracle</c> with a mode that is not the interactive saved world.
++    /// </summary>
++    internal static void Validate(GameOptions g, string[] args)
++    {
++        if (!g.Oracle && (args.Contains("--oracle-port") || g.OracleOutput is not null))
++            throw new ArgumentException("--oracle-port and --oracle-output need --oracle");
++
++        bool otherMode = g.Sandbox > 0 || g.Duel || g.Battle is not null || g.NoPopulation || g.TerrainSandbox is not null || g.PlayBench is not null;
++        if (g.Oracle && otherMode)
++            throw new ArgumentException("--oracle needs the interactive saved world; drop sandbox, duel, battle, no-population and play-bench modes");
++    }
++
++    /// <summary>
++    /// The value after option <paramref name="a"/>, stepping <paramref name="index"/> onto it; an error when the command line ends.
++    /// </summary>
++    static string Value(string[] args, ref int index, string a) =>
++        index + 1 < args.Length ? args[++index] : throw new ArgumentException($"{a} needs a value");
++}
 diff --git a/src/Meitou.Game/Oracle/OracleProtocol.cs b/src/Meitou.Game/Oracle/OracleProtocol.cs
 new file mode 100644
-index 00000000..3b9d3af1
+index 000000000..7a4dd6cb6
 --- /dev/null
 +++ b/src/Meitou.Game/Oracle/OracleProtocol.cs
 @@ -0,0 +1,164 @@
@@ -1222,13 +1308,13 @@ index 00000000..3b9d3af1
 +
 +    sealed class ResponseBuffer : Stream
 +    {
-+        readonly MemoryStream buffer = new();
-+        public byte[] ToArray() => buffer.ToArray();
++        readonly MemoryStream _buffer = new();
++        public byte[] ToArray() => _buffer.ToArray();
 +        public override bool CanRead => false;
 +        public override bool CanSeek => false;
 +        public override bool CanWrite => true;
-+        public override long Length => buffer.Length;
-+        public override long Position { get => buffer.Position; set => throw new NotSupportedException(); }
++        public override long Length => _buffer.Length;
++        public override long Position { get => _buffer.Position; set => throw new NotSupportedException(); }
 +        public override void Flush() { }
 +        public override int Read(byte[] bytes, int offset, int count) => throw new NotSupportedException();
 +        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
@@ -1237,30 +1323,30 @@ index 00000000..3b9d3af1
 +        public override void Write(ReadOnlySpan<byte> bytes)
 +        {
 +            if (Length + bytes.Length >= MaxLineBytes) throw new ResponseTooLargeException();
-+            buffer.Write(bytes);
++            _buffer.Write(bytes);
 +        }
 +        public override void WriteByte(byte value)
 +        {
 +            if (Length + 1 >= MaxLineBytes) throw new ResponseTooLargeException();
-+            buffer.WriteByte(value);
++            _buffer.WriteByte(value);
 +        }
-+        protected override void Dispose(bool disposing) { if (disposing) buffer.Dispose(); base.Dispose(disposing); }
++        protected override void Dispose(bool disposing) { if (disposing) _buffer.Dispose(); base.Dispose(disposing); }
 +    }
 +}
 +
 +/// <summary>A detached request. Only the host executes commands; completion freezes its reply.</summary>
 +internal sealed class OracleRequest(string command, JsonElement parameters, JsonElement id)
 +{
-+    readonly TaskCompletionSource<byte[]> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-+    int state; // 0 queued, 1 taken by host, 2 completed, 3 cancelled.
++    readonly TaskCompletionSource<byte[]> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
++    int _state; // 0 queued, 1 taken by host, 2 completed, 3 cancelled.
 +
 +    public string Command { get; } = command;
 +    public JsonElement Params { get; } = parameters;
 +    public JsonElement Id { get; } = id;
-+    public bool IsCancelled => Volatile.Read(ref state) == 3;
-+    internal Task<byte[]> Response => completion.Task;
++    public bool IsCancelled => Volatile.Read(ref _state) == 3;
++    internal Task<byte[]> Response => _completion.Task;
 +
-+    internal bool TryTake() => Interlocked.CompareExchange(ref state, 1, 0) == 0;
++    internal bool TryTake() => Interlocked.CompareExchange(ref _state, 1, 0) == 0;
 +
 +    public void Complete(object? result) => Finish(OracleProtocol.Result(Id, result), 2);
 +    public void Fail(string code, string message) => Finish(OracleProtocol.Error(Id, code, message), 2);
@@ -1271,15 +1357,15 @@ index 00000000..3b9d3af1
 +        int before;
 +        do
 +        {
-+            before = Volatile.Read(ref state);
++            before = Volatile.Read(ref _state);
 +            if (before is 2 or 3) return;
-+        } while (Interlocked.CompareExchange(ref state, finalState, before) != before);
-+        completion.TrySetResult(response);
++        } while (Interlocked.CompareExchange(ref _state, finalState, before) != before);
++        _completion.TrySetResult(response);
 +    }
 +}
 diff --git a/src/Meitou.Game/Oracle/OracleServer.cs b/src/Meitou.Game/Oracle/OracleServer.cs
 new file mode 100644
-index 00000000..c3f2d308
+index 000000000..05098276a
 --- /dev/null
 +++ b/src/Meitou.Game/Oracle/OracleServer.cs
 @@ -0,0 +1,276 @@
@@ -1295,18 +1381,18 @@ index 00000000..c3f2d308
 +internal sealed class OracleServer : IDisposable
 +{
 +    const int MaxConnections = 128;
-+    readonly TcpListener listener;
-+    readonly CancellationTokenSource shutdown = new();
-+    readonly ConcurrentDictionary<TcpClient, Task> clients = new();
-+    readonly object clientsLock = new();
-+    readonly Queue<OracleRequest> queue = new();
-+    readonly object queueLock = new();
-+    readonly TimeSpan commandTimeout;
-+    readonly TimeSpan idleTimeout;
-+    readonly Task accepting;
-+    JsonElement heartbeat;
-+    readonly object heartbeatLock = new();
-+    int disposed;
++    readonly TcpListener _listener;
++    readonly CancellationTokenSource _shutdown = new();
++    readonly ConcurrentDictionary<TcpClient, Task> _clients = new();
++    readonly object _clientsLock = new();
++    readonly Queue<OracleRequest> _queue = new();
++    readonly object _queueLock = new();
++    readonly TimeSpan _commandTimeout;
++    readonly TimeSpan _idleTimeout;
++    readonly Task _accepting;
++    JsonElement _heartbeat;
++    readonly object _heartbeatLock = new();
++    int _disposed;
 +
 +    public OracleServer(int port) : this(port, TimeSpan.FromSeconds(9), TimeSpan.FromSeconds(10)) { }
 +
@@ -1315,27 +1401,27 @@ index 00000000..c3f2d308
 +        if (port is < 0 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
 +        if (commandTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(commandTimeout));
 +        if (idleTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(idleTimeout));
-+        this.commandTimeout = commandTimeout;
-+        this.idleTimeout = idleTimeout;
-+        heartbeat = JsonSerializer.SerializeToElement(new
++        _commandTimeout = commandTimeout;
++        _idleTimeout = idleTimeout;
++        _heartbeat = JsonSerializer.SerializeToElement(new
 +        {
 +            frame = 0, timestamp_ms = 0, service_frame = 0, service_timestamp_ms = 0,
 +            service_thread = 0, game_thread = 0, loading = true,
 +        });
-+        listener = new TcpListener(IPAddress.Loopback, port);
-+        listener.Server.ExclusiveAddressUse = true;
-+        listener.Start(16);
-+        LocalPort = ((IPEndPoint)listener.LocalEndpoint).Port;
-+        accepting = AcceptAsync();
++        _listener = new TcpListener(IPAddress.Loopback, port);
++        _listener.Server.ExclusiveAddressUse = true;
++        _listener.Start(16);
++        LocalPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
++        _accepting = AcceptAsync();
 +    }
 +
 +    public int LocalPort { get; }
 +
 +    public bool TryDequeue([NotNullWhen(true)] out OracleRequest? request)
 +    {
-+        lock (queueLock)
++        lock (_queueLock)
 +        {
-+            while (queue.TryDequeue(out var candidate))
++            while (_queue.TryDequeue(out var candidate))
 +                if (candidate.TryTake()) { request = candidate; return true; }
 +        }
 +        request = null;
@@ -1350,27 +1436,27 @@ index 00000000..c3f2d308
 +            throw new ArgumentException("Heartbeat must be an object.", nameof(snapshot));
 +        if (JsonSerializer.SerializeToUtf8Bytes(copy).Length > OracleProtocol.MaxLineBytes - 1024)
 +            throw new ArgumentException("Heartbeat is too large.", nameof(snapshot));
-+        lock (heartbeatLock) heartbeat = copy;
++        lock (_heartbeatLock) _heartbeat = copy;
 +    }
 +
 +    async Task AcceptAsync()
 +    {
 +        try
 +        {
-+            while (!shutdown.IsCancellationRequested)
++            while (!_shutdown.IsCancellationRequested)
 +            {
-+                var client = await listener.AcceptTcpClientAsync(shutdown.Token).ConfigureAwait(false);
-+                lock (clientsLock)
++                var client = await _listener.AcceptTcpClientAsync(_shutdown.Token).ConfigureAwait(false);
++                lock (_clientsLock)
 +                {
-+                    if (shutdown.IsCancellationRequested || clients.Count >= MaxConnections)
++                    if (_shutdown.IsCancellationRequested || _clients.Count >= MaxConnections)
 +                    {
 +                        client.Dispose();
 +                        continue;
 +                    }
 +                    client.NoDelay = true;
 +                    var servicing = ServeAsync(client);
-+                    clients[client] = servicing;
-+                    _ = servicing.ContinueWith(_ => clients.TryRemove(client, out var ignored),
++                    _clients[client] = servicing;
++                    _ = servicing.ContinueWith(_ => _clients.TryRemove(client, out var ignored),
 +                        CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 +                }
 +            }
@@ -1393,12 +1479,12 @@ index 00000000..c3f2d308
 +                var socket = client.Client;
 +                if (socket is null) return;
 +                var lines = new LineReader(stream);
-+                while (!shutdown.IsCancellationRequested)
++                while (!_shutdown.IsCancellationRequested)
 +                {
 +                    byte[]? line;
-+                    using (var read = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token))
++                    using (var read = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token))
 +                    {
-+                        read.CancelAfter(idleTimeout);
++                        read.CancelAfter(_idleTimeout);
 +                        line = await lines.ReadAsync(read.Token).ConfigureAwait(false);
 +                    }
 +                    if (line is null) return;
@@ -1418,7 +1504,7 @@ index 00000000..c3f2d308
 +                        else
 +                        {
 +                            JsonElement copy;
-+                            lock (heartbeatLock) copy = heartbeat;
++                            lock (_heartbeatLock) copy = _heartbeat;
 +                            reply = OracleProtocol.Result(request.Id, copy);
 +                        }
 +                    }
@@ -1435,24 +1521,24 @@ index 00000000..c3f2d308
 +
 +    async Task<byte[]> DispatchAsync(Socket socket, OracleRequest request)
 +    {
-+        lock (queueLock)
++        lock (_queueLock)
 +        {
 +            // Remove cancelled entries before deciding whether the bounded queue is full.
-+            int count = queue.Count;
++            int count = _queue.Count;
 +            for (int i = 0; i < count; i++)
 +            {
-+                var candidate = queue.Dequeue();
-+                if (!candidate.IsCancelled) queue.Enqueue(candidate);
++                var candidate = _queue.Dequeue();
++                if (!candidate.IsCancelled) _queue.Enqueue(candidate);
 +            }
-+            if (queue.Count >= OracleProtocol.QueueCapacity)
++            if (_queue.Count >= OracleProtocol.QueueCapacity)
 +                return OracleProtocol.Error(request.Id, "busy", "Host command queue is full.");
-+            if (shutdown.IsCancellationRequested)
++            if (_shutdown.IsCancellationRequested)
 +                return OracleProtocol.Error(request.Id, "cancelled", "Oracle server is stopping.");
-+            queue.Enqueue(request);
++            _queue.Enqueue(request);
 +        }
 +
-+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
-+        deadline.CancelAfter(commandTimeout);
++        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
++        deadline.CancelAfter(_commandTimeout);
 +        try
 +        {
 +            while (!request.Response.IsCompleted)
@@ -1469,7 +1555,7 @@ index 00000000..c3f2d308
 +        }
 +        catch (OperationCanceledException)
 +        {
-+            request.Cancel(shutdown.IsCancellationRequested ? "cancelled" : "timeout",
++            request.Cancel(_shutdown.IsCancellationRequested ? "cancelled" : "timeout",
 +                "Host response timed out or server stopped; execution may already have started.");
 +            return await request.Response.ConfigureAwait(false);
 +        }
@@ -1481,8 +1567,8 @@ index 00000000..c3f2d308
 +
 +    async Task WriteAsync(NetworkStream stream, byte[] reply)
 +    {
-+        using var write = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
-+        write.CancelAfter(idleTimeout);
++        using var write = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
++        write.CancelAfter(_idleTimeout);
 +        await stream.WriteAsync(reply, write.Token).ConfigureAwait(false);
 +    }
 +
@@ -1491,7 +1577,7 @@ index 00000000..c3f2d308
 +        // On Windows, closing with unread input resets TCP and can discard the error reply.
 +        // Send a FIN, then discard a bounded tail without ever treating it as another request.
 +        socket.Shutdown(SocketShutdown.Send);
-+        using var drain = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
++        using var drain = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
 +        drain.CancelAfter(TimeSpan.FromMilliseconds(500));
 +        var discarded = new byte[4096];
 +        int remaining = OracleProtocol.MaxLineBytes;
@@ -1510,50 +1596,50 @@ index 00000000..c3f2d308
 +
 +    public void Dispose()
 +    {
-+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-+        shutdown.Cancel();
-+        listener.Stop();
++        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
++        _shutdown.Cancel();
++        _listener.Stop();
 +        Task[] remaining;
-+        lock (clientsLock)
++        lock (_clientsLock)
 +        {
-+            foreach (var client in clients.Keys) client.Dispose();
-+            remaining = clients.Values.Prepend(accepting).ToArray();
++            foreach (var client in _clients.Keys) client.Dispose();
++            remaining = _clients.Values.Prepend(_accepting).ToArray();
 +        }
-+        lock (queueLock)
-+            while (queue.TryDequeue(out var request)) request.Cancel("cancelled", "Oracle server stopped.");
++        lock (_queueLock)
++            while (_queue.TryDequeue(out var request)) request.Cancel("cancelled", "Oracle server stopped.");
 +        // Every I/O is cancellable and sockets are closed above; avoid leaving background work behind.
 +        try { Task.WhenAll(remaining).GetAwaiter().GetResult(); }
 +        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException) { }
-+        shutdown.Dispose();
++        _shutdown.Dispose();
 +    }
 +
 +    sealed class LineReader(NetworkStream stream)
 +    {
-+        readonly byte[] buffer = new byte[4096];
-+        readonly byte[] line = new byte[OracleProtocol.MaxLineBytes];
-+        int position, available, length;
++        readonly byte[] _buffer = new byte[4096];
++        readonly byte[] _line = new byte[OracleProtocol.MaxLineBytes];
++        int _position, _available, _length;
 +
 +        public async Task<byte[]?> ReadAsync(CancellationToken cancellationToken)
 +        {
 +            while (true)
 +            {
-+                if (position == available)
++                if (_position == _available)
 +                {
-+                    available = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-+                    position = 0;
-+                    if (available == 0) return null; // Unterminated input cannot execute.
++                    _available = await stream.ReadAsync(_buffer, cancellationToken).ConfigureAwait(false);
++                    _position = 0;
++                    if (_available == 0) return null; // Unterminated input cannot execute.
 +                }
-+                var newline = Array.IndexOf(buffer, (byte)'\n', position, available - position);
-+                int end = newline >= 0 ? newline : available;
-+                int count = end - position;
-+                if (length + count >= OracleProtocol.MaxLineBytes)
++                var newline = Array.IndexOf(_buffer, (byte)'\n', _position, _available - _position);
++                int end = newline >= 0 ? newline : _available;
++                int count = end - _position;
++                if (_length + count >= OracleProtocol.MaxLineBytes)
 +                    return new byte[OracleProtocol.MaxLineBytes]; // Bounded overlong-line sentinel.
-+                Array.Copy(buffer, position, line, length, count);
-+                length += count;
-+                position = newline >= 0 ? end + 1 : end;
++                Array.Copy(_buffer, _position, _line, _length, count);
++                _length += count;
++                _position = newline >= 0 ? end + 1 : end;
 +                if (newline < 0) continue;
-+                var result = line.AsSpan(0, length).ToArray();
-+                length = 0;
++                var result = _line.AsSpan(0, _length).ToArray();
++                _length = 0;
 +                return result;
 +            }
 +        }
@@ -1561,10 +1647,10 @@ index 00000000..c3f2d308
 +}
 diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
 new file mode 100644
-index 00000000..a4f9dd3f
+index 000000000..7be5bd406
 --- /dev/null
 +++ b/src/Meitou.Game/Oracle/OracleState.cs
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,185 @@
 +using System.Globalization;
 +using System.Numerics;
 +using System.Security.Cryptography;
@@ -1573,42 +1659,44 @@ index 00000000..a4f9dd3f
 +using System.Text.Json.Nodes;
 +using Meitou.Data.Gameplay.Bodies;
 +using Meitou.Data.Save;
-+using Meitou.Engine;
++using Meitou.Game.Host;
 +using Meitou.Simulation;
 +using Meitou.Simulation.Combat;
++using Meitou.Simulation.Movement;
++using Meitou.Simulation.Population;
 +
 +namespace Meitou.Game.Oracle;
 +
 +/// <summary>Reads a settled world without advancing it. Caches belong to one World, never to a save name.</summary>
 +internal sealed class OracleState
 +{
-+    World? world;
-+    readonly Dictionary<CharacterId, string> characterIds = [];
-+    readonly Dictionary<int, string> squadIds = [];
-+    readonly HashSet<CharacterId> savedCharacters = [];
-+    readonly HashSet<int> savedSquads = [];
-+    readonly Dictionary<string, CharacterId> currentCharacters = new(StringComparer.Ordinal);
-+    readonly Dictionary<string, int> currentSquads = new(StringComparer.Ordinal);
++    World? _world;
++    readonly Dictionary<CharacterId, string> _characterIds = [];
++    readonly Dictionary<int, string> _squadIds = [];
++    readonly HashSet<CharacterId> _savedCharacters = [];
++    readonly HashSet<int> _savedSquads = [];
++    readonly Dictionary<string, CharacterId> _currentCharacters = new(StringComparer.Ordinal);
++    readonly Dictionary<string, int> _currentSquads = new(StringComparer.Ordinal);
 +
 +    internal string? CharacterIdentity(CharacterId id) =>
-+        characterIds.TryGetValue(id, out string? identity) && currentCharacters.ContainsKey(identity) ? identity : null;
++        _characterIds.TryGetValue(id, out string? identity) && _currentCharacters.ContainsKey(identity) ? identity : null;
 +
-+    internal bool TryResolveCharacter(string identity, out CharacterId id) => currentCharacters.TryGetValue(identity, out id);
-+    internal bool TryResolveSquad(string identity, out int id) => currentSquads.TryGetValue(identity, out id);
++    internal bool TryResolveCharacter(string identity, out CharacterId id) => _currentCharacters.TryGetValue(identity, out id);
++    internal bool TryResolveSquad(string identity, out int id) => _currentSquads.TryGetValue(identity, out id);
 +
 +    internal static string SavedHandId(Hand hand) => string.Create(CultureInfo.InvariantCulture,
-+        $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.CS)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
++        $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.Cs)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
 +
 +    internal JsonObject Capture(WorldSession session, PopulationData data, string schemaVersion = "0.2")
 +    {
 +        if (schemaVersion is not ("0.1" or "0.2")) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
-+        if (!ReferenceEquals(world, session.World))
++        if (!ReferenceEquals(_world, session.World))
 +        {
-+            world = session.World;
-+            characterIds.Clear(); squadIds.Clear(); savedCharacters.Clear(); savedSquads.Clear();
++            _world = session.World;
++            _characterIds.Clear(); _squadIds.Clear(); _savedCharacters.Clear(); _savedSquads.Clear();
 +        }
-+        currentCharacters.Clear(); currentSquads.Clear();
-+        var table = world.Characters;
++        _currentCharacters.Clear(); _currentSquads.Clear();
++        var table = _world.Characters;
 +        var hot = table.Previous;
 +        var live = new List<CharacterId>();
 +        for (int slot = 0; slot < hot.Length; slot++)
@@ -1617,45 +1705,45 @@ index 00000000..a4f9dd3f
 +            var id = table.IdOf(slot);
 +            if (table.Cold(slot)?.Save?.Source.Handle is { IsNull: false, Type: 1 } hand)
 +            {
-+                characterIds[id] = SavedHandId(hand);
-+                savedCharacters.Add(id);
++                _characterIds[id] = SavedHandId(hand);
++                _savedCharacters.Add(id);
 +            }
-+            if (!characterIds.ContainsKey(id)) characterIds[id] = LocalIdentity("character", id.ToString());
-+            if (!currentCharacters.TryAdd(characterIds[id], id)) throw new JsonException("Ambiguous saved character identity");
++            if (!_characterIds.ContainsKey(id)) _characterIds[id] = LocalIdentity("character", id.ToString());
++            if (!_currentCharacters.TryAdd(_characterIds[id], id)) throw new JsonException("Ambiguous saved character identity");
 +            live.Add(id);
 +        }
-+        var squads = world.Squads.All.ToArray();
++        var squads = _world.Squads.All.ToArray();
 +        foreach (var squad in squads)
 +        {
 +            // Each source is a full saved PLATOON handle, not its name or shortened (C,I) resolver.
 +            var sources = squad.Members.Where(table.IsAlive)
 +                .Select(id => table.Cold(id.Slot)?.Save?.Source.Platoon.Handle)
 +                .Where(h => h is { IsNull: false, Type: 34 }).Select(h => h!.Value).Distinct().ToList();
-+            if (world.Platoons.Find(squad.PlatoonId)?.Saved?.Source.Handle is { IsNull: false, Type: 34 } platoonHand)
++            if (_world.Platoons.Find(squad.PlatoonId)?.Saved?.Source.Handle is { IsNull: false, Type: 34 } platoonHand)
 +                sources.Add(platoonHand);
 +            if (sources.Distinct().ToArray() is [var source])
 +            {
 +                // Member sources establish the squad only when the saved player name also agrees;
 +                // an NPC's Saved platoon is an explicit loader link.
-+                bool direct = world.Platoons.Find(squad.PlatoonId)?.Saved?.Source.Handle == source;
++                bool direct = _world.Platoons.Find(squad.PlatoonId)?.Saved?.Source.Handle == source;
 +                bool membersAgree = squad.SaveName is not null && squad.Members.Where(table.IsAlive).All(id =>
 +                    table.Cold(id.Slot)?.Save is { } saved && saved.Source.Platoon.Handle == source
 +                    && saved.Source.Platoon.Name == squad.SaveName);
 +                if (direct || membersAgree)
 +                {
-+                    squadIds[squad.Id] = SavedHandId(source);
-+                    savedSquads.Add(squad.Id);
++                    _squadIds[squad.Id] = SavedHandId(source);
++                    _savedSquads.Add(squad.Id);
 +                }
 +            }
-+            if (!squadIds.ContainsKey(squad.Id)) squadIds[squad.Id] = LocalIdentity("squad", squad.Id.ToString(CultureInfo.InvariantCulture));
-+            if (!currentSquads.TryAdd(squadIds[squad.Id], squad.Id)) throw new JsonException("Ambiguous saved squad identity");
++            if (!_squadIds.ContainsKey(squad.Id)) _squadIds[squad.Id] = LocalIdentity("squad", squad.Id.ToString(CultureInfo.InvariantCulture));
++            if (!_currentSquads.TryAdd(_squadIds[squad.Id], squad.Id)) throw new JsonException("Ambiguous saved squad identity");
 +        }
 +        string? Faction(int index) => (uint)index < (uint)data.Factions.Count ? KnownId(data.Factions[index].Id) : null;
 +        var characters = new JsonArray();
 +        // CombatMode is published by the exact broad (true,true) predicate. No system or stale snapshot means unknown.
-+        var combat = world.Systems.OfType<CombatSystem>().Any() && world.Snapshot.Tick == world.Tick
-+            ? world.Snapshot.Characters.ToDictionary(c => c.Id, c => c.CombatMode) : [];
-+        foreach (var id in live.OrderBy(id => characterIds[id], OracleCanonicalJson.ScalarOrder))
++        var combat = _world.Systems.OfType<CombatSystem>().Any() && _world.Snapshot.Tick == _world.Tick
++            ? _world.Snapshot.Characters.ToDictionary(c => c.Id, c => c.CombatMode) : [];
++        foreach (var id in live.OrderBy(id => _characterIds[id], OracleCanonicalJson.ScalarOrder))
 +        {
 +            var cold = table.Cold(id.Slot);
 +            var medical = cold?.Medical;
@@ -1675,9 +1763,9 @@ index 00000000..a4f9dd3f
 +            }
 +            var row = new JsonObject
 +            {
-+                ["id"] = characterIds[id], ["name"] = cold?.Name ?? "", ["race_id"] = KnownId(cold?.Race?.StringId),
++                ["id"] = _characterIds[id], ["name"] = cold?.Name ?? "", ["race_id"] = KnownId(cold?.Race?.StringId),
 +                ["faction_id"] = Faction(cold?.Faction ?? -1),
-+                ["squad_id"] = cold is not null && squadIds.TryGetValue(cold.SquadId, out var sid) && currentSquads.ContainsKey(sid) ? sid : null,
++                ["squad_id"] = cold is not null && _squadIds.TryGetValue(cold.SquadId, out var sid) && _currentSquads.ContainsKey(sid) ? sid : null,
 +                ["position"] = Position(hot[id.Slot].Position),
 +                ["state"] = medical is null ? null : medical.Dead ? "dead" : medical.Unconscious ? "unconscious" : "alive",
 +                ["health"] = health,
@@ -1686,23 +1774,23 @@ index 00000000..a4f9dd3f
 +            };
 +            if (schemaVersion == "0.2")
 +            {
-+                row["identity_origin"] = savedCharacters.Contains(id) ? "saved" : null;
++                row["identity_origin"] = _savedCharacters.Contains(id) ? "saved" : null;
 +                row["current_town_id"] = null; row["town_assignment"] = null;
 +                row["in_combat"] = combat.TryGetValue(id, out bool mode) ? JsonValue.Create(mode) : null;
 +            }
 +            characters.Add(row);
 +        }
 +        var squadRows = new JsonArray();
-+        foreach (var squad in squads.OrderBy(s => squadIds[s.Id], OracleCanonicalJson.ScalarOrder))
++        foreach (var squad in squads.OrderBy(s => _squadIds[s.Id], OracleCanonicalJson.ScalarOrder))
 +        {
 +            var members = new JsonArray();
 +            foreach (string member in live.Where(id => table.Cold(id.Slot)?.SquadId == squad.Id)
-+                         .Select(id => characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
-+            var row = new JsonObject { ["id"] = squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
++                         .Select(id => _characterIds[id]).Order(OracleCanonicalJson.ScalarOrder)) members.Add(member);
++            var row = new JsonObject { ["id"] = _squadIds[squad.Id], ["faction_id"] = Faction(squad.Faction), ["members"] = members,
 +                ["leader_id"] = CharacterIdentity(squad.Leader) };
 +            if (schemaVersion == "0.2")
 +            {
-+                row["identity_origin"] = savedSquads.Contains(squad.Id) ? "saved" : null;
++                row["identity_origin"] = _savedSquads.Contains(squad.Id) ? "saved" : null;
 +                row["template_id"] = KnownId(squad.TemplateId); row["origin_town_id"] = null;
 +            }
 +            squadRows.Add(row);
@@ -1738,7 +1826,7 @@ index 00000000..a4f9dd3f
 +    string LocalIdentity(string kind, string engineIdentity)
 +    {
 +        // An opaque world-local engine identity; it establishes neither saved origin nor cross-engine equivalence.
-+        string material = string.Create(CultureInfo.InvariantCulture, $"meitou-oracle:{world!.Seed}:{kind}:{engineIdentity}");
++        string material = string.Create(CultureInfo.InvariantCulture, $"meitou-oracle:{_world!.Seed}:{kind}:{engineIdentity}");
 +        return "local:" + kind + ":" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
 +    }
 +
@@ -1748,25 +1836,35 @@ index 00000000..a4f9dd3f
 +    static JsonArray? Position(Vector3 value) => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z)
 +        && Math.Abs(value.X) <= 1e9 && Math.Abs(value.Y) <= 1e9 && Math.Abs(value.Z) <= 1e9 ? new JsonArray(value.X, value.Y, value.Z) : null;
 +}
-diff --git a/src/Meitou.Game/Program.cs b/src/Meitou.Game/Program.cs
-index 3503f47a..53c2b8fd 100644
---- a/src/Meitou.Game/Program.cs
-+++ b/src/Meitou.Game/Program.cs
-@@ -35,6 +35,11 @@ static class Program
-             Console.WriteLine(GameOptions.Usage);
-             return 2;
-         }
-+        if (game.Oracle && world.Screenshot is not null)
-+        {
-+            Console.Error.WriteLine("--oracle needs the interactive frame loop; drop --screenshot.");
-+            return 2;
-+        }
-         if (game.UiShowcase && world.Screenshot is null)
+diff --git a/src/Meitou.Game/Scenarios/SandboxScenario.cs b/src/Meitou.Game/Scenarios/SandboxScenario.cs
+index d342dbfbd..6504193cf 100644
+--- a/src/Meitou.Game/Scenarios/SandboxScenario.cs
++++ b/src/Meitou.Game/Scenarios/SandboxScenario.cs
+@@ -313,6 +313,7 @@ sealed class SandboxScenario(GameHost host)
+     internal void FollowCamera()
+     {
+         if (host.Player.Follow is not { } id || host.Session.Camera.IsFree) return;
++        if (host.OracleHoldsCamera) return;
+         var characters = host.Session.CurrentSnapshot.Characters;
+         if (characters.FirstOrDefault(c => c.Id == id) is not { } followed)
          {
-             Console.Error.WriteLine("--ui-showcase needs --screenshot <path>.");
+@@ -323,8 +324,11 @@ sealed class SandboxScenario(GameHost host)
+         if (!followed.CarriedBy.IsNone && characters.FirstOrDefault(c => c.Id == followed.CarriedBy) is { } carrier)
+             followed = carrier;
+ 
+-        host.Session.Camera.MovePivot(new Vector2(followed.Position.X, followed.Position.Z));
+-        host.Camera.Target = host.DrawnPosition(followed) + new Vector3(0, KenshiCamera.TrackHeight, 0);
++        // The oracle's restored follow keeps the captured offset from the character (zero without the oracle).
++        var offset = host.OracleFollowOffset;
++        if (!host.OracleRestoreFollowPose(followed.Position + offset))
++            host.Session.Camera.MovePivot(new Vector2(followed.Position.X + offset.X, followed.Position.Z + offset.Z));
++        host.Camera.Target = host.DrawnPosition(followed) + new Vector3(0, KenshiCamera.TrackHeight, 0) + offset;
+     }
+ 
+     /// <summary>
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 new file mode 100644
-index 00000000..77cd11ed
+index 000000000..77cd11edf
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 @@ -0,0 +1,6 @@
@@ -1778,7 +1876,7 @@ index 00000000..77cd11ed
 +Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 new file mode 100644
-index 00000000..7115229e
+index 000000000..7115229e3
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 @@ -0,0 +1,4905 @@
@@ -6689,7 +6787,7 @@ index 00000000..7115229e
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 new file mode 100644
-index 00000000..1060b5ff
+index 000000000..1060b5ffd
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 @@ -0,0 +1,73 @@
@@ -6768,14 +6866,14 @@ index 00000000..1060b5ff
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleHostPolicyTests.cs b/tests/Meitou.Tests/Oracle/OracleHostPolicyTests.cs
 new file mode 100644
-index 00000000..75ee2a30
+index 000000000..4731d02c9
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleHostPolicyTests.cs
 @@ -0,0 +1,101 @@
 +using System.Text.Json;
 +using System.Numerics;
 +using Meitou.Game;
-+using Meitou.Engine;
++using Meitou.Game.Host;
 +using Meitou.Simulation;
 +using SimWorld = Meitou.Simulation.World;
 +
@@ -6875,7 +6973,7 @@ index 00000000..75ee2a30
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleProtocolTests.cs b/tests/Meitou.Tests/Oracle/OracleProtocolTests.cs
 new file mode 100644
-index 00000000..9d963e67
+index 000000000..9d963e67f
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleProtocolTests.cs
 @@ -0,0 +1,75 @@
@@ -6956,7 +7054,7 @@ index 00000000..9d963e67
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleServerTests.cs b/tests/Meitou.Tests/Oracle/OracleServerTests.cs
 new file mode 100644
-index 00000000..d822dfc1
+index 000000000..d822dfc1d
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleServerTests.cs
 @@ -0,0 +1,226 @@
@@ -7188,10 +7286,10 @@ index 00000000..d822dfc1
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 new file mode 100644
-index 00000000..aa8631e5
+index 000000000..8775aeefa
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,136 @@
 +using System.Numerics;
 +using System.Text.Json;
 +using Meitou.Data;
@@ -7199,12 +7297,15 @@ index 00000000..aa8631e5
 +using Meitou.Data.Gameplay;
 +using Meitou.Data.Gameplay.Bodies;
 +using Meitou.Data.Save;
-+using Meitou.Engine;
-+using Meitou.Engine.Time;
++using Meitou.Game.Host;
++using Meitou.Simulation.Session;
 +using Meitou.Game.Oracle;
 +using Meitou.Simulation;
 +using Meitou.Simulation.Bodies;
 +using Meitou.Simulation.Saving;
++using Meitou.Simulation.Factions;
++using Meitou.Simulation.Movement;
++using Meitou.Simulation.Population;
 +
 +namespace Meitou.Tests.Oracle;
 +

@@ -3,56 +3,62 @@
 This directory makes the Meitou adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the ten patches, in
 order, to upstream MeitouClient commit
-`88ae71a1eeb65bc7081751f19763f032093b2621` (master of 2026-11-01). They
-correspond to the local fork tip `3a862bf0f5054a14bfd45f42318134402d2ef366`;
-they are not an upstream release or an endorsement from the MeitouClient team.
+`8ae1141a2c91598a161eefd68dc277cc0aeaabb4` (master of 2026-11-12). They
+correspond to the local fork tip
+`e3a37180abe706c05f866e1da2135f0f0ebf0d31`; they are not an upstream release or
+an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
-recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba` and
-`100c6caec876cb1cdb4e3a404eed7e6d7b33eb54`; the
+recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba`,
+`100c6caec876cb1cdb4e3a404eed7e6d7b33eb54` and
+`88ae71a1eeb65bc7081751f19763f032093b2621` (probe 0.12.0); the
 [mod-free campaigns](../../docs/mod-free-campaigns.md) name the base of each run.
 
 <a id="upstream-drift"></a>
 
 ## Upstream drift
 
-The series is pinned and upstream moves fast. As recorded in
-[series.json](series.json) (`upstream_review`):
+The series is pinned and upstream moves fast: about 160 commits a day in
+November 2026. As recorded in [series.json](series.json) (`upstream_review`):
 
-- **Verified** on 2026-11-12 (GitHub comparison): upstream `master` is
-  `c80362dc27bdcf155bbc59efff1df3b241da6956`, **1757 commits after the base**.
-- **Observed** on 2026-11-02 (local check, report not distributed): against
-  `master` at `8d79ee9e4928e3c1073f28bba7c023ee175c5a9f`, 250 commits after the
-  base, `git am --3way` stopped at patch 2 on `src/Meitou.Game/GameOptions.cs`.
-  **The series does not apply to current upstream as it is**, and it has not
-  been checked against any later `master`.
+- **Verified** on 2026-11-12: the series was rebased from `88ae71a1`, which
+  lies 1759 commits before this base. On this base it applies, builds and
+  passes its tests ([below](#apply-and-build)).
+- **Verified** on 2026-11-12 (local mirror, fetched after the rebase): upstream
+  `master` is `8ae1141a2c91598a161eefd68dc277cc0aeaabb4`, the base itself
+  (0 commits after the base). It will not stay so for long.
 - The holds reported in the [MeitouClient findings](../../docs/meitou-findings.md)
-  after 2026-11-03 used private builds where the adapter was carried by hand
-  onto later commits, the last one `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`
-  (1324 commits after the base). **That port is not published.** Those
-  figures cannot be rebuilt from this series alone.
+  after 2026-11-03 used private builds on
+  `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`, which lies 435 commits before
+  this base. **No hold or campaign has run on this series**, so those figures
+  are not reproduced from it.
 
-What this means in practice: on the pinned base the series applies, builds and
-passes its tests as described below. On a current MeitouClient you have to
-rebase it yourself, starting with `GameOptions.cs`; the
-[maintenance guide](../../docs/maintenance.md) gives the routine. A rebased
-series is the next maintenance step and is not done.
+What the rebase changed. Between the two bases upstream merged its `Engine`
+project into `Game`, split the host into separate classes (`GameLoop`,
+`GameSaves`, `SandboxScenario`), made the build enforce its naming rules and
+renamed its enum members to PascalCase. `git am --3way` could not follow that,
+so the series was rebuilt commit by commit: the adapter's own files were
+carried over whole and brought to the new names, and each hook into an upstream
+file was placed again at its new location. The command-line options moved into
+the adapter's own `OracleOptions.cs`, so `GameOptions.cs`, where the previous
+series conflicted, now carries one call each for parsing and checking. Patch 9
+no longer changes MeitouClient ([below](#patch-9)).
 
 | Order | Patch | Source commit |
 | --- | --- | --- |
-| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `e85071f137ba0f5f8d6e8b045f2f4a95e6ae339c` |
-| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `2b10478095651fdfbb5fd7ea38c8a20ef9e75750` |
-| 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `8b255b96d877094e184edce14b212afbd893ada4` |
-| 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `893114dec3a8543ade4147fb8f2f4040ac4cf365` |
-| 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `5ab88d9a8960e75241965c1e48b3760544db264e` |
-| 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5a194dc9013ec8a81d1b339686bda649e3cc5f` |
-| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `8677d68da41e8961972e387c565c0f678618e79b` |
-| 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `198f4f8149aa06589c39d52f7688925591d67197` |
-| 9 | [Captive job goals in state 0.5](0009-captive-job-goals.patch) | `9e16733617a47f647ed91ef98f62994bf3580d12` |
-| 10 | [Adapter version 0.12.0](0010-adapter-version-0.12.0.patch) | `3a862bf0f5054a14bfd45f42318134402d2ef366` |
+| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `8e8d83bcfe98d7e6d468e0248b5843176e71b316` |
+| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `b9cf5f3c6735ab6b60d8bb84f550b4b8874d911e` |
+| 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `24bcadb0fd6fcb317afa8657256ca15933bc1759` |
+| 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `9035e0a05b07bcb0b8d66b019affdb3923e127c4` |
+| 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `2416f2d1486f84da1558f6e94eb987b71e42af35` |
+| 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `ce1618b52c384f8129c95bfe5c08bedde40fcec4` |
+| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `1730fec7519fbe6ffa64fd5236623b51dee084d6` |
+| 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `d34c3bbafb8d7201a9b55105933b41079dcb8105` |
+| 9 | [Captive job goals in state 0.5: the check](0009-captive-job-goals.patch) | `957405fa156c3d56cbf7ee4f09cddc1d1053dd26` |
+| 10 | [Adapter version 0.12.0](0010-adapter-version-0.12.0.patch) | `e3a37180abe706c05f866e1da2135f0f0ebf0d31` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
-Patch 2 was regenerated for this series: it now declares the adapter version
+Since the `88ae71a1` series, patch 2 declares the adapter version
 as the constant `OracleProtocol.AdapterVersion` instead of a literal (still
 `0.10.0` there). Patch 4 raises it to `0.11.0`, the version of the
 [scene-setup contract](../../docs/scene-setup.md), and adds `build_commit` to
@@ -116,37 +122,42 @@ plan steps equalled the native order; see the
 [state coverage](../../docs/state-coverage.md#extension-additive-05). Whether
 Meitou's tier is the same quantity as the native stored goal priority in
 general is **Unknown**. Most goal differences of that run came from MeitouClient
-defects that later upstream changes address, all after the pinned base; see the
+defects that later upstream changes address; this base contains those merged
+by 2026-11-11; see the
 [MeitouClient findings](../../docs/meitou-findings.md).
 
-Patch 9 changes only the 0.5 `goal` of a character that works a captive job.
-MeitouClient runs captive work (gathering slaves from cages, working them,
-getting into a cage, guarding or processing prisoners) as `CaptiveSystem` jobs,
-and the AI holds no worker of a job, so its mind keeps the goal it had before.
-The captive sweep now records on each job the AI goal it started the job for
-(`CaptiveJob.Goal`, a role list's or the race's goal). While the job runs, the
-worker's goal is that goal, by row number with its AI_TASK tier; otherwise it is
-the mind's goal as before. A job started any other way (a player animal's race
-goal) has no recorded goal and changes nothing. 0.1 to 0.4 output and the 0.5
-`order` are unchanged (pinned by test). In one hold on a private build with the
-later MeitouClient fixes and this patch (**Observed**, N = 1), the slavers read
+<a id="patch-9"></a>
+
+Patch 9 is now a check, not a change to MeitouClient. MeitouClient runs captive
+work (gathering slaves from cages, working them, getting into a cage, guarding
+or processing prisoners) as `CaptiveSystem` jobs. On the earlier base the AI
+held no worker of a job, so its mind kept the goal it had before, and this patch
+recorded the job's goal on the job (`CaptiveJob.Goal`) for the adapter to read.
+Upstream now gives the job's goal to the worker's mind when the job starts
+(`AiSystem.TakeCaptiveGoal`, **Verified** by reading `CaptiveSystem.Start` on
+this base), so the adapter reads the mind's goal alone, as patch 8 does, and
+the `CaptiveJob.Goal` change is dropped. The patch keeps its two tests (the
+worker's 0.5 goal is the job's goal while the job runs, and its mind's goal
+again once the job is over) and the adapter's documentation. 0.1 to 0.4 output
+and the 0.5 `order` are unchanged (pinned by test). In one hold on a private
+build of the earlier port (**Observed**, N = 1), the slavers read
 `gather_slaves_from_cages` and `work_the_slaves`, as the original's census does;
-see the [MeitouClient findings](../../docs/meitou-findings.md). The series alone,
-on its pinned base, starts no such job in that save, so it shows no change there.
+see the [MeitouClient findings](../../docs/meitou-findings.md). That hold has
+not been repeated on this base.
 
 ## Apply and build
 
-Use a separate checkout beside this KenshiOracle checkout. MeitouClient's
-`global.json` requires .NET SDK 10.0.401 with `latestFeature` roll-forward; the
-local validation used the already installed SDK 10.0.403. Install the SDK
-separately if necessary.
+Use a separate checkout beside this KenshiOracle checkout. At this base
+MeitouClient's `global.json` requires .NET SDK 11.0.100 with `latestFeature`
+roll-forward (upstream moved to .NET 11 on 2026-11-11); the local validation
+used SDK 11.0.100. Install the SDK separately if necessary.
 
 For a new checkout:
 
 ```powershell
 git clone https://github.com/VlcekM/MeitouClient.git MeitouClient
 Set-Location MeitouClient
-git switch -c oracle-adapter-88ae71a 88ae71a1eeb65bc7081751f19763f032093b2621
+git switch -c oracle-adapter-8ae1141a 8ae1141a2c91598a161eefd68dc277cc0aeaabb4
 ```
 
 In an existing checkout of an earlier series, run `git fetch origin` and then the
@@ -163,6 +174,51 @@ dotnet test -c Release tests/Meitou.Tests/Meitou.Tests.csproj --filter "FullyQua
 Build from a clean Git checkout: `build_commit` is the full commit only when
 `git status --porcelain` is empty at build time, otherwise `"unknown"`, which
 the comparator refuses for campaigns.
+
+**Verified** on 2026-11-12, at fork tip `e3a37180` on `8ae1141a`, with SDK
+11.0.100 on Windows:
+
+- In a scratch checkout at upstream `8ae1141a`, `git am` with
+  `core.autocrlf=false` applied the ten patches cleanly and the resulting tree
+  equalled the fork tip's tree `fa6779d19c0543e5aadc3996470c3b7934afdd4a`
+  (compared with `git rev-parse HEAD^{tree}`). This checks source
+  reproduction, not a live campaign.
+- The Release build of the game and of the test project had 0 warnings and 0
+  errors. Upstream treats warnings as errors and its build checks its naming
+  rules, so the adapter's private fields follow them.
+- The focused Oracle and camera tests (the filter above) passed 190 of 190,
+  and again 190 of 190 with `KENSHI_ORACLE_VECTORS` pointing at this
+  repository's [canonical vectors](../../schema/canonical-vectors.json).
+- The quick suite (`Category!=Slow&Category!=Bench`) had 827 passes, 0
+  failures and 3 skipped.
+- The same series was first rebuilt on
+  `42205b61cd6211d2db7c391d2008acfbf2de0584`, 28 commits earlier and the last
+  upstream commit that builds with SDK 10.0.403: 0 warnings and 0 errors, 190
+  of 190 focused tests, 826 quick-suite passes and 0 failures there. Between
+  the two, one hook had to be placed again (the follow camera, which upstream
+  changed for a carried character).
+
+**Not done on this base:**
+
+- The complete suite (Slow and Bench included).
+- The start without `--oracle` and the quick city run of the
+  [maintenance guide](../../docs/maintenance.md): MeitouClient was not
+  launched. **No snapshot, hold, scene setup or campaign has run on this
+  series.** Revalidate pause and loading, seed provenance, heartbeat,
+  cancellation, restoration and scene setup with local saves before relying on
+  it.
+- The Metal loop's hooks (`MetalGameLoop.cs`) compile on macOS only and were
+  not compiled.
+
+One test changed with the base: `OracleTaskNamesTests` compares the native
+lower_snake task names with Meitou's `TaskType` members without the
+underscores, because those members are PascalCase now; the same eight rows
+differ (0, 38, 52, 65, 223, 245, 289 and 290).
+
+### Evidence on the earlier base `88ae71a1`
+
+The figures below were obtained on the previous series and are kept as its
+record. They do not describe this base.
 
 **Verified:** in a scratch checkout at upstream `88ae71a1`, without network
 access, `git am --3way` applied the ten patches cleanly with
@@ -228,7 +284,8 @@ reproduce every environmental result. See the
 [phase 2 validation](../../docs/phase2-validation.md).
 
 **Observed:** the 1 November 2026 scene-setup campaigns ran on patches 1-4
-(fork tip `893114de`); see the [0.11.0 notes](../../release/v0.11.0-notes.md).
+of the `88ae71a1` series (fork tip `893114de`); see the
+[0.11.0 notes](../../release/v0.11.0-notes.md).
 **Observed:** one paused state check (N = 1, one save, no scene campaign) ran
 on a build of `8677d68d` (state 0.4) and one on a build of `198f4f81` (state
 0.5); see the [state coverage](../../docs/state-coverage.md#extension-additive-04).
@@ -248,16 +305,21 @@ import save or load request. With the flag absent, the listener and Oracle
 startup preparation do not run.
 
 Most added runtime code is isolated in `GameHost.Oracle.cs`,
-`GameHost.OracleSetup.cs` and `Oracle/`; the existing host files contain the
-lifecycle/frame seams. The first patch adds two exact camera-restoration
+`GameHost.OracleSetup.cs` and `Oracle/` (the command-line options in
+`Oracle/OracleOptions.cs`); the existing host files contain the lifecycle and
+frame seams: the frame loops (`Host/GameLoop.cs`, `Host/MetalGameLoop.cs`),
+the save handler (`Host/GameSaves.cs`), the follow camera
+(`Scenarios/SandboxScenario.cs`), `GameHost.cs`, `GameHost.Transition.cs`,
+`Host/GameOptions.cs` and `Host/Program.cs`. Outside the adapter's own files
+the series changes 16 upstream files by 196 added and 9 removed lines. The first patch adds two exact camera-restoration
 methods and their tests. The third adds the simulation entry points scene
 setup needs (a swap-aware relation setter, a template-squad plan and spawn, a
 paused edit bracket); the fourth adds the `setup_*` commands of the
 [scene-setup contract](../../docs/scene-setup.md), `allow_setup` on
 `load_save`, the ping additions and the `issue_order` refusals; the fifth
 fills `health[].maximum` with the calculated part maximum; the sixth, seventh and
-eighth add the state 0.3, 0.4 and 0.5 fields; the ninth reports a captive job's
-goal as the 0.5 goal; the tenth raises the adapter version to 0.12.0. Keep these
+eighth add the state 0.3, 0.4 and 0.5 fields; the ninth checks that a captive
+job's goal is its worker's 0.5 goal; the tenth raises the adapter version to 0.12.0. Keep these
 integration points small when updating upstream; do not copy unrelated
 upstream changes into this series. The shared canonical vectors are synthetic
 fixtures, not game data.
@@ -274,6 +336,12 @@ temporary directory with `git format-patch -N --no-signature`, review the diff,
 then update the pinned base, source commits, hashes and validation evidence
 here. Do not publish or force-push an upstream repository as part of this
 procedure.
+
+Upstream's own guidance at this base asks for a feature with state of its
+own to be a class of its own rather than another `partial` file of the host.
+The adapter's two host files are still partials of `GameHost`; making them one
+collaborator class, as upstream's `GameLoop` and `GameSaves` are, would shrink
+the seam further and is not done.
 
 The upstream modding API is still a preliminary concept at the pinned commit.
 Its proposed tick-system surface does not yet supply all the loading, seed,

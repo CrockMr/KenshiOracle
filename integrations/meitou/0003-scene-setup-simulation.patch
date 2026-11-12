@@ -1,4 +1,4 @@
-From 8b255b96d877094e184edce14b212afbd893ada4 Mon Sep 17 00:00:00 2001
+From 24bcadb0fd6fcb317afa8657256ca15933bc1759 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Sun, 1 Nov 2026 10:11:34 +0100
 Subject: [PATCH] Add paused scene-setup entry points to the simulation
@@ -20,23 +20,24 @@ docs/scene-setup.md, adapter 0.11.0). Nothing calls them without
   visibility and the bracket refusals.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit c0b65c49e65cfbd68d3743469d2367827a2e7693)
 ---
- src/Meitou.Data/Gameplay/FactionData.cs       | 19 ++++
- .../PopulationSystem.Sandbox.cs               | 40 ++++++++
- src/Meitou.Simulation/World.OracleSetup.cs    | 41 ++++++++
- tests/Meitou.Tests/Oracle/OracleSetupTests.cs | 94 +++++++++++++++++++
- 4 files changed, 194 insertions(+)
+ src/Meitou.Data/Gameplay/FactionRelations.cs  | 19 ++++
+ .../Population/PopulationSystem.Sandbox.cs    | 40 ++++++++
+ src/Meitou.Simulation/World.OracleSetup.cs    | 42 ++++++++
+ tests/Meitou.Tests/Oracle/OracleSetupTests.cs | 96 +++++++++++++++++++
+ 4 files changed, 197 insertions(+)
  create mode 100644 src/Meitou.Simulation/World.OracleSetup.cs
  create mode 100644 tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 
-diff --git a/src/Meitou.Data/Gameplay/FactionData.cs b/src/Meitou.Data/Gameplay/FactionData.cs
-index faccbe6b..1216f09c 100644
---- a/src/Meitou.Data/Gameplay/FactionData.cs
-+++ b/src/Meitou.Data/Gameplay/FactionData.cs
-@@ -308,6 +308,25 @@ public sealed class FactionRelations
-     /// <summary>Sets the relation of faction <paramref name="a"/> towards <paramref name="b"/> (a loaded save does this; trust and the other state live outside this table).</summary>
-     public void Set(int a, int b, float value) => relation[a * Count + b] = value;
- 
+diff --git a/src/Meitou.Data/Gameplay/FactionRelations.cs b/src/Meitou.Data/Gameplay/FactionRelations.cs
+index 562b431b7..07fac212b 100644
+--- a/src/Meitou.Data/Gameplay/FactionRelations.cs
++++ b/src/Meitou.Data/Gameplay/FactionRelations.cs
+@@ -202,6 +202,25 @@ public sealed class FactionRelations
+     /// outside this table).
+     /// </summary>
+     public void Set(int a, int b, float value) => _relation[a * Count + b] = value;
 +    /// <summary>
 +    /// Oracle scene setup: sets <paramref name="a"/>'s relation towards <paramref name="b"/> to <paramref name="value"/>, clamped to [-100, 100]. Unlike
 +    /// <see cref="Set"/> a change asked of the player's row goes to the other side's table, as in <see cref="Add"/>, and a change counts in <see cref="Changes"/> so the hostility
@@ -50,21 +51,21 @@ index faccbe6b..1216f09c 100644
 +        float before = Get(a, b), after = Math.Clamp(value, -100, 100);
 +        if (after != before)
 +        {
-+            relation[a * Count + b] = after;
++            _relation[a * Count + b] = after;
 +            Changes++;
 +        }
 +        return (a, b, before, after);
 +    }
 +
+ 
      /// <summary>
-     /// The player's rank in faction <paramref name="f"/> (the int at FactionRelations +0x10, saved as GAMESTATE_FACTION <c>rank</c>; docs/game/factions-squads-towns.md
-     /// "Faction rank"): 0 until a dialogue's DA_INCREASE_FACTION_RANK raises it, read by DC_FACTION_RANK.
-diff --git a/src/Meitou.Simulation/PopulationSystem.Sandbox.cs b/src/Meitou.Simulation/PopulationSystem.Sandbox.cs
-index 09d6c97f..70231b72 100644
---- a/src/Meitou.Simulation/PopulationSystem.Sandbox.cs
-+++ b/src/Meitou.Simulation/PopulationSystem.Sandbox.cs
-@@ -80,4 +80,44 @@ public sealed partial class PopulationSystem
-         var squad = SpawnSquad(world, new BuiltSquad(new SquadPlan(template, members, [], []), at, chosen, [.. built]), null, 100, idle: true, yaw: yaw);
+     /// A to B: B is another faction and the relation is at or below <see cref="HostileThreshold"/>.
+diff --git a/src/Meitou.Simulation/Population/PopulationSystem.Sandbox.cs b/src/Meitou.Simulation/Population/PopulationSystem.Sandbox.cs
+index cfef90409..7e6e22d1d 100644
+--- a/src/Meitou.Simulation/Population/PopulationSystem.Sandbox.cs
++++ b/src/Meitou.Simulation/Population/PopulationSystem.Sandbox.cs
+@@ -108,4 +108,44 @@ public sealed partial class PopulationSystem
+             yaw: yaw);
          return squad.Members;
      }
 +
@@ -85,16 +86,16 @@ index 09d6c97f..70231b72 100644
 +    /// </summary>
 +    public OracleTemplateSquad PlanOracleTemplateSquad(World world, string templateId, Vector2 at, int faction, int maxCount, ulong key)
 +    {
-+        if (data.Db.Find(templateId) is not { } record || !SquadFactory.IsTemplate(record)) throw new ArgumentException("not a SQUAD_TEMPLATE record", nameof(templateId));
-+        if ((uint)faction >= (uint)data.Factions.Count) throw new ArgumentOutOfRangeException(nameof(faction));
-+        if (BuildOne(SquadTemplate.From(record), faction, data.Factions[faction], key, world.Seed, at) is not { } built) return new();
++        if (_data.Db.Find(templateId) is not { } record || !SquadFactory.IsTemplate(record)) throw new ArgumentException("not a SQUAD_TEMPLATE record", nameof(templateId));
++        if ((uint)faction >= (uint)_data.Factions.Count) throw new ArgumentOutOfRangeException(nameof(faction));
++        if (BuildOne(SquadTemplate.From(record), faction, _data.Factions[faction], key, world.Seed, at) is not { } built) return new();
 +        var members = built.Members.Take(Math.Max(0, maxCount)).ToList();
 +        if (members.Count == 0) return new();
 +        return new()
 +        {
 +            Built = built with { Faction = faction, Members = members },
 +            RecordIds = [.. members.Select(m => m.Plan.RecordId)],
-+            NamesUniqueCharacter = members.Any(m => UniqueCharacters.IsUnique(data.Db.Find(m.Plan.RecordId))),
++            NamesUniqueCharacter = members.Any(m => UniqueCharacters.IsUnique(_data.Db.Find(m.Plan.RecordId))),
 +        };
 +    }
 +
@@ -110,10 +111,11 @@ index 09d6c97f..70231b72 100644
  }
 diff --git a/src/Meitou.Simulation/World.OracleSetup.cs b/src/Meitou.Simulation/World.OracleSetup.cs
 new file mode 100644
-index 00000000..31ff12dc
+index 000000000..14f4003ef
 --- /dev/null
 +++ b/src/Meitou.Simulation/World.OracleSetup.cs
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,42 @@
++using Meitou.Simulation.Player;
 +namespace Meitou.Simulation;
 +
 +public sealed partial class World
@@ -157,14 +159,16 @@ index 00000000..31ff12dc
 +}
 diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 new file mode 100644
-index 00000000..a1896126
+index 000000000..ab60a48fe
 --- /dev/null
 +++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,96 @@
 +using System.Numerics;
 +using Meitou.Data.Gameplay;
 +using Meitou.Simulation;
 +using SimWorld = Meitou.Simulation.World;
++using Meitou.Simulation.Movement;
++using Meitou.Simulation.Player;
 +
 +namespace Meitou.Tests.Oracle;
 +

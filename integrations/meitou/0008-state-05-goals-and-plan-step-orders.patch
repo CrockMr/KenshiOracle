@@ -1,4 +1,4 @@
-From 198f4f8149aa06589c39d52f7688925591d67197 Mon Sep 17 00:00:00 2001
+From d34c3bbafb8d7201a9b55105933b41079dcb8105 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Tue, 3 Nov 2026 08:23:42 +0100
 Subject: [PATCH] Expose state 0.5 AI goals and plan-step orders in the oracle
@@ -50,6 +50,7 @@ the original), and every 0.4 value with a save key equalled the save at
 load on both engines (Observed).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 04ee133f7f87aa1de73b83a355418ed29fa4c533)
 ---
  docs/oracle.md                                |  35 +-
  src/Meitou.Game/Oracle/OracleCanonicalJson.cs |   2 +-
@@ -63,7 +64,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  9 files changed, 977 insertions(+), 25 deletions(-)
 
 diff --git a/docs/oracle.md b/docs/oracle.md
-index e70f2aaf..acdd8de6 100644
+index e70f2aafd..acdd8de66 100644
 --- a/docs/oracle.md
 +++ b/docs/oracle.md
 @@ -62,7 +62,7 @@ return `not_implemented`.
@@ -125,7 +126,7 @@ index e70f2aaf..acdd8de6 100644
  and its first draws; it replaces the save's stored seed without rewriting that
  file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
 diff --git a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
-index c809a14c..04be9cb7 100644
+index c809a14cc..04be9cb74 100644
 --- a/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 +++ b/src/Meitou.Game/Oracle/OracleCanonicalJson.cs
 @@ -15,7 +15,7 @@ internal static class OracleCanonicalJson
@@ -138,19 +139,19 @@ index c809a14c..04be9cb7 100644
          var output = new StringBuilder();
          Append(output, copy);
 diff --git a/src/Meitou.Game/Oracle/OracleState.cs b/src/Meitou.Game/Oracle/OracleState.cs
-index b0af38c8..4bd891f5 100644
+index e617b6bab..2d662bb60 100644
 --- a/src/Meitou.Game/Oracle/OracleState.cs
 +++ b/src/Meitou.Game/Oracle/OracleState.cs
 @@ -9,6 +9,7 @@ using Meitou.Data.Gameplay.Bodies;
  using Meitou.Data.Save;
- using Meitou.Engine;
+ using Meitou.Game.Host;
  using Meitou.Simulation;
 +using Meitou.Simulation.Ai;
  using Meitou.Simulation.Combat;
- 
- namespace Meitou.Game.Oracle;
-@@ -37,14 +38,14 @@ internal sealed class OracleState
-         $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.CS)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
+ using Meitou.Simulation.Movement;
+ using Meitou.Simulation.Population;
+@@ -39,14 +40,14 @@ internal sealed class OracleState
+         $"hand:{unchecked((uint)hand.Type)}:{unchecked((uint)hand.C)}:{unchecked((uint)hand.Cs)}:{unchecked((uint)hand.I)}:{unchecked((uint)hand.S)}");
  
      /// <summary>The state schemas the adapter writes, oldest first; each adds keys to the one before and never changes them.</summary>
 -    internal static readonly string[] SchemaVersions = ["0.1", "0.2", "0.3", "0.4"];
@@ -164,10 +165,10 @@ index b0af38c8..4bd891f5 100644
          if (level < 0) throw new ArgumentException("Unsupported oracle state schema", nameof(schemaVersion));
 -        bool v02 = level >= 1, v03 = level >= 2, v04 = level >= 3;
 +        bool v02 = level >= 1, v03 = level >= 2, v04 = level >= 3, v05 = level >= 4;
-         if (!ReferenceEquals(world, session.World))
+         if (!ReferenceEquals(_world, session.World))
          {
-             world = session.World;
-@@ -130,8 +131,8 @@ internal sealed class OracleState
+             _world = session.World;
+@@ -132,8 +133,8 @@ internal sealed class OracleState
                  ["position"] = Position(hot[id.Slot].Position),
                  ["state"] = medical is null ? null : medical.Dead ? "dead" : medical.Unconscious ? "unconscious" : "alive",
                  ["health"] = health,
@@ -178,7 +179,7 @@ index b0af38c8..4bd891f5 100644
              };
              if (v02)
              {
-@@ -147,6 +148,7 @@ internal sealed class OracleState
+@@ -149,6 +150,7 @@ internal sealed class OracleState
                  row["slave_owner_faction_id"] = cold is null ? null : Faction(cold.SlaveOwner);
              }
              if (v04) AddState04(row, cold);
@@ -186,7 +187,7 @@ index b0af38c8..4bd891f5 100644
              characters.Add(row);
          }
          var squadRows = new JsonArray();
-@@ -240,16 +242,43 @@ internal sealed class OracleState
+@@ -242,16 +244,43 @@ internal sealed class OracleState
      /// State 0.4's order: the row of the character's task provenance (<see cref="CharacterCold.Running"/>) while it runs the character's task now,
      /// when the row is not 0, not a <see cref="TaskBlankRows"/> goal and has a native name. The type is that name by row number
      /// (<see cref="OracleTaskNames"/>, never the Meitou enum's spelling), the target the census id of a character target, the position null
@@ -233,23 +234,23 @@ index b0af38c8..4bd891f5 100644
      void AddState04(JsonObject row, CharacterCold? cold)
      {
 diff --git a/src/Meitou.Simulation/Ai/AiSystem.Planning.cs b/src/Meitou.Simulation/Ai/AiSystem.Planning.cs
-index 2828ce47..4c351173 100644
+index 17bdff4c3..54c6570fb 100644
 --- a/src/Meitou.Simulation/Ai/AiSystem.Planning.cs
 +++ b/src/Meitou.Simulation/Ai/AiSystem.Planning.cs
-@@ -19,9 +19,9 @@ public sealed partial class AiSystem
-     /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), travelling to the mission town (the
-     /// travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed,
-     /// drawing a weapon, going home and getting near a target (walks of their own before the goal's act-out).
--    /// A plan ending in another step fails.
-+    /// A plan ending in another step fails. Public for the oracle adapter, which reports such a step as the character's order.
+@@ -33,9 +33,9 @@ public sealed partial class AiSystem
+     /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), travelling to the
+     /// mission town (the travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the
+     /// seat), sheathing and getting out of bed, drawing a weapon, going home and getting near a target (walks of their own before the goal's
+-    /// act-out). A plan ending in another step fails.
++    /// act-out). A plan ending in another step fails. Public for the oracle adapter, which reports such a step as the character's order.
      /// </summary>
--    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
-+    public static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
-         or TaskType.TRAVEL_TO_TARGET_TOWN_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
-         or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
-         or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED
+-    static bool Carried(TaskType step) => step is TaskType.MoveOnFreeWill or TaskType.MoveOnFreeWillFast or TaskType.TravelToTargetTown
++    public static bool Carried(TaskType step) => step is TaskType.MoveOnFreeWill or TaskType.MoveOnFreeWillFast or TaskType.TravelToTargetTown
+         or TaskType.TravelToTargetTownFast or TaskType.StandAtNode or TaskType.BuyShit
+         or TaskType.UseBed or TaskType.UseBedOrder or TaskType.UseTurret or TaskType.OperateMachinery or TaskType.CollectOutputResource
+         or TaskType.FillMachine or TaskType.PretendToOperateMachinery or TaskType.UnequipWeapon
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/README.md b/tests/Meitou.Tests/Oracle/Fixtures/README.md
-index 2d95c186..1d5dee39 100644
+index 2d95c1862..1d5dee39e 100644
 --- a/tests/Meitou.Tests/Oracle/Fixtures/README.md
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/README.md
 @@ -1,8 +1,9 @@
@@ -266,7 +267,7 @@ index 2d95c186..1d5dee39 100644
 +more check the additive state 0.5 goal (every priority, a null priority, a null goal).
  Regenerate with KenshiOracle `schema/export_canonical_vectors.py`, then copy bytes.
 diff --git a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
-index 2a753bac..0cf42577 100644
+index 2a753bacb..0cf425771 100644
 --- a/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 +++ b/tests/Meitou.Tests/Oracle/Fixtures/canonical-vectors.json
 @@ -5883,6 +5883,782 @@
@@ -1053,7 +1054,7 @@ index 2a753bac..0cf42577 100644
    ]
  }
 diff --git a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
-index 90f541e4..2e72a255 100644
+index 90f541e4b..2e72a255d 100644
 --- a/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleCanonicalJsonTests.cs
 @@ -9,7 +9,7 @@ namespace Meitou.Tests.Oracle;
@@ -1066,10 +1067,10 @@ index 90f541e4..2e72a255 100644
      static string VectorPath([CallerFilePath] string source = "") => Environment.GetEnvironmentVariable("KENSHI_ORACLE_VECTORS")
          ?? Path.Combine(Path.GetDirectoryName(source)!, "Fixtures", "canonical-vectors.json");
 diff --git a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-index 7c4f60af..7ae109fa 100644
+index 86943f015..0588d956b 100644
 --- a/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleSetupTests.cs
-@@ -99,9 +99,9 @@ public class OracleSetupTests
+@@ -101,9 +101,9 @@ public class OracleSetupTests
          var ping = OracleSetupPolicy.PingIdentity();
          Assert.Equal(OracleProtocol.AdapterVersion, ping["plugin_version"]!.GetValue<string>());
          Assert.Equal("0.11.0", OracleProtocol.AdapterVersion);
@@ -1083,18 +1084,18 @@ index 7c4f60af..7ae109fa 100644
      }
  
 diff --git a/tests/Meitou.Tests/Oracle/OracleStateTests.cs b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-index 21d8e80d..f8b987e1 100644
+index e07c674fb..fd47f27c0 100644
 --- a/tests/Meitou.Tests/Oracle/OracleStateTests.cs
 +++ b/tests/Meitou.Tests/Oracle/OracleStateTests.cs
-@@ -13,6 +13,7 @@ using Meitou.Engine;
- using Meitou.Engine.Time;
+@@ -13,6 +13,7 @@ using Meitou.Game.Host;
+ using Meitou.Simulation.Session;
  using Meitou.Game.Oracle;
  using Meitou.Simulation;
 +using Meitou.Simulation.Ai;
  using Meitou.Simulation.Bodies;
  using Meitou.Simulation.Locks;
  using Meitou.Simulation.Saving;
-@@ -84,6 +85,128 @@ public class OracleStateTests
+@@ -87,6 +88,128 @@ public class OracleStateTests
              foreach (var row in projection.Capture(session, Data(), version)["characters"]!.AsArray()) Assert.Null(row!["order"]);
      }
  
@@ -1117,13 +1118,13 @@ index 21d8e80d..f8b987e1 100644
 +        var squad = new Squad { Id = 5, TemplateId = "fixture-template", Faction = 1 };
 +        session.World.Squads.Add(squad);
 +        static RunningTask Goal(CharacterTask task, TaskType row) => new(task, row, TaskSource.Goal, -1, CharacterId.None, null, 0);
-+        Act(session, "wanderer", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.WANDER_TOWN),
-+            Mind(squad, TaskType.WANDER_TOWN, TaskPriority.Fluff, TaskType.MOVE_ON_FREE_WILL, TaskType.WANDER_TOWN));
-+        Act(session, "sleeper", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.USE_BED), Mind(squad, TaskType.USE_BED, TaskPriority.NonUrgent, TaskType.USE_BED));
-+        Act(session, "operator", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.OPERATE_MACHINERY),
-+            Mind(squad, TaskType.OPERATE_MACHINERY, TaskPriority.Urgent, TaskType.MELEE_ATTACK, TaskType.OPERATE_MACHINERY));
-+        Act(session, "ordered", CharacterTask.GoTo, new RunningTask(CharacterTask.GoTo, TaskType.MOVE_CUS_ORDERED, TaskSource.Order, -1, CharacterId.None, null, 0),
-+            Mind(squad, TaskType.WANDER_TOWN, TaskPriority.Obedience, TaskType.MOVE_ON_FREE_WILL));
++        Act(session, "wanderer", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.WanderTown),
++            Mind(squad, TaskType.WanderTown, TaskPriority.Fluff, TaskType.MoveOnFreeWill, TaskType.WanderTown));
++        Act(session, "sleeper", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.UseBed), Mind(squad, TaskType.UseBed, TaskPriority.NonUrgent, TaskType.UseBed));
++        Act(session, "operator", CharacterTask.GoTo, Goal(CharacterTask.GoTo, TaskType.OperateMachinery),
++            Mind(squad, TaskType.OperateMachinery, TaskPriority.Urgent, TaskType.MeleeAttack, TaskType.OperateMachinery));
++        Act(session, "ordered", CharacterTask.GoTo, new RunningTask(CharacterTask.GoTo, TaskType.MoveCusOrdered, TaskSource.Order, -1, CharacterId.None, null, 0),
++            Mind(squad, TaskType.WanderTown, TaskPriority.Obedience, TaskType.MoveOnFreeWill));
 +        Act(session, "fresh", CharacterTask.Idle, null, new AiMind { Squad = squad });
 +        Act(session, "player", CharacterTask.Idle, null, null);
 +    }
@@ -1203,7 +1204,7 @@ index 21d8e80d..f8b987e1 100644
 +        using var session = Session();
 +        var squad = new Squad { Id = 5, TemplateId = "fixture-template" };
 +        session.World.Squads.Add(squad);
-+        Act(session, "thinker", CharacterTask.Idle, null, Mind(squad, TaskType.IDLE, priority));
++        Act(session, "thinker", CharacterTask.Idle, null, Mind(squad, TaskType.Idle, priority));
 +        var goal = new OracleState().Capture(session, Data(), "0.5")["characters"]![0]!["goal"]!;
 +        Assert.Equal("idle", goal["type"]!.GetValue<string>());
 +        Assert.True(goal.AsObject().ContainsKey("priority"));
@@ -1223,7 +1224,7 @@ index 21d8e80d..f8b987e1 100644
      [Fact]
      public void Full_saved_hand_uses_all_unsigned_component_bits()
      {
-@@ -244,7 +367,7 @@ public class OracleStateTests
+@@ -247,7 +370,7 @@ public class OracleStateTests
          Assert.Equal(["id", "faction_id", "members", "leader_id", "identity_origin", "template_id", "origin_town_id"],
              v02["squads"]![0]!.AsObject().Select(pair => pair.Key));
          Assert.Equal(v02.ToJsonString(), projection.Capture(session, Data(), "0.2").ToJsonString());
@@ -1232,7 +1233,7 @@ index 21d8e80d..f8b987e1 100644
          var v03 = projection.Capture(session, Data(), "0.3");
          string canonical03 = Encoding.UTF8.GetString(OracleCanonicalJson.Serialize(v03));
          // Canonical scalar key order places the new keys between race_id and squad_id.
-@@ -253,7 +376,7 @@ public class OracleStateTests
+@@ -256,7 +379,7 @@ public class OracleStateTests
          stripped["schema_version"] = "0.2";
          foreach (var row in stripped["characters"]!.AsArray()) { row!.AsObject().Remove("slave_state"); row.AsObject().Remove("slave_owner_faction_id"); }
          Assert.Equal(OracleCanonicalJson.Serialize(v02), OracleCanonicalJson.Serialize(stripped));
