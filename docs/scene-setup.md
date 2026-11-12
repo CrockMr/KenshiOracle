@@ -4,7 +4,7 @@ Status: frozen interface. The native probe, the MeitouClient adapter and the
 Python runner implement exactly these names, keys, ranges and refusal texts
 (engine-internal safety failures excepted, see below). A change here is a
 contract change: it needs a new version, not a rename in one implementation.
-Implemented in probe 0.11.0 and the MeitouClient series (first on 88ae71a1; the current series on 8ae1141a carries it unchanged but has not been run in the game); first run live on 2026-11-01 (see the [release notes](../release/v0.11.0-notes.md#first-live-campaigns-2026-11-01)). Statements about code are marked
+Implemented in probe 0.11.0 and the MeitouClient series (first on 88ae71a1; the current series on 8ae1141a carries it unchanged; no scene setup has run in the game on that base); first run live on 2026-11-01 (see the [release notes](../release/v0.11.0-notes.md#first-live-campaigns-2026-11-01)). Statements about code are marked
 **Verified** (read in source), **Observed** (seen in a run) or **Unknown**.
 
 Scene setup prepares one controlled scene after a reload and before

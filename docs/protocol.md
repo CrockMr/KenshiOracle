@@ -71,27 +71,36 @@ message. The client recognises those messages and gives the error the code
 above, so callers see the same codes with an older probe. Sending them as
 their own code is in the native source after 0.12.0.
 
-**Observed** on 2026-11-12, in one live session on the original (Kenshi 1.0.65
+**Observed** on 2026-11-12, in two live sessions on the original (Kenshi 1.0.65
 Steam through RE_Kenshi, probe built from commit
 `9e2634b54c4cfea802f0b6ccc20862cd6856147a`, reply lines read as sent):
 
-- At the main menu, before any load, every command that needs the game's main
-  thread was answered `timeout` after 9 s (`get_clock`, `pause`,
-  `get_scene_state`, `list_characters`, an unknown command and others); `ping`
-  answered. A caller must not read `timeout` at the menu as a started command
-  in that case, but the code cannot tell the two apart.
+- At the main menu, before any load, `ping` answered at once and every other
+  command tried was answered `timeout` after 9 s (`get_clock`, `pause`,
+  `get_scene_state`, `list_characters`, an unknown command and others; 70
+  `get_clock` in a row in the second session). The menu service ran all that
+  time (the heartbeat's `service_frame` rose from 71 to 82224 while `frame`
+  stayed 0): it serves `ping`, `load_save`, `get_rekenshi_settings` and, while
+  no world is ready, `setup_*`, and leaves every other command for the game
+  loop, which does not run at the menu. So at the menu `timeout` does not
+  mean a started command, and the code cannot tell the two apart; answering
+  `world_not_ready` at once there would be more exact and is not done.
 - During a save load (60 s), `get_scene_state` asked once a second was
   answered `timeout` once, then `world_not_ready` 37 times, until the world
   was ready.
 - With the world ready: an unknown command gave `not_implemented`, a
   parameter of the wrong type `invalid_request`, an unknown `run_until`
   operation `not_found`.
+- After the game had run for a while, `get_frame_stats` with `n` 3600 and
+  `detail` `full` gave `response_too_large`; the same command with `n` 10
+  answered.
 - The client reported the same codes, with `uncertain` true for `timeout`
   only.
 
-`busy` from a full queue, `internal_error` and `response_too_large` were not
-produced in that session: **Unknown** in a running game. The probe handles one
-connection at a time, so a queue of 64 commands is not reached through the
+`busy` from a full queue and `internal_error` were not produced: **Unknown**
+in a running game. The probe handles one connection at a time and drops a
+timed-out command from its queue, so 70 timed-out commands in a row at the
+menu never filled the queue of 64: that `busy` is not reachable through the
 network path as it is.
 
 <a id="commandes-oracle"></a>

@@ -29,7 +29,8 @@ November 2026. As recorded in [series.json](series.json) (`upstream_review`):
 - The holds reported in the [MeitouClient findings](../../docs/meitou-findings.md)
   after 2026-11-03 used private builds on
   `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`, which lies 435 commits before
-  this base. **No hold or campaign has run on this series**, so those figures
+  this base. One hold has run on this series ([below](#apply-and-build)); it
+  does not include the private fixes those builds carried, so those figures
   are not reproduced from it.
 
 What the rebase changed. Between the two bases upstream merged its `Engine`
@@ -142,8 +143,10 @@ again once the job is over) and the adapter's documentation. 0.1 to 0.4 output
 and the 0.5 `order` are unchanged (pinned by test). In one hold on a private
 build of the earlier port (**Observed**, N = 1), the slavers read
 `gather_slaves_from_cages` and `work_the_slaves`, as the original's census does;
-see the [MeitouClient findings](../../docs/meitou-findings.md). That hold has
-not been repeated on this base.
+see the [MeitouClient findings](../../docs/meitou-findings.md). In the hold on
+this base (**Observed**, N = 1) the slavers' goals were again
+`work_the_slaves` and `gather_slaves_from_cages`; 21 of their pairs differ
+from the original's by which of the two it is at that checkpoint.
 
 ## Apply and build
 
@@ -198,15 +201,32 @@ the comparator refuses for campaigns.
   the two, one hook had to be placed again (the follow camera, which upstream
   changed for a carried character).
 
+**Observed** on 2026-11-12, in the game, with a Release build of the fork tip
+(one machine, N = 1, local saves not distributed):
+
+- Started without `--oracle`, MeitouClient ran for 45 s; nothing listened on
+  port 47801, no oracle output folder was made and no oracle line was printed.
+- Started with `--oracle` under the watchdog, `ping` reported
+  `plugin_version` `0.12.0` and `build_commit`
+  `e3a37180abe706c05f866e1da2135f0f0ebf0d31`.
+- One paused hold on a slave-camp save (seed 0, no orders, 20 checkpoints from
+  0 to 3960 s, state 0.5) completed through the shared runner: every snapshot
+  validated and the controls were verifiably restored.
+- Against one hold of the original on the same save
+  ([agreement between runs](../../docs/agreement.md)), the goal types agreed
+  in 1626 of 1907 pairs (85.3 %), and in 1626 of 1688 (96.3 %) with the
+  save's three load-order classes set aside. The private build on `c09ed01c`
+  read 1643 of 1698 (96.8 %) by the same count, and a second hold of the
+  original 1768 of 1795 (98.5 %). One hold per build: the half point between
+  the two MeitouClient builds is not shown to be a difference.
+
 **Not done on this base:**
 
 - The complete suite (Slow and Bench included).
-- The start without `--oracle` and the quick city run of the
-  [maintenance guide](../../docs/maintenance.md): MeitouClient was not
-  launched. **No snapshot, hold, scene setup or campaign has run on this
-  series.** Revalidate pause and loading, seed provenance, heartbeat,
-  cancellation, restoration and scene setup with local saves before relying on
-  it.
+- The quick city run of the [maintenance guide](../../docs/maintenance.md),
+  any scene setup, any scenario with orders and any campaign with repetitions.
+  Revalidate cancellation, seed provenance across repetitions and scene setup
+  with local saves before relying on them.
 - The Metal loop's hooks (`MetalGameLoop.cs`) compile on macOS only and were
   not compiled.
 

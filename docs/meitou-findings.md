@@ -19,8 +19,9 @@ records what the oracle found. It is not a MeitouClient changelog.
 - **Reproducibility:** the holds after the 0.5 check ran on private builds where the adapter was carried by hand onto
   later MeitouClient commits, the last one `c09ed01c`. That port is not published. The
   [patch series](../integrations/meitou/README.md#upstream-drift) has since been rebased onto `8ae1141a` (2026-11-12), which
-  contains the merged fixes below, but no hold has run on it: the figures of those holds are not reproduced from this
-  repository yet.
+  contains the merged fixes below. One hold has run on it (2026-11-12, N = 1): 96.3 % of the Rebirth goal pairs agree by the
+  count used under "Where Rebirth stands", against 96.8 % on the last private build. The private builds carried local fixes
+  that the series does not, so the earlier figures are not reproduced from this repository.
 
 ## Findings at Rebirth
 
