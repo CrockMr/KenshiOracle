@@ -1,21 +1,21 @@
 {
   "upstream_repository": "https://github.com/VlcekM/MeitouClient",
   "upstream_base": "9a19748be975fe7716aff90e3dcfd6691622e175",
-  "fork_tip": "38196fe197a74f600d59b3676ac43e73df98e5d6",
+  "fork_tip": "f12a7b0e1118e43786dd61fe72fc112ae63f746f",
   "upstream_review": {
     "head_seen": {
-      "commit": "9a19748be975fe7716aff90e3dcfd6691622e175",
+      "commit": "e43b9ae2bf9f3b694e73e211830571c089bde4d7",
       "date": "2026-11-12",
-      "commits_after_base": 0,
-      "source": "local mirror of upstream master, fetched 2026-11-12 after the rebase"
+      "commits_after_base": 7,
+      "source": "local mirror of upstream master, fetched 2026-11-12 for the 0.13.0 release"
     },
     "last_application_check": {
-      "commit": "9a19748be975fe7716aff90e3dcfd6691622e175",
+      "commit": "e43b9ae2bf9f3b694e73e211830571c089bde4d7",
       "date": "2026-11-12",
-      "commits_after_base": 0,
+      "commits_after_base": 7,
       "applies": true,
       "built": true,
-      "source": "git am of the published patches on a scratch checkout of the base; Release build and tests with .NET SDK 11.0.100"
+      "source": "git am of the eleven published patches on a scratch checkout of that commit; Release build and quick suite with .NET SDK 11.0.100"
     },
     "previous_base": {
       "commit": "88ae71a1eeb65bc7081751f19763f032093b2621",
@@ -89,6 +89,12 @@
       "source_commit": "38196fe197a74f600d59b3676ac43e73df98e5d6",
       "sha256": "b8402e09baddb5c99fed05b7921d9a5b93da25152ac5a49060eba2450ddbc04c",
       "bytes": 3073
+    },
+    {
+      "file": "0011-adapter-version-0.13.0.patch",
+      "source_commit": "f12a7b0e1118e43786dd61fe72fc112ae63f746f",
+      "sha256": "8eef69ccb1035a61e44db8b6a2ca8ee0f181ec282d5d43468c169a7f33b13105",
+      "bytes": 3127
     }
   ]
 }

@@ -9,12 +9,12 @@ During a rebase, only the no-`--oracle` start check (step 3) and the quick city
 test (step 7) launch MeitouClient. No step publishes or pushes to the upstream
 repository.
 
-The public series has exactly ten patches, in order: exact camera restoration,
+The public series has exactly eleven patches, in order: exact camera restoration,
 the opt-in Oracle adapter, the scene-setup simulation entry points, the
 scene-setup adapter commands, the calculated health maxima in the state
 dump, the slave state and owner faction in state 0.3, the state 0.4 fields
 and task-row orders, the state 0.5 goals and plan-step orders, the check of
-captive job goals in state 0.5, then the adapter version 0.12.0. [series.json](../integrations/meitou/series.json)
+captive job goals in state 0.5, then the adapter versions 0.12.0 and 0.13.0. [series.json](../integrations/meitou/series.json)
 is the source of truth for the upstream base, the fork tip, and each patch's
 source commit, SHA-256 and byte size. A maintainer may carry further local
 commits on top (diagnostic instrumentation, test-only commands); they are not
@@ -31,7 +31,7 @@ layers above it.
      (`*-nightly.*`) are informational only;
    - upstream changes to measured systems (population and squads, save
      loading, factions) and to the files the series touches;
-   - whether the ten patches still apply to `master` with `git am --3way`, and
+   - whether the patches still apply to `master` with `git am --3way`, and
      whether the result builds and passes the focused tests.
 3. Record the findings (conflicts, patches already present upstream, build or
    test failures, measured-system changes) and the last upstream commit
@@ -91,7 +91,7 @@ upstream commit or release tag, `$OracleRoot` this KenshiOracle checkout.
 
    ```powershell
    $Series = "$OracleRoot/integrations/meitou"
-   git -c core.autocrlf=false am --3way -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch" "$Series/0009-captive-job-goals.patch" "$Series/0010-adapter-version-0.12.0.patch"
+   git -c core.autocrlf=false am --3way -- "$Series/0001-exact-camera-restoration.patch" "$Series/0002-opt-in-oracle-adapter.patch" "$Series/0003-scene-setup-simulation.patch" "$Series/0004-scene-setup-adapter.patch" "$Series/0005-calculated-health-maxima.patch" "$Series/0006-slave-state-fields.patch" "$Series/0007-state-04-fields-and-task-orders.patch" "$Series/0008-state-05-goals-and-plan-step-orders.patch" "$Series/0009-captive-job-goals.patch" "$Series/0010-adapter-version-0.12.0.patch" "$Series/0011-adapter-version-0.13.0.patch"
    ```
 
    Resolve conflicts explicitly, especially in the host lifecycle and frame
@@ -154,7 +154,7 @@ follow the moved code. What worked:
 - Rebuild the series commit by commit instead of merging it. Take each
   adapter-owned file whole from its commit and bring it to the new names with
   the same rules every time (host members, private-field naming, moved
-  namespaces, renamed enum members), so that the ten commits stay consistent
+  namespaces, renamed enum members), so that the commits stay consistent
   with each other.
 - Place each hook into an upstream file again by a small, exact anchor that
   fails loudly when upstream moved it. Prefer two short anchors to one long

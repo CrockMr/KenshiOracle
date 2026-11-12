@@ -109,7 +109,7 @@ a world loaded by the probe's load_save"). The probe's load check read that
 name, which no load changes ([scene setup](scene-setup.md#gate)). A hold
 without a setup block was not affected.
 
-The probe after 0.12.0 no longer reads it. **Observed** the same day with the
+From 0.13.0 the probe no longer reads it. **Observed** the same day with the
 probe built from commit `2d6afcf02baea7018f8812796d66667b56618030`, `continue=`
 naming another save: the move-order scenario ran through this controller, its
 setup passed (85 steps), five checkpoints were captured and the `continue=`
