@@ -230,6 +230,26 @@ the comparator refuses for campaigns.
 - The quick city run of the [maintenance guide](../../docs/maintenance.md)
   ([ville-calme](../../scenarios/ville-calme.json), seed 0, one repetition)
   completed and restored.
+- The same hold ran five repetitions (seeds 0 to 4) beside five repetitions
+  of the original through the reference controller. The goal types agreed in
+  94.6 % of the pairs with the classes set aside (25 run pairs, 92.0 % to
+  98.0 %), where the original's five repetitions agree with each other in
+  94.1 % (10 run pairs, 91.9 % to 96.8 %); see
+  [agreement between runs](../../docs/agreement.md#a-real-example).
+  The [campaign comparator](../../docs/comparator.md) ran on the two
+  campaigns in 19 minutes and wrote a report of 1.4 GB: 646926 metrics stable
+  and identical, 3745 stable in the original and different, 7402 variable and
+  outside the original's range, 3808 variable and compatible, 47127 not
+  comparable; 72 groups and 62 local drafts. None of the drafts has been
+  reviewed: they are counts, not findings.
+- A private variant of the ambush scenario with a move order (the bandits made
+  friendly, the player ordered 200 units east) completed: the order was
+  accepted, the character's order read `move_cus_ordered`, and it stood 0.6
+  units from the target from the third checkpoint on.
+- A scenario cancelled while it ran, the way an MCP client cancels a tool
+  (25 s into the hold, four checkpoints captured): the runner's report says
+  `failed` with the cancellation, its restoration is verified, the guard is
+  cleared, and the game is paused on the reloaded save.
 - While a `run_until` ran, a second `run_until` and a `set_game_speed` were
   both answered `busy`, as on the native probe. Before this series the adapter
   answered `invalid_request` to the second `run_until` (seen on the build of
@@ -238,9 +258,9 @@ the comparator refuses for campaigns.
 **Not done on this base:**
 
 - The complete suite (Slow and Bench included).
-- A campaign on both engines with five repetitions each, and so any
-  classification by the [comparator](../../docs/comparator.md); a scenario
-  with a move order; a cancelled or failed scenario and its recovery.
+- A scene-setup campaign of the original beside MeitouClient's, a scenario
+  cancelled on the original through the reference controller, and recovery
+  after a crash.
 - The Metal loop's hooks (`MetalGameLoop.cs`) compile on macOS only and were
   not compiled.
 

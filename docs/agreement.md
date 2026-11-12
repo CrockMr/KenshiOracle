@@ -163,6 +163,27 @@ Limits of this example: one pair of original runs only; the second original
 run used a diagnostic build of the probe (same state schema and save
 fingerprint); the runs and the rules file are local and not distributed.
 
+**Observed** on 2026-11-12 with five repetitions of the same hold on each
+engine (the original through the reference controller, MeitouClient on
+upstream `9a19748b` with seeds 0 to 4; one campaign each):
+
+| Compared | Run pairs | All pairs | Classes set aside | Range over the run pairs |
+| --- | ---: | ---: | ---: | ---: |
+| The original's five repetitions with each other | 10 | 16468 of 19082 (86.3 %) | 16468 of 17496 (94.1 %) | 91.9 % to 96.8 % |
+| MeitouClient's five with the original's five | 25 | 38862 of 47180 (82.4 %) | 38862 of 41070 (94.6 %) | 92.0 % to 98.0 % |
+
+With ten pairs the noise floor is lower than the single pair above suggested
+(98.5 %), and MeitouClient's agreement with the original is no lower than the
+original's agreement with itself: by this count the goal differences that
+remain on this hold are within the original's own variation. All three
+classes fire between original repetitions (1520, 4 and 62 pairs), so each is
+the original's own variation at least in part. The largest differences that
+remain between original repetitions are a town squad's choice between
+`shopping`, `follow_squadleader` and `patrol_town` (662 of that squad
+template's 1360 pairs), which is also the largest between the engines.
+This is one campaign per engine on one save; another save or scenario may
+read differently.
+
 ## Limits
 
 - One run pair is one observation. Agreement is a distance between runs, not a

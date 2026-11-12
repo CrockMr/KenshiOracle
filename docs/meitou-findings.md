@@ -66,6 +66,12 @@ reads 85.4 % and 96.8 % against the same reference. So the room left above Meito
 gate-guard and late-gatherer exclusions also fire between two original runs (133 and 31 pairs); the late-owner one does not (0).
 [Agreement between runs](agreement.md) describes the count.
 
+**Five repetitions on each engine** (2026-11-12, **Observed**, one campaign each, MeitouClient on upstream `9a19748b` with the
+adapter and no local fix): the original's repetitions agree with each other on 94.1 % of the goal pairs by that count (10 run pairs,
+91.9 % to 96.8 %), and MeitouClient's with the original's on 94.6 % (25 run pairs, 92.0 % to 98.0 %). On this hold the goal
+differences that remain are therefore within the original's own run-to-run variation, and the single pair above overstated the
+room left. The largest part of that variation is a town squad choosing between `shopping`, `follow_squadleader` and `patrol_town`.
+
 ## Findings at Sho-Battai
 
 - **Pairing:** only the 38 characters stored in the save have the same handle on both engines. The town's people are made at load with

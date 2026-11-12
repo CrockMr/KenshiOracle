@@ -103,12 +103,21 @@ Steam through RE_Kenshi, probe built from commit
   the second `run_until`: the two producers disagreed on that condition, and
   the adapter now answers `busy` too.
 
-`busy` from a full queue and `internal_error` were not produced, and cannot be
-without injecting a fault: **Unknown** in a running game. The probe handles
-one connection at a time and drops a timed-out command from its queue, so 70
-timed-out commands in a row at the menu never filled the queue of 64.
-`internal_error` is the answer to an exception that is not a standard C++
-exception, which no command is known to raise.
+`busy` from a full queue and `internal_error` cannot be produced by any
+command: the probe handles one connection at a time and drops a timed-out
+command from its queue (70 timed-out commands in a row at the menu never
+filled the queue of 64), and `internal_error` answers an exception that is not
+a standard C++ exception, which no command raises. **Observed** with a
+private diagnostic build of the probe that adds two fault-injection commands
+and is never published: a command throwing a non-standard exception was
+answered `internal_error`, and two commands sent behind 400 injected queue
+entries were answered `busy` with `queue full`; the game answered normally
+afterwards. The published source has no such command.
+
+A whole scenario cancelled the same way was checked in the game on
+MeitouClient: 25 s into a hold, with four checkpoints captured, the runner
+left a `failed` report carrying the cancellation, a verified restoration, a
+cleared guard and the game paused on the reloaded save.
 
 <a id="commandes-oracle"></a>
 
