@@ -26,7 +26,7 @@ import math
 from pathlib import Path
 
 from oracle_compare import DEFAULT_TOLERANCES, character_fields, field_family, saved_sets
-from oracle_comparison import read_json
+from oracle_comparison import read_json, read_report
 from oracle_schema import COMPARABLE_STATE_SCHEMA_VERSIONS
 
 RULES_FORMAT = 'agreement-rules-0.1'
@@ -137,8 +137,7 @@ def load_run(path):
     report_path = Path(path).resolve()
     if report_path.is_dir():
         report_path /= 'report.json'
-    report = read_json(report_path)
-    report.pop('variability', None)
+    report = read_report(report_path)
     scenario = report.get('scenario')
     if type(scenario) is not dict or type(scenario.get('checkpoints')) is not list or not scenario['checkpoints']:
         raise ValueError(f'{report_path}: not an oracle run report (no scenario checkpoints)')

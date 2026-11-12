@@ -1187,3 +1187,19 @@ def test_clock_is_background_and_groups_cover_every_divergent_finding(campaigns)
         assert ('test' in row) == divergent
     assert sum(group['size'] for group in report['groups']) == len(
         {row['metric'] for row in report['findings'] if row['group'] is not None})
+
+
+def test_a_campaign_report_is_read_without_its_variability_section(tmp_path, monkeypatch):
+    # With five repetitions the variability section alone exceeded the input limit and the comparison refused.
+    import oracle_comparison
+    from oracle_runner import write_json
+    path = tmp_path / 'report.json'
+    write_json(path, dict(target='original', status='completed', variability=dict(point=['x' * 1000] * 3000)))
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError('the whole report must not be read')
+    monkeypatch.setattr(oracle_comparison, 'read_json', refuse)
+    assert oracle_comparison.read_report(path) == dict(target='original', status='completed')
+    monkeypatch.undo()
+    path.write_text(json.dumps(dict(variability=1, target='meitou')), encoding='utf-8')
+    assert oracle_comparison.read_report(path) == dict(target='meitou')

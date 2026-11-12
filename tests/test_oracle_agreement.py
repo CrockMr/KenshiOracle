@@ -375,3 +375,24 @@ def test_mcp_tool_returns_counts_and_text(tmp_path):
     other = write_run(tmp_path / 'b', 'meitou', [steady()])
     result = asyncio.run(server.agreement(str(reference), [str(other)]))
     assert detail(result)['agreement'] == 100.0 and result['text'].startswith('Agreement of paired saved characters')
+
+
+def test_a_report_is_read_without_its_variability_section_however_large(tmp_path, monkeypatch):
+    # The runner's layout (sorted keys, two-space indent): variability is the last top-level key.
+    import oracle_comparison
+    from oracle_runner import write_json
+    reference = write_run(tmp_path / 'a', 'original', [steady()])
+    report = json.loads(reference.read_text(encoding='utf-8'))
+    report['variability'] = dict(later=dict(variable_fields=['x' * 1000] * 2000))
+    write_json(reference, report)
+    assert reference.stat().st_size > 2_000_000
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError('the whole report must not be read')
+    monkeypatch.setattr(oracle_comparison, 'read_json', refuse)
+    run = load_run(reference)
+    assert run['target'] == 'original' and sorted(run['repetitions'][1]) == sorted(CHECKPOINTS)
+    monkeypatch.undo()
+    # Any other layout is read whole, as before.
+    reference.write_text(json.dumps(report), encoding='utf-8')
+    assert load_run(reference)['target'] == 'original'

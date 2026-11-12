@@ -44,6 +44,45 @@ def read_json(path, maximum=256 * 1024 * 1024):
     return json.loads(raw, object_pairs_hook=unique, parse_constant=invalid_constant)
 
 
+_VARIABILITY = b'\n  "variability": '
+_REPORT_HEAD_BYTES = 64 * 1024 * 1024
+
+
+def read_report(path):
+    """A run report without its ``variability`` section.
+
+    That section lists every field of every checkpoint; comparisons recompute
+    it across targets and never read it. With five repetitions it makes a
+    report hundreds of megabytes, more than a gigabyte on a large town. The
+    runner writes its reports with sorted keys and a two-space indent, so
+    ``variability`` is the last top-level key: the report is read up to that
+    key and closed there. A report in any other layout is read whole.
+    """
+    path = Path(path)
+    with path.open('rb') as handle:
+        head = handle.read(_REPORT_HEAD_BYTES)
+    cut = head.find(_VARIABILITY)
+    if cut < 0:
+        report = read_json(path)
+        report.pop('variability', None)
+        return report
+    text = head[:cut].rstrip()
+    if not text.endswith(b','):
+        raise ValueError('Report has an unexpected layout before its variability section')
+
+    def invalid_constant(_value):
+        raise ValueError('Non-finite comparison metadata')
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('Comparison input contains a duplicate JSON key')
+            result[key] = value
+        return result
+    return json.loads(text[:-1] + b'\n}', object_pairs_hook=unique, parse_constant=invalid_constant)
+
+
 def canonical_seed(value):
     if (type(value) is not str or len(value) > 20 or not value.isascii() or not value.isdecimal()
             or not 0 <= int(value) < 2**64):
@@ -165,8 +204,7 @@ def load_campaign(path, target, output, *, minimum_repetitions=5):
     path = Path(path).resolve()
     if path.is_dir():
         path /= 'report.json'
-    report = read_json(path)
-    report.pop('variability', None)  # Recomputed across targets; release a large legacy summary.
+    report = read_report(path)  # Without its variability section, recomputed across targets.
     if report.get('target') != target or report.get('status') != 'completed':
         raise ValueError('Comparison requires a completed campaign for the declared target')
     if report.get('restoration', {}).get('verified') is not True:
