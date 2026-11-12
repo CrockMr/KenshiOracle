@@ -119,6 +119,13 @@ MeitouClient: 25 s into a hold, with four checkpoints captured, the runner
 left a `failed` report carrying the cancellation, a verified restoration, a
 cleared guard and the game paused on the reloaded save.
 
+The same on the original, through the reference controller, which owns the
+game: cancelled once three checkpoints of a hold existed, the controller still
+restored the scenario's controls, stopped its game, put the player's
+RE_Kenshi profile back, started the game cold to verify that profile and
+stopped it again. No cleanup error was recorded, no Kenshi process was left,
+and `RE_Kenshi.ini` and `settings.cfg` had the bytes they had before the run.
+
 <a id="commandes-oracle"></a>
 
 ## Oracle commands

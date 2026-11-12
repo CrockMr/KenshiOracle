@@ -23,6 +23,14 @@ From the repository root, after installing Python dependencies:
 python -m launcher compare ORIGINAL_REPORT MEITOU_REPORT OUTPUT
 ```
 
+A report is read without its `variability` section, which the runner writes
+last and which the comparison recomputes across targets; with five
+repetitions that section alone is hundreds of megabytes. **Observed** on
+2026-11-12, five repetitions per engine: a scene-setup scenario of nine
+checkpoints (117 scene metrics) took 8 minutes; a paused hold of 20
+checkpoints on a slave-camp save took 19 minutes and wrote a `report.json`
+of 1.4 GB with 62 drafts, none reviewed.
+
 Replace the first two arguments with `report.json` paths or their campaign
 directories. `OUTPUT` must be a **new, nonexistent directory**.
 Example layout, adapting batch names:

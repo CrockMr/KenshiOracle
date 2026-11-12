@@ -1203,3 +1203,7 @@ def test_a_campaign_report_is_read_without_its_variability_section(tmp_path, mon
     monkeypatch.undo()
     path.write_text(json.dumps(dict(variability=1, target='meitou')), encoding='utf-8')
     assert oracle_comparison.read_report(path) == dict(target='meitou')
+    # Indented but not sorted: a key after the section must not be lost.
+    path.write_text(json.dumps(dict(status='completed', variability=dict(point=[1]), target='meitou'), indent=2),
+                    encoding='utf-8')
+    assert oracle_comparison.read_report(path) == dict(status='completed', target='meitou')

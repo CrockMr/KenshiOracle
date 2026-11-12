@@ -92,6 +92,10 @@ written up on this page yet; the pull requests carry the oracle numbers.
 - [#481](https://github.com/VlcekM/MeitouClient/pull/481): animal packs sleep together instead of members walking after their sleeping leader.
 - [#489](https://github.com/VlcekM/MeitouClient/pull/489): a loaded save no longer gets extra desert squads on top of the ones it already holds.
 
+**Five repetitions at Sho-Battai** (2026-11-12, **Observed**, one campaign per engine, MeitouClient on upstream `9a19748b`): for the
+38 stored characters the goal types agree in 99.1 % of the pairs between the engines and in 98.3 % between the original's own
+repetitions. The town's people are still outside any per-character count.
+
 ## Still open
 
 - **Rebirth, loading order:** in the original, five gatherers chase a slave all hour whose cage record still names him; his owner loads

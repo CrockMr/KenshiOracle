@@ -45,6 +45,7 @@ def read_json(path, maximum=256 * 1024 * 1024):
 
 
 _VARIABILITY = b'\n  "variability": '
+_TOP_LEVEL_KEY = b'\n  "'
 _REPORT_HEAD_BYTES = 64 * 1024 * 1024
 
 
@@ -56,19 +57,29 @@ def read_report(path):
     report hundreds of megabytes, more than a gigabyte on a large town. The
     runner writes its reports with sorted keys and a two-space indent, so
     ``variability`` is the last top-level key: the report is read up to that
-    key and closed there. A report in any other layout is read whole.
+    key and closed there. A report in any other layout, or one where another
+    top-level key follows that section, is read whole.
     """
     path = Path(path)
     with path.open('rb') as handle:
         head = handle.read(_REPORT_HEAD_BYTES)
-    cut = head.find(_VARIABILITY)
-    if cut < 0:
+        cut = head.find(_VARIABILITY)
+        text = head[:cut].rstrip() if cut >= 0 else b''
+        last = cut >= 0 and text.endswith(b',')
+        if last:
+            # Nothing but the section may follow: a later top-level key starts a line with two spaces and a quote.
+            handle.seek(cut + len(_VARIABILITY))
+            tail = b''
+            while last:
+                chunk = handle.read(8 * 1024 * 1024)
+                if not chunk:
+                    break
+                last = _TOP_LEVEL_KEY not in tail + chunk
+                tail = chunk[-len(_TOP_LEVEL_KEY):]
+    if not last:
         report = read_json(path)
         report.pop('variability', None)
         return report
-    text = head[:cut].rstrip()
-    if not text.endswith(b','):
-        raise ValueError('Report has an unexpected layout before its variability section')
 
     def invalid_constant(_value):
         raise ValueError('Non-finite comparison metadata')

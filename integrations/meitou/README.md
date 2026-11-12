@@ -255,14 +255,38 @@ the comparator refuses for campaigns.
   answered `invalid_request` to the second `run_until` (seen on the build of
   `8ae1141a`); patch 2 now answers `busy` there.
 
-**Not done on this base:**
+**Verified** on 2026-11-12, without the game:
 
-- The complete suite (Slow and Bench included).
-- A scene-setup campaign of the original beside MeitouClient's, a scenario
-  cancelled on the original through the reference controller, and recovery
-  after a crash.
-- The Metal loop's hooks (`MetalGameLoop.cs`) compile on macOS only and were
-  not compiled.
+- The complete suite (Slow and Bench included, with a local install) had 983
+  passes, 6 failures and 25 skipped of 1014 on the fork tip. The same run on
+  upstream `9a19748b` without the patches had 798 passes, the same 6 failures
+  and 25 skipped of 829. The six are rendering, texture, interface, distant
+  mesh and particle tests; none is an Oracle test. The series adds no failure.
+- The Metal-only code, with the adapter's three hooks in `MetalGameLoop.cs`,
+  compiled with 0 warnings and 0 errors under `-p:MeitouMetal=true`, the
+  option upstream gives for checking that code off macOS. It was not run.
+
+**Observed** on 2026-11-12, in the game, beside the original (one machine):
+
+- The scene-setup scenario ran five repetitions on each engine (MeitouClient
+  seeds 0 to 4; the original through the reference controller); the setup
+  passed in all ten. The [comparator](../../docs/comparator.md) classified
+  117 scene metrics: 114 stable and identical, 2 variable and compatible, 1
+  stable in the original and different, `/scene/intruders/count` at 330 s
+  (0 in the original's five repetitions, 0 to 5 on MeitouClient: characters
+  that enter the scene from outside). No draft was made.
+- The move-order variant ran once on each engine: the order was accepted on
+  both and the character ended 0.8 units from the target on the original and
+  0.6 on MeitouClient.
+- A second save, a large town, ran the same kind of hold five times on each
+  engine. Only the 38 characters stored in that save pair between the
+  engines; their goal types agree in 99.1 % of the pairs between MeitouClient
+  and the original (25 run pairs, 95.7 % to 100 %) and in 98.3 % between the
+  original's own repetitions (10 run pairs, 95.7 % to 100 %). The town's
+  people, made at load with different handles, are outside this count.
+
+**Not done on this base:** recovery after a crash of MeitouClient in the
+middle of a scenario, and anything on macOS.
 
 One test changed with the base: `OracleTaskNamesTests` compares the native
 lower_snake task names with Meitou's `TaskType` members without the

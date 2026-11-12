@@ -100,6 +100,15 @@ GUI controls and CRT exports; an INI file or an unchecked RNG checkbox
 alone does not prove that no old hook remains active. PID, creation time,
 instance, module path, and hashes bind the evidence to the process.
 
+**Observed** (2026-11-12): for a scenario with a scene-setup block, the
+`continue=` line of the game's `settings.cfg` must name the scenario's save.
+With another save named there, `setup_info` reported that other name as
+`current_save` after the probe's own load, the setup gate stayed closed
+("scene setup requires a world loaded by the probe's load_save") and the run
+failed at its first setup step. A hold without a setup block is not affected.
+The controller does not set that line; set it before the run and put it back
+after.
+
 After cold loading and origin preparation, repetitions use the shared
 runner. Captures are taken in pause and validated; the profile is rechecked
 before repetitions/snapshots. A missing required capability or a lost

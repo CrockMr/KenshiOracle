@@ -184,6 +184,15 @@ template's 1360 pairs), which is also the largest between the engines.
 This is one campaign per engine on one save; another save or scenario may
 read differently.
 
+**Observed** the same day on a second save, a large town, with five
+repetitions on each engine and no rules file: the original's repetitions
+agree with each other in 6910 of 7030 pairs (98.3 %, 10 run pairs) and
+MeitouClient's with the original's in 17425 of 17575 (99.1 %, 25 run pairs),
+both ranging from 95.7 % to 100 %. Only the 38 characters stored in that save
+pair; the differences that remain are one squad choosing between `shopping`
+and `relax_in_town_package`. The two reports were 1.6 GB each and the command
+took 15 seconds: it reads a report without its `variability` section.
+
 ## Limits
 
 - One run pair is one observation. Agreement is a distance between runs, not a
