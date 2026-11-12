@@ -83,8 +83,8 @@ Steam through RE_Kenshi, probe built from commit
   stayed 0): it serves `ping`, `load_save`, `get_rekenshi_settings` and, while
   no world is ready, `setup_*`, and leaves every other command for the game
   loop, which does not run at the menu. So at the menu `timeout` does not
-  mean a started command, and the code cannot tell the two apart; answering
-  `world_not_ready` at once there would be more exact and is not done.
+  mean a started command, and the code cannot tell the two apart. The probe
+  after 0.12.0 answers `world_not_ready` at once there (below).
 - During a save load (60 s), `get_scene_state` asked once a second was
   answered `timeout` once, then `world_not_ready` 37 times, until the world
   was ready.
@@ -96,6 +96,20 @@ Steam through RE_Kenshi, probe built from commit
   answered.
 - The client reported the same codes, with `uncertain` true for `timeout`
   only.
+
+**Observed** on 2026-11-12 with the probe built from commit
+`2d6afcf02baea7018f8812796d66667b56618030` (after 0.12.0), same game:
+
+- At the main menu, nine commands that need the game loop (`get_clock`,
+  `pause`, `get_scene_state`, `list_characters`, `dump_state`,
+  `run_until_status`, `get_frame_stats`, `setup_info` and an unknown command)
+  and then 20 `get_clock` in a row were each answered `world_not_ready` in
+  under 20 ms. `ping`, `heartbeat` and `get_rekenshi_settings` answered as
+  before. An unknown command gets `world_not_ready` there, not
+  `not_implemented`: the menu service does not look at it further.
+- During two save loads, one from the menu and one from a ready world,
+  `get_clock` asked once a second was answered `world_not_ready` every time
+  (7 and 2 answers) and never `timeout`; once the world was ready it answered.
 
 - While a `run_until` ran, a second `run_until` and a `set_game_speed` were
   each answered `busy`, on the native probe and on the MeitouClient adapter.
@@ -397,9 +411,9 @@ get_scene_state adds game_total_hours through GameWorld::getTimeStamp_inGameHour
 
 The counter advances in the hook, and its QPC timestamp is published alongside it under lock. `heartbeat` is served by networking from this telemetry copy without game-state access. Before the first hook, frame and timestamp_ms are zero. `ping` executes on the main thread and adds paused and frame_speed_multiplier (getFrameSpeedMultiplier); set_game_speed also returns both after mutation. QPC has a system-specific origin; the watchdog adds received_at in Unix time. Mutations and character reads require a ready world. The list covers GameWorld's update list; completeness among all loaded characters remains to be observed.
 
-Renderer::_NV_update adds service_frame, service_timestamp_ms, service_thread, and game_thread to heartbeat. It provides menu progression and serves only ping, load_save and get_rekenshi_settings; other commands remain handled by GameWorld hook. From 0.11.0, while the world is not ready it answers every setup_* command itself with `world_not_ready` (gate G1); once the world is ready those commands run on the game loop only. See [scene setup](scene-setup.md#shared-command-rules). The watchdog prefers nonzero service_frame, otherwise falls back to frame. A plugin responding with both counters zero is awaiting_gameplay. Ogre FrameListener callbacks, not invoked in the observed game, were removed.
+Renderer::_NV_update adds service_frame, service_timestamp_ms, service_thread, and game_thread to heartbeat. It provides menu progression and serves only ping, load_save and get_rekenshi_settings; other commands remain handled by GameWorld hook. After 0.12.0, when no world is ready and the GameWorld hook has not run for 8 Renderer frames in a row (the main menu, or the blocking part of a load), such a command is answered `world_not_ready` at once instead of waiting for a hook that does not run ([ProbeService.h](../plugin/ProbeService.h)). From 0.11.0, while the world is not ready it answers every setup_* command itself with `world_not_ready` (gate G1); once the world is ready those commands run on the game loop only. See [scene setup](scene-setup.md#shared-command-rules). The watchdog prefers nonzero service_frame, otherwise falls back to frame. A plugin responding with both counters zero is awaiting_gameplay. Ogre FrameListener callbacks, not invoked in the observed game, were removed.
 
-Ping adds current_save through SaveManager::getCurrentGame and world_ready (world initialized, no reset/loading). current_save is internal metadata: it may retain the original save name when its directory is copied. load_save checks existence through SaveManager and schedules load(name); accepted does not mean loading completed. Wait for loading=false, world_ready, and frame progression; do not require internal-name/copied-directory-name equality. The network thread reads/modifies no save file.
+Ping adds current_save through SaveManager::getCurrentGame and world_ready (world initialized, no reset/loading). current_save is internal metadata and does not name the loaded save: in Kenshi 1.0.65 it is the `continue` entry of settings.cfg read at startup, replaced only when a save is written (**Verified** by reading the binary; see [scene setup](scene-setup.md#gate)). load_save checks existence through SaveManager and schedules load(name); accepted does not mean loading completed. Wait for loading=false, world_ready, and frame progression; do not require internal-name/copied-directory-name equality. The network thread reads/modifies no save file.
 
 loading is published under lock when load_save is accepted, then reset false when the world is ready and SaveManager has no signal. The watchdog then allows loading_timeout (default120 s) before treating lack of progression as a freeze. Grace starts on the first received loading=true and is not renewed with every poll. Process exit is still detected immediately. UI-initiated loads do not yet have this explicit guarantee.
 

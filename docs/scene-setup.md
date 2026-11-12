@@ -90,13 +90,30 @@ G4 and G5. `setup_info` needs only G1 and reports the rest.
 - An accepted `load_save` records the requested save and its `allow_setup`,
   and closes the gate until the load completes.
 - The load completes on the first ready frame where the epoch accepts the
-  requested save, and natively also `SaveManager::getCurrentGame()` equals it
-  (the private build's check, **Observed** equal in every receipt). Only then
-  does `allow_setup` take effect and `world_mutated` become false.
+  requested save. Natively the world must also have been seen unavailable
+  (uninitialized, resetting or loading) since the request, and the save
+  manager's last requested name (`SaveManager::name`) must still be that
+  save: `LoadWitness` in [ProbeService.h](../plugin/ProbeService.h). Only
+  then does `allow_setup` take effect and `world_mutated` become false.
 - A failed load never completes: the gate stays closed and `world_mutated`
   keeps its value. MeitouClient detects failure (`OracleLoadFailed`). Natively
-  a failed load is detected only through the current-save check; whether that
-  check catches every failure is **Unknown**.
+  a load the engine refuses leaves the old world in place, and a world never
+  seen unavailable completes nothing (**Verified** for the rule alone, in
+  [test_probe_service.cpp](../tests/test_probe_service.cpp)). A failed load
+  was not produced in the game; whether every failure leaves the old world
+  untouched is **Unknown**.
+- Up to 0.12.0 the native probe required `SaveManager::getCurrentGame()` to
+  equal the requested save instead. **Verified** by reading Kenshi 1.0.65
+  (the options reader and `SaveManager::load`, `loadGame`, `execute`): that
+  name is taken from the `continue` entry of `settings.cfg` at startup and
+  written again only after a save; no load changes it. The check passed only
+  when that entry happened to name the scenario's save, and then it passed
+  whatever the load did. **Observed** on 2026-11-12 with the probe built from
+  commit `2d6afcf02baea7018f8812796d66667b56618030`, `continue=` naming another
+  save: a load from the main menu and a load from a ready world both
+  completed (`probe_loaded_save` the requested save, `current_save` still the
+  other one), the gate opened with `allow_setup`, and a scene-setup scenario
+  passed through the [reference controller](original-reference.md).
 - Any other load (a UI load, or a `load_save` without `allow_setup:true`)
   clears the opt-in. A UI load does not clear `world_mutated`. There is no
   save-name allowlist in public code; the same rule holds on both engines.
@@ -105,7 +122,7 @@ G4 and G5. `setup_info` needs only G1 and reports the rest.
 ([OracleSavedOrigins.h](../plugin/OracleSavedOrigins.h)), which a UI load
 revokes even when the world pointer is reused (**Verified**); on its own it
 also accepts the requested name after a failed load if a world reads ready
-again (**Verified**), hence the current-save term. MeitouClient: the save its
+again (**Verified**), hence the unavailable-world term. MeitouClient: the save its
 oracle `load_save` finished; oracle mode drops every player save/load request,
 so a UI load cannot happen (**Verified** in the fork's test branch).
 
