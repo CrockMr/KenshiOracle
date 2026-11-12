@@ -4,18 +4,18 @@
   "fork_tip": "f12a7b0e1118e43786dd61fe72fc112ae63f746f",
   "upstream_review": {
     "head_seen": {
-      "commit": "e43b9ae2bf9f3b694e73e211830571c089bde4d7",
+      "commit": "09b87fd15c133ebaf98837d45253b77d7506c42a",
       "date": "2026-11-12",
-      "commits_after_base": 7,
-      "source": "local mirror of upstream master, fetched 2026-11-12 for the 0.13.0 release"
+      "commits_after_base": 25,
+      "source": "local mirror of upstream master, fetched 2026-11-12 after the 0.13.0 release"
     },
     "last_application_check": {
-      "commit": "e43b9ae2bf9f3b694e73e211830571c089bde4d7",
+      "commit": "09b87fd15c133ebaf98837d45253b77d7506c42a",
       "date": "2026-11-12",
-      "commits_after_base": 7,
+      "commits_after_base": 25,
       "applies": true,
       "built": true,
-      "source": "git am of the eleven published patches on a scratch checkout of that commit; Release build and quick suite with .NET SDK 11.0.100"
+      "source": "git am of the eleven published patches on that commit; Release build, focused tests and quick suite with .NET SDK 11.0.100; two five-repetition holds in the game"
     },
     "previous_base": {
       "commit": "88ae71a1eeb65bc7081751f19763f032093b2621",

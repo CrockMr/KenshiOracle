@@ -71,6 +71,8 @@ adapter and no local fix): the original's repetitions agree with each other on 9
 91.9 % to 96.8 %), and MeitouClient's with the original's on 94.6 % (25 run pairs, 92.0 % to 98.0 %). On this hold the goal
 differences that remain are therefore within the original's own run-to-run variation, and the single pair above overstated the
 room left. The largest part of that variation is a town squad choosing between `shopping`, `follow_squadleader` and `patrol_town`.
+The same five repetitions on upstream `09b87fd1`, 25 commits later, gave 94.6 % again (38848 of 41061 pairs against 38862 of
+41070); the fixes merged up to 2026-11-10 are already in `9a19748b`.
 
 ## Findings at Sho-Battai
 
@@ -94,7 +96,8 @@ written up on this page yet; the pull requests carry the oracle numbers.
 
 **Five repetitions at Sho-Battai** (2026-11-12, **Observed**, one campaign per engine, MeitouClient on upstream `9a19748b`): for the
 38 stored characters the goal types agree in 99.1 % of the pairs between the engines and in 98.3 % between the original's own
-repetitions. The town's people are still outside any per-character count.
+repetitions. The same campaign on upstream `09b87fd1` gave 99.1 % again. The town's people are still outside any per-character
+count.
 
 ## Still open
 

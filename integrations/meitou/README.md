@@ -23,12 +23,19 @@ November 2026. As recorded in [series.json](series.json) (`upstream_review`):
 - **Verified** on 2026-11-12: the series was rebased from `88ae71a1`, which
   lies 1761 commits before this base. On this base it applies, builds and
   passes its tests ([below](#apply-and-build)).
-- **Verified** on 2026-11-12 (local mirror, fetched for the 0.13.0 release):
-  upstream `master` is `e43b9ae2bf9f3b694e73e211830571c089bde4d7`,
-  7 commits after the base. The eleven patches still apply there with plain
-  `git am`; the result builds with 0 warnings and its quick suite has 827
-  passes and 0 failures. The series stays on its base, where it ran in the
-  game.
+- **Verified** on 2026-11-12 (local mirror, fetched after the 0.13.0
+  release): upstream `master` is `09b87fd15c133ebaf98837d45253b77d7506c42a`,
+  25 commits after the base. The eleven patches still apply there with plain
+  `git am`; the result builds with 0 warnings, passes 190 of 190 focused
+  tests and has 827 quick-suite passes and 0 failures. The series stays on
+  its base. Those commits change rendering, the pause key, loot windows, a
+  dialogue word and how town furniture is listed; none changes the AI or the
+  population.
+- **Observed** on 2026-11-12 with a build of that commit and the eleven
+  patches (`ping` reported `plugin_version` `0.13.0`): the two five-repetition
+  holds of the [findings](../../docs/meitou-findings.md) gave the same
+  agreement with the original as on this base, 94.6 % on the slave-camp save
+  and 99.1 % at Sho-Battai.
 - The holds reported in the [MeitouClient findings](../../docs/meitou-findings.md)
   after 2026-11-03 used private builds on
   `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`, which lies 437 commits before
