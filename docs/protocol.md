@@ -97,11 +97,18 @@ Steam through RE_Kenshi, probe built from commit
 - The client reported the same codes, with `uncertain` true for `timeout`
   only.
 
-`busy` from a full queue and `internal_error` were not produced: **Unknown**
-in a running game. The probe handles one connection at a time and drops a
-timed-out command from its queue, so 70 timed-out commands in a row at the
-menu never filled the queue of 64: that `busy` is not reachable through the
-network path as it is.
+- While a `run_until` ran, a second `run_until` and a `set_game_speed` were
+  each answered `busy`, on the native probe and on the MeitouClient adapter.
+  Until the series on `9a19748b` the adapter answered `invalid_request` to
+  the second `run_until`: the two producers disagreed on that condition, and
+  the adapter now answers `busy` too.
+
+`busy` from a full queue and `internal_error` were not produced, and cannot be
+without injecting a fault: **Unknown** in a running game. The probe handles
+one connection at a time and drops a timed-out command from its queue, so 70
+timed-out commands in a row at the menu never filled the queue of 64.
+`internal_error` is the answer to an exception that is not a standard C++
+exception, which no command is known to raise.
 
 <a id="commandes-oracle"></a>
 

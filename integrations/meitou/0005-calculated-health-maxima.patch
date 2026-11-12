@@ -1,4 +1,4 @@
-From 2416f2d1486f84da1558f6e94eb987b71e42af35 Mon Sep 17 00:00:00 2001
+From 67ceefbf8a6f985ede982626416963bc27f39492 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Sun, 1 Nov 2026 17:10:10 +0100
 Subject: [PATCH] Expose calculated health maxima in the oracle state dump

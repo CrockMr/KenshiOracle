@@ -1,4 +1,4 @@
-From 957405fa156c3d56cbf7ee4f09cddc1d1053dd26 Mon Sep 17 00:00:00 2001
+From eae4dda61c896ff7dcd192a8b92869b8e285977f Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Tue, 3 Nov 2026 23:25:45 +0100
 Subject: [PATCH] Check a captive job's goal as the state 0.5 goal of its

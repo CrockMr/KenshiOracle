@@ -1,4 +1,4 @@
-From e3a37180abe706c05f866e1da2135f0f0ebf0d31 Mon Sep 17 00:00:00 2001
+From 38196fe197a74f600d59b3676ac43e73df98e5d6 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Wed, 4 Nov 2026 00:04:20 +0100
 Subject: [PATCH] Raise the oracle adapter version to 0.12.0

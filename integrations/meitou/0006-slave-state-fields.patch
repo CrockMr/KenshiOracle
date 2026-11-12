@@ -1,4 +1,4 @@
-From ce1618b52c384f8129c95bfe5c08bedde40fcec4 Mon Sep 17 00:00:00 2001
+From cd5645d5d9c1dd31b3744dc6c4c8c9522446eb21 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 08:32:24 +0100
 Subject: [PATCH] Expose slave state and owner faction in oracle state 0.3
@@ -84,7 +84,7 @@ index 6b44138d9..cf6972ddb 100644
  and its first draws; it replaces the save's stored seed without rewriting that
  file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
-index 92db9831a..306974eb6 100644
+index 67f5f15ba..8d683404d 100644
 --- a/src/Meitou.Game/GameHost.Oracle.cs
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
 @@ -241,7 +241,7 @@ sealed partial class GameHost

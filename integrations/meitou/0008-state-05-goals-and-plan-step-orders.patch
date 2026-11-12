@@ -1,4 +1,4 @@
-From d34c3bbafb8d7201a9b55105933b41079dcb8105 Mon Sep 17 00:00:00 2001
+From c99baeaa9c215283d654d8ad80b001bf0dd72938 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Tue, 3 Nov 2026 08:23:42 +0100
 Subject: [PATCH] Expose state 0.5 AI goals and plan-step orders in the oracle

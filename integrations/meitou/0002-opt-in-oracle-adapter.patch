@@ -1,4 +1,4 @@
-From b9cf5f3c6735ab6b60d8bb84f550b4b8874d911e Mon Sep 17 00:00:00 2001
+From 5ea01a6b513b8ace142dbcf14a12fdd36fcd6496 Mon Sep 17 00:00:00 2001
 From: KenshiOracle contributors <contributors@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 21:42:53 +0100
 Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
@@ -10,7 +10,7 @@ Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
  docs/README.md                                |    1 +
  docs/launch-options.md                        |    3 +
  docs/oracle.md                                |  124 +
- src/Meitou.Game/GameHost.Oracle.cs            |  568 ++
+ src/Meitou.Game/GameHost.Oracle.cs            |  571 ++
  src/Meitou.Game/GameHost.Transition.cs        |    4 +-
  src/Meitou.Game/GameHost.cs                   |    3 +
  src/Meitou.Game/Host/GameLoop.cs              |    3 +-
@@ -31,7 +31,7 @@ Subject: [PATCH] Add opt-in oracle adapter and paused load boundary
  .../Oracle/OracleProtocolTests.cs             |   75 +
  .../Meitou.Tests/Oracle/OracleServerTests.cs  |  226 +
  tests/Meitou.Tests/Oracle/OracleStateTests.cs |  136 +
- 24 files changed, 7087 insertions(+), 7 deletions(-)
+ 24 files changed, 7090 insertions(+), 7 deletions(-)
  create mode 100644 docs/oracle.md
  create mode 100644 src/Meitou.Game/GameHost.Oracle.cs
  create mode 100644 src/Meitou.Game/Oracle/OracleCanonicalJson.cs
@@ -205,10 +205,10 @@ index 000000000..137bd11ed
 +and paused-service APIs before it can replace this seam.
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
 new file mode 100644
-index 000000000..35eb1a35f
+index 000000000..f7cc11888
 --- /dev/null
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
-@@ -0,0 +1,568 @@
+@@ -0,0 +1,571 @@
 +using System.Globalization;
 +using System.Numerics;
 +using System.Text.Json;
@@ -518,7 +518,10 @@ index 000000000..35eb1a35f
 +
 +    object StartOracleRun(JsonElement p)
 +    {
-+        OracleKeys(p, "target_seconds", "timeout_seconds"); RequireOracleWorld(true);
++        OracleKeys(p, "target_seconds", "timeout_seconds"); RequireOracleWorld();
++        // As the native probe: an advance that is already running answers busy, not a parameter error.
++        if (OracleRunning) throw new OracleHostError("busy", "run_until is already running");
++        RequireOracleWorld(true);
 +        double target = OracleNumber(p, "target_seconds", 0, 1e9);
 +        double timeout = p.TryGetProperty("timeout_seconds", out _) ? OracleNumber(p, "timeout_seconds", .1, 3600) : 120;
 +        if (Session.Simulation.RequestedPause) throw new OracleHostError("invalid_request", "close the modal interface before advancing");

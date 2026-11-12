@@ -1,4 +1,4 @@
-From 1730fec7519fbe6ffa64fd5236623b51dee084d6 Mon Sep 17 00:00:00 2001
+From d389ab7141ab733877ff32c2243e586abd4276f5 Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 22:48:51 +0100
 Subject: [PATCH] Expose state 0.4 fields and task-row orders in the oracle
@@ -134,7 +134,7 @@ index cf6972ddb..e70f2aafd 100644
  and its first draws; it replaces the save's stored seed without rewriting that
  file. `load_save` also accepts a uint64 seed or its decimal string. Ping and
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
-index 306974eb6..3a3cf9e0f 100644
+index 8d683404d..a2ffc30b5 100644
 --- a/src/Meitou.Game/GameHost.Oracle.cs
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
 @@ -240,8 +240,8 @@ sealed partial class GameHost

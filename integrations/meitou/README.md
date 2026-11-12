@@ -3,9 +3,9 @@
 This directory makes the Meitou adapter reproducible without distributing a
 Meitou binary or relying on an unpublished fork. Apply the ten patches, in
 order, to upstream MeitouClient commit
-`8ae1141a2c91598a161eefd68dc277cc0aeaabb4` (master of 2026-11-12). They
+`9a19748be975fe7716aff90e3dcfd6691622e175` (master of 2026-11-12). They
 correspond to the local fork tip
-`e3a37180abe706c05f866e1da2135f0f0ebf0d31`; they are not an upstream release or
+`38196fe197a74f600d59b3676ac43e73df98e5d6`; they are not an upstream release or
 an endorsement from the MeitouClient team.
 Earlier series targeted `1df44934efd32c49998e7f3aa75d877fb499459a` (the
 recorded phase 2 campaigns), `08340c728c6b85a2b2d12df4211a60e170acb5ba`,
@@ -21,17 +21,17 @@ The series is pinned and upstream moves fast: about 160 commits a day in
 November 2026. As recorded in [series.json](series.json) (`upstream_review`):
 
 - **Verified** on 2026-11-12: the series was rebased from `88ae71a1`, which
-  lies 1759 commits before this base. On this base it applies, builds and
+  lies 1761 commits before this base. On this base it applies, builds and
   passes its tests ([below](#apply-and-build)).
 - **Verified** on 2026-11-12 (local mirror, fetched after the rebase): upstream
-  `master` is `8ae1141a2c91598a161eefd68dc277cc0aeaabb4`, the base itself
+  `master` is `9a19748be975fe7716aff90e3dcfd6691622e175`, the base itself
   (0 commits after the base). It will not stay so for long.
 - The holds reported in the [MeitouClient findings](../../docs/meitou-findings.md)
   after 2026-11-03 used private builds on
-  `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`, which lies 435 commits before
-  this base. One hold has run on this series ([below](#apply-and-build)); it
-  does not include the private fixes those builds carried, so those figures
-  are not reproduced from it.
+  `c09ed01c3d26eeb69433dbd6c69fae7dc71b554f`, which lies 437 commits before
+  this base. A hold, a scene-setup campaign and a city run have run on this
+  series ([below](#apply-and-build)); it does not include the private fixes
+  those builds carried, so those figures are not reproduced from it.
 
 What the rebase changed. Between the two bases upstream merged its `Engine`
 project into `Game`, split the host into separate classes (`GameLoop`,
@@ -46,16 +46,16 @@ no longer changes MeitouClient ([below](#patch-9)).
 
 | Order | Patch | Source commit |
 | --- | --- | --- |
-| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `8e8d83bcfe98d7e6d468e0248b5843176e71b316` |
-| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `b9cf5f3c6735ab6b60d8bb84f550b4b8874d911e` |
-| 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `24bcadb0fd6fcb317afa8657256ca15933bc1759` |
-| 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `9035e0a05b07bcb0b8d66b019affdb3923e127c4` |
-| 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `2416f2d1486f84da1558f6e94eb987b71e42af35` |
-| 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `ce1618b52c384f8129c95bfe5c08bedde40fcec4` |
-| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `1730fec7519fbe6ffa64fd5236623b51dee084d6` |
-| 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `d34c3bbafb8d7201a9b55105933b41079dcb8105` |
-| 9 | [Captive job goals in state 0.5: the check](0009-captive-job-goals.patch) | `957405fa156c3d56cbf7ee4f09cddc1d1053dd26` |
-| 10 | [Adapter version 0.12.0](0010-adapter-version-0.12.0.patch) | `e3a37180abe706c05f866e1da2135f0f0ebf0d31` |
+| 1 | [Exact camera restoration](0001-exact-camera-restoration.patch) | `0ee169c7e49a1cfa0802c2248ebea5909d366b55` |
+| 2 | [Opt-in Oracle adapter](0002-opt-in-oracle-adapter.patch) | `5ea01a6b513b8ace142dbcf14a12fdd36fcd6496` |
+| 3 | [Scene-setup simulation entry points](0003-scene-setup-simulation.patch) | `8bb9b58665f17493b57834163cbe5d2246d1d9c6` |
+| 4 | [Scene-setup adapter commands](0004-scene-setup-adapter.patch) | `d1b261f62be56ad9110c25227e6dc9fcce731e9d` |
+| 5 | [Calculated health maxima in the state dump](0005-calculated-health-maxima.patch) | `67ceefbf8a6f985ede982626416963bc27f39492` |
+| 6 | [Slave state and owner faction in state 0.3](0006-slave-state-fields.patch) | `cd5645d5d9c1dd31b3744dc6c4c8c9522446eb21` |
+| 7 | [State 0.4 fields and task-row orders](0007-state-04-fields-and-task-orders.patch) | `d389ab7141ab733877ff32c2243e586abd4276f5` |
+| 8 | [State 0.5 goals and plan-step orders](0008-state-05-goals-and-plan-step-orders.patch) | `c99baeaa9c215283d654d8ad80b001bf0dd72938` |
+| 9 | [Captive job goals in state 0.5: the check](0009-captive-job-goals.patch) | `eae4dda61c896ff7dcd192a8b92869b8e285977f` |
+| 10 | [Adapter version 0.12.0](0010-adapter-version-0.12.0.patch) | `38196fe197a74f600d59b3676ac43e73df98e5d6` |
 
 [series.json](series.json) records the exact SHA-256 and byte size of each patch.
 
@@ -160,7 +160,7 @@ For a new checkout:
 ```powershell
 git clone https://github.com/VlcekM/MeitouClient.git MeitouClient
 Set-Location MeitouClient
-git switch -c oracle-adapter-8ae1141a 8ae1141a2c91598a161eefd68dc277cc0aeaabb4
+git switch -c oracle-adapter-9a19748b 9a19748be975fe7716aff90e3dcfd6691622e175
 ```
 
 In an existing checkout of an earlier series, run `git fetch origin` and then the
@@ -178,12 +178,12 @@ Build from a clean Git checkout: `build_commit` is the full commit only when
 `git status --porcelain` is empty at build time, otherwise `"unknown"`, which
 the comparator refuses for campaigns.
 
-**Verified** on 2026-11-12, at fork tip `e3a37180` on `8ae1141a`, with SDK
+**Verified** on 2026-11-12, at fork tip `38196fe1` on `9a19748b`, with SDK
 11.0.100 on Windows:
 
-- In a scratch checkout at upstream `8ae1141a`, `git am` with
+- In a scratch checkout at upstream `9a19748b`, `git am` with
   `core.autocrlf=false` applied the ten patches cleanly and the resulting tree
-  equalled the fork tip's tree `fa6779d19c0543e5aadc3996470c3b7934afdd4a`
+  equalled the fork tip's tree `90257dc781e4f807a1cafb14c66ce7042771eb5a`
   (compared with `git rev-parse HEAD^{tree}`). This checks source
   reproduction, not a live campaign.
 - The Release build of the game and of the test project had 0 warnings and 0
@@ -195,38 +195,52 @@ the comparator refuses for campaigns.
 - The quick suite (`Category!=Slow&Category!=Bench`) had 827 passes, 0
   failures and 3 skipped.
 - The same series was first rebuilt on
-  `42205b61cd6211d2db7c391d2008acfbf2de0584`, 28 commits earlier and the last
+  `42205b61cd6211d2db7c391d2008acfbf2de0584`, 30 commits earlier and the last
   upstream commit that builds with SDK 10.0.403: 0 warnings and 0 errors, 190
   of 190 focused tests, 826 quick-suite passes and 0 failures there. Between
   the two, one hook had to be placed again (the follow camera, which upstream
-  changed for a carried character).
+  changed for a carried character). It was then replayed on `8ae1141a`
+  (two commits before this base) and on this base without further change.
 
 **Observed** on 2026-11-12, in the game, with a Release build of the fork tip
-(one machine, N = 1, local saves not distributed):
+(one machine, local saves not distributed):
 
-- Started without `--oracle`, MeitouClient ran for 45 s; nothing listened on
-  port 47801, no oracle output folder was made and no oracle line was printed.
+- Started without `--oracle` (build of `8ae1141a`, two commits earlier),
+  MeitouClient ran for 45 s; nothing listened on port 47801, no oracle output
+  folder was made and no oracle line was printed.
 - Started with `--oracle` under the watchdog, `ping` reported
   `plugin_version` `0.12.0` and `build_commit`
-  `e3a37180abe706c05f866e1da2135f0f0ebf0d31`.
+  `38196fe197a74f600d59b3676ac43e73df98e5d6`.
 - One paused hold on a slave-camp save (seed 0, no orders, 20 checkpoints from
   0 to 3960 s, state 0.5) completed through the shared runner: every snapshot
   validated and the controls were verifiably restored.
 - Against one hold of the original on the same save
   ([agreement between runs](../../docs/agreement.md)), the goal types agreed
   in 1626 of 1907 pairs (85.3 %), and in 1626 of 1688 (96.3 %) with the
-  save's three load-order classes set aside. The private build on `c09ed01c`
-  read 1643 of 1698 (96.8 %) by the same count, and a second hold of the
-  original 1768 of 1795 (98.5 %). One hold per build: the half point between
-  the two MeitouClient builds is not shown to be a difference.
+  save's three load-order classes set aside. The build of `8ae1141a` gave the
+  same counts. The private build on `c09ed01c` read 1643 of 1698 (96.8 %) by
+  the same count, and a second hold of the original 1768 of 1795 (98.5 %).
+  One hold per build: the half point between the MeitouClient builds is not
+  shown to be a difference.
+- The scene-setup scenario [nature-bandit-ambush](../../scenarios/nature-bandit-ambush.json)
+  completed three repetitions (seeds 0, 1 and 2): in each the setup block
+  passed (six aliases resolved), the attack order and the pause were accepted,
+  nine checkpoints were captured, and the controls were restored at the end.
+  No campaign of the original was run beside it, so nothing is compared.
+- The quick city run of the [maintenance guide](../../docs/maintenance.md)
+  ([ville-calme](../../scenarios/ville-calme.json), seed 0, one repetition)
+  completed and restored.
+- While a `run_until` ran, a second `run_until` and a `set_game_speed` were
+  both answered `busy`, as on the native probe. Before this series the adapter
+  answered `invalid_request` to the second `run_until` (seen on the build of
+  `8ae1141a`); patch 2 now answers `busy` there.
 
 **Not done on this base:**
 
 - The complete suite (Slow and Bench included).
-- The quick city run of the [maintenance guide](../../docs/maintenance.md),
-  any scene setup, any scenario with orders and any campaign with repetitions.
-  Revalidate cancellation, seed provenance across repetitions and scene setup
-  with local saves before relying on them.
+- A campaign on both engines with five repetitions each, and so any
+  classification by the [comparator](../../docs/comparator.md); a scenario
+  with a move order; a cancelled or failed scenario and its recovery.
 - The Metal loop's hooks (`MetalGameLoop.cs`) compile on macOS only and were
   not compiled.
 

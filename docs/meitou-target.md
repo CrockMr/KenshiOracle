@@ -3,8 +3,9 @@
 # MeitouClient target
 
 The [patch series](../integrations/meitou/README.md) now targets base
-`8ae1141a` (branch `oracle-adapter-8ae1141a` in its README), where it builds and
-passes its tests; one hold has run on it in the game (see its README). The evidence below
+`9a19748b` (branch `oracle-adapter-9a19748b` in its README), where it builds and
+passes its tests; a hold, a scene-setup campaign and a city run have run on it
+in the game (see its README). The evidence below
 was obtained on branch `oracle-adapter-100c6ca` (base `100c6cae`); the adapter
 is activated only by `--oracle`. Earlier branches (`oracle-adapter-08340c7`, `oracle-adapter`
 on `1df4493`) may be kept as backups.

@@ -1,4 +1,4 @@
-From 9035e0a05b07bcb0b8d66b019affdb3923e127c4 Mon Sep 17 00:00:00 2001
+From d1b261f62be56ad9110c25227e6dc9fcce731e9d Mon Sep 17 00:00:00 2001
 From: CrockMr <118761873+CrockMr@users.noreply.github.com>
 Date: Sun, 1 Nov 2026 10:17:52 +0100
 Subject: [PATCH] Expose scene-setup commands, readiness and save refusal in
@@ -138,7 +138,7 @@ index 137bd11ed..64195121f 100644
  See [Oracle tests](../tests/Meitou.Tests/Oracle) and
  [camera restoration tests](../tests/Meitou.Tests/Engine/OracleCameraRestoreTests.cs).
 diff --git a/src/Meitou.Game/GameHost.Oracle.cs b/src/Meitou.Game/GameHost.Oracle.cs
-index 35eb1a35f..92db9831a 100644
+index f7cc11888..67f5f15ba 100644
 --- a/src/Meitou.Game/GameHost.Oracle.cs
 +++ b/src/Meitou.Game/GameHost.Oracle.cs
 @@ -61,6 +61,7 @@ sealed partial class GameHost
@@ -235,7 +235,7 @@ index 35eb1a35f..92db9831a 100644
      }
  
      object SetOracleSpeed(JsonElement p)
-@@ -454,35 +464,43 @@ sealed partial class GameHost
+@@ -457,35 +467,43 @@ sealed partial class GameHost
          if (type is not ("move" or "attack")) throw new OracleHostError("not_implemented", "only move and attack orders are implemented");
          bool character = p.TryGetProperty("character_id", out _), squad = p.TryGetProperty("squad_id", out _);
          if (character == squad) throw new ArgumentException("provide exactly one character_id or squad_id");

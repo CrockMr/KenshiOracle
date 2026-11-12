@@ -145,7 +145,7 @@ upstream commit or release tag, `$OracleRoot` this KenshiOracle checkout.
 
 ### When upstream restructures
 
-**Observed** on the rebase from `88ae71a1` to `8ae1141a` (2026-11-12, 1759
+**Observed** on the rebase from `88ae71a1` to `9a19748b` (2026-11-12, 1761
 commits): upstream had merged a project into another, split the host into
 several classes, renamed private fields and enum members and made its build
 enforce the naming. `git am --3way` stopped at the first patch and could not
