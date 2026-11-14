@@ -182,6 +182,28 @@ def test_target_selection_and_opt_in_flags_keep_original_configuration_unchanged
     assert selected == before and original == baseline
 
 
+def test_startup_save_becomes_the_clients_own_load_at_every_launch(tmp_path):
+    cfg = dict(target='meitou', port=53123, oracle_output=str(tmp_path / 'output'), arguments=['--seed', '0'],
+               startup_save='ville-calme', save_root=str(tmp_path / 'save'))
+    before = deepcopy(cfg)
+    launched = launch_config(cfg)
+    assert launched['arguments'][:4] == ['--seed', '0', '--load', str((tmp_path / 'save' / 'ville-calme').resolve())]
+    assert launched['arguments'][4] == '--oracle'
+    # The watchdog must not also send load_save: it would wait for a heartbeat that never leaves loading.
+    assert 'startup_save' not in launched and launched['startup_load'] == 'ville-calme'
+    assert cfg == before
+
+
+@pytest.mark.parametrize('updates', [dict(startup_save='../x'), dict(startup_save='a/b'), dict(startup_save=''),
+    dict(arguments=['--load', 'x']), dict(arguments=['--continue']), dict(arguments=['--load=x'])])
+def test_startup_save_refuses_bad_names_and_a_second_start_load(tmp_path, updates):
+    cfg = dict(target='meitou', port=53123, oracle_output=str(tmp_path / 'output'), arguments=[],
+               startup_save='ville-calme')
+    cfg.update(updates)
+    with pytest.raises(ValueError):
+        launch_config(cfg)
+
+
 @pytest.mark.parametrize('updates', [dict(port=53122), dict(port=True), dict(port=0), dict(port=65536),
                                     dict(runtime='original-runtime'), dict(target='original')])
 def test_target_selection_rejects_shared_runtime_port_and_wrong_target(tmp_path, updates):
