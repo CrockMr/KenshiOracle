@@ -22,7 +22,21 @@ def launch_config(cfg):
         raise ValueError('arguments must be a list of strings')
     if any(value.startswith('--oracle') for value in arguments):
         raise ValueError('Configure oracle port/output as fields; the launcher supplies its own --oracle options')
-    result['arguments'] = [*arguments, '--oracle', '--oracle-port', str(port),
+    start = []
+    startup = result.pop('startup_save', None)
+    if startup is not None:
+        # MeitouClient's heartbeat reports loading until a world is ready, also at the main menu, so the
+        # watchdog's load_save after startup never fires there. The client loads the save itself instead,
+        # at every launch, as its own --load does (the seed is applied before that load).
+        from oracle_runner import save_name
+        save_name(startup)
+        if any(value in ('--load', '--continue') or value.startswith(('--load=', '--continue='))
+               for value in arguments):
+            raise ValueError('startup_save replaces --load and --continue; configure only one of them')
+        root = result.get('save_root') or Path(os.environ.get('LOCALAPPDATA', '')) / 'kenshi' / 'save'
+        start = ['--load', str((Path(root) / startup).resolve())]
+        result['startup_load'] = startup
+    result['arguments'] = [*arguments, *start, '--oracle', '--oracle-port', str(port),
                            '--oracle-output', str(Path(result['oracle_output']).resolve())]
     result['port'] = port
     return result

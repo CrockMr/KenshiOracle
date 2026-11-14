@@ -81,12 +81,30 @@ Close MeitouClient before launching in a dedicated terminal:
 This supervisor supplies `--oracle`, `--oracle-port` and `--oracle-output`
 itself; do not add them to `arguments`. It rejects an already running
 MeitouClient, owns its process and uses the heartbeat published by the host.
-`startup_save` requests one load per launch. It can restart its process after
-a freeze/exit; it does not resume an interrupted experiment. Keep the
-supervision terminal open while running the following commands.
+`startup_save` loads one save at every launch: the supervisor passes it to
+MeitouClient as `--load <save_root>/<name>`, so the client loads it while it
+starts, with its seed already applied. Do not also put `--load` or `--continue`
+in `arguments`. Up to 0.13.0 the supervisor sent `load_save` after startup
+instead; MeitouClient's heartbeat reports loading until a world is ready, also
+at the main menu, so that load never happened. The supervisor can restart its
+process after a freeze/exit; it does not resume an interrupted experiment. Keep
+the supervision terminal open while running the following commands.
 The [real supervisor test](phase2-validation.md#campagnes-et-restitution)
-covers startup, heartbeat and owned shutdown; no real Meitou crash was
-triggered for this evidence.
+covers startup, heartbeat and owned shutdown.
+
+**After a MeitouClient crash during a scenario (Observed, one machine,
+2026-11-14):** MeitouClient was killed during the first of two repetitions of
+a paused hold on a slave-camp save, under the supervisor with `startup_save`.
+- The scenario failed within seconds with the code `unreachable`; its report
+  kept the two checkpoints already captured and a `restoration_error`, and the
+  restoration record stayed armed.
+- The supervisor archived the exit (reason `process_exit`), restarted
+  MeitouClient and loaded the startup save in about 20 s.
+- `restore-scenario --target meitou` then reloaded the scenario save with the
+  recorded seed, verified the camera and time controls in pause and cleared the
+  record; a new scenario passed on the restarted process.
+- Not checked: a freeze (heartbeat timeout) instead of an exit, and a crash
+  while a load or the restoration itself runs.
 
 <a id="cli-et-outils-communs"></a>
 
